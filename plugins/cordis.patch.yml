@@ -17,3 +17,5 @@
       config:
         interval: 50
         unit: steps
+    - id: alex-grammar-fix
+      name: /home/alex/git/my/rt/plugins/grammar-fix/index.mjs
