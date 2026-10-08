@@ -72,13 +72,28 @@ The script refuses to guess when it finds more than one separate run of managed
 entries in a single file, and it reports manifest rows whose module is missing —
 both cases would otherwise break every profile on the next DSH restart.
 
+## Where machine config lives
+
+This repository owns the plugins and nothing else. The rest of the DSH
+configuration — `~/.dsh/AGENTS.md`, `~/.dsh/.agent-presets/` and the profiles
+themselves — is versioned by the separate dotfiles repo, which uses `$HOME` as
+its worktree (`git -C ~/git/my/dotfiles status`). Its `README.md` documents the
+fresh-box clone recipe.
+
+The division: dotfiles carries the hand-written config, this repo carries the
+plugin sources and generates the `alex-*` wiring inside those profiles. After
+cloning dotfiles onto a new machine, run `node tools/activate.mjs --write` here
+so the generated rows point at the new layout.
+
 ## Known gaps
 
-- `~/.dsh/AGENTS.md` and `~/.dsh/.agent-presets/` are customized on this machine
-  and are **not** versioned here.
 - `plugins/managed-plans/` is implemented but loaded by no profile. It is
   recorded under `knownInactive` in `activation.json` so the sync never enables
   it implicitly.
 - Per-machine values inside the profiles (model routes, GGUF snapshot paths,
   permission defaults) are intentionally left as they are; they are configuration,
   not plugin wiring.
+- The profiles also reference two plugins outside this repo by absolute path:
+  `/home/alex/Applications/dsh-grammar-fix/index.mjs` and
+  `/home/alex/Applications/dsh-antigravity/tui-login.mjs`. Neither is managed by
+  `activation.json`, so the bootstrap will not fix them on a new machine.
