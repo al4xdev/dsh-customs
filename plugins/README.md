@@ -2,25 +2,43 @@
 
 ## Current delivery
 
-Plans 1–4 are implemented as reversible local plugins; Plan 5 remains recorded as experimental in `.plan/tasks/05-browser-experimental.md`. No installed DSH core package is modified. Native `read`, `edit`, and `write` remain enabled.
+Plans 1–4 are implemented as reversible local plugins; Plan 5 remains recorded as experimental in `.plan/tasks/05-browser-experimental.md`. No installed DSH core package is modified. Native `read`, `edit`, and `write` remain enabled. Which plugin is active in which profile is declared in `activation.json` — see Activation below.
 
 - `apply_patch` / `apply_patch_undo`: contextual multi-file text changes, observed-version guards, per-file recovery receipts. This is an independent JavaScript adapter of the official Codex format, not the official Rust implementation. Exact matching is deliberately stricter. The TUI renders it as a native diff card (`presentCall`/`presentResult`/`presentationMeta`); the model still receives the untouched receipt text. See `apply-patch/REFERENCE.md`.
 - Workspace context: absolute cwd, Git worktree root and relative directory, plus compact machine facts through the native prompt registry. See `workspace-context/README.md` for logical/canonical paths and the small unavoidable overlap with the preset cwd line.
 - `clipboard_copy`: text via stdin to the local clipboard; empty text clears it. Plumbing is hidden from the model.
 - `trash`: recoverable removal to private `/tmp/alex-dsh-trash-*` entries, protected broad paths, per-item batch results, cross-device copy/verify/remove fallback. No permanent-delete tool.
 - `list`: bounded directory listing with `depth` (default `1`, immediate entries only), `limit`, and hidden entries included by default (opt out with `hidden: false`). Directories-first deterministic ordering, symlink-loop protection, a truncation signal, and the same `file_path`/`<path>/<type>/<content>` envelope as `read`.
+- `shell-reconsider`: matches read-only commands (`cat`, `head`, `ls`, `find`, `grep`, `rg`) and destructive ones (`rm`, `unlink`) and requires a single-use permit before they run, steering toward the native `read`/`list`/`grep`/`trash` tools. Ordinary build and test commands pass through untouched. See `shell-reconsider/README.md`.
+- `managed-plans`: implemented (tools, a `plan` command, plan store and TUI) but loaded by no profile. Recorded under `knownInactive` in `activation.json` so the sync never enables it implicitly.
 
-## Reversible activation
+## Activation
 
-The plugins are now persistently enabled in `~/.dsh/profiles/{web,headless,tui,dsh-tui}/cordis.patch.yml`. All four composed successfully; comparing with pre-activation backups confirmed that existing model/provider/permission configuration was preserved. Start a separate normal instance:
+Activation is generated from `plugins/activation.json`; see the repository root
+`README.md` for the model and the rationale.
 
 ```sh
-dsh web --port 8081 --host 127.0.0.1 --no-open
+node tools/activate.mjs          # report drift only
+node tools/activate.mjs --write  # apply
 ```
 
-Use the authenticated local URL printed by DSH. To deactivate, remove only the five `alex-*` rows in the intended profile (the entire insert entry in the previously empty `tui` profile), then restart; live-reload behavior varies by profile. Do not restore a whole old profile over subsequent user edits. Private pre-activation backups and original mappings are at `/tmp/alex-dsh-activation-backup-Rmu4Pb/manifest.json`; these backups expire on reboot. Module paths and DSH package resolution intentionally target Alex's machine. The repository's `plugins/cordis.patch.yml` remains an optional overlay for an unextended profile; do not add it again to a persistently enabled profile.
+The bootstrap rewrites only the contiguous run of managed `alex-*` rows in each
+`~/.dsh/profiles/*/cordis.patch.yml` and copies every other byte through
+untouched, so hand-written per-machine config and comments survive. It is
+idempotent and resolves module paths against this repo's actual location.
 
-Test-only policy overlays must not be added to normal profiles. The former `tests/` directory was removed by the owner and was not reconstructed; commands referencing it are no longer current.
+- To deactivate one plugin, drop its row from `activation.json` and re-run with
+  `--write`. To deactivate everything, empty the `plugins` list.
+- To skip a profile, remove it from `profiles`; `--profile NAME` targets one
+  profile in a single run.
+- `plugins/cordis.patch.yml` is an optional `--patch` overlay for an unextended
+  profile. It is generated from the same manifest — do not maintain it by hand.
+  Do not add it again to a persistently enabled profile.
+- Test-only policy overlays must not be added to normal profiles.
+
+The former `tests/` directory was removed by the owner and was not reconstructed.
+The automated-suite results recorded below are historical evidence, not a
+present-day full-suite claim.
 
 ## Verification
 

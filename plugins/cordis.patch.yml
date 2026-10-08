@@ -12,3 +12,8 @@
       name: /home/alex/git/my/rt/plugins/trash/index.mjs
     - id: alex-list
       name: /home/alex/git/my/rt/plugins/list/index.mjs
+    - id: alex-shell-reconsider
+      name: /home/alex/git/my/rt/plugins/shell-reconsider/index.mjs
+      config:
+        interval: 50
+        unit: steps
