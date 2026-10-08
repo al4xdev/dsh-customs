@@ -6,8 +6,10 @@
     "the repository's actual location on this machine. That is what makes 'clone the",
     "repo elsewhere and run the bootstrap' work: nothing here is machine-specific.",
     "Entries that do NOT start with managedIdPrefix are never touched (for example",
-    "llm-llamacpp, grammar-fix, antigravity-tui-login), so hand-written per-machine",
-    "config survives every sync."
+    "llm-llamacpp, antigravity-tui-login), so hand-written per-machine config",
+    "survives every sync.",
+    "A plugin may declare \"profiles\": [\"dsh-tui\"] to be enabled in only those",
+    "profiles; without it the plugin goes to every profile in the list above."
   ],
   "managedIdPrefix": "alex-",
   "profiles": ["web", "headless", "tui", "dsh-tui"],
@@ -22,6 +24,11 @@
       "id": "alex-shell-reconsider",
       "module": "shell-reconsider/index.mjs",
       "config": { "interval": 50, "unit": "steps" }
+    },
+    {
+      "id": "alex-grammar-fix",
+      "module": "grammar-fix/index.mjs",
+      "profiles": ["dsh-tui"]
     }
   ],
   "knownInactive": {

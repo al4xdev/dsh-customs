@@ -93,7 +93,6 @@ so the generated rows point at the new layout.
 - Per-machine values inside the profiles (model routes, GGUF snapshot paths,
   permission defaults) are intentionally left as they are; they are configuration,
   not plugin wiring.
-- The profiles also reference two plugins outside this repo by absolute path:
-  `/home/alex/Applications/dsh-grammar-fix/index.mjs` and
-  `/home/alex/Applications/dsh-antigravity/tui-login.mjs`. Neither is managed by
-  `activation.json`, so the bootstrap will not fix them on a new machine.
+- The profiles also reference one plugin outside this repo by absolute path:
+  `/home/alex/Applications/dsh-antigravity/tui-login.mjs`. It is not managed by
+  `activation.json`, so the bootstrap will not fix it on a new machine.
