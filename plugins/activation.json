@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "Single source of truth for which local plugins are active in which DSH profile.",
+    "tools/activate.mjs reads this file and rewrites the managed alex-* entries in",
+    "~/.dsh/profiles/<profile>/cordis.patch.yml, resolving every module path against",
+    "the repository's actual location on this machine. That is what makes 'clone the",
+    "repo elsewhere and run the bootstrap' work: nothing here is machine-specific.",
+    "Entries that do NOT start with managedIdPrefix are never touched (for example",
+    "llm-llamacpp, grammar-fix, antigravity-tui-login), so hand-written per-machine",
+    "config survives every sync."
+  ],
+  "managedIdPrefix": "alex-",
+  "profiles": ["web", "headless", "tui", "dsh-tui"],
+  "plugins": [
+    { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs" },
+    { "id": "alex-apply-patch", "module": "apply-patch/index.mjs" },
+    { "id": "alex-workspace-context", "module": "workspace-context/index.mjs" },
+    { "id": "alex-clipboard", "module": "clipboard/index.mjs" },
+    { "id": "alex-trash", "module": "trash/index.mjs" },
+    { "id": "alex-list", "module": "list/index.mjs" },
+    {
+      "id": "alex-shell-reconsider",
+      "module": "shell-reconsider/index.mjs",
+      "config": { "interval": 50, "unit": "steps" }
+    }
+  ],
+  "knownInactive": {
+    "managed-plans": "Implemented (217 lines + store/mode/tui) but activated by no profile. Its isolated-core.patch.yml is a temporary CLI overlay that disables native plan-mode. Kept out of 'plugins' so the sync never enables it implicitly; decide its fate explicitly."
+  }
+}
