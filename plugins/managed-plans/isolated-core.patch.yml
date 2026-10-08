@@ -1,0 +1,8 @@
+# Temporary CLI overlay only. Current profiles and native core remain untouched.
+- id: plan-mode
+  disabled: true
+- insert:
+    - id: alex-managed-plans
+      name: /home/alex/git/my/rt/plugins/managed-plans/index.mjs
+      config:
+        wakeAgent: false # Validation: persist instructions without any model request.

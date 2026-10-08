@@ -1,0 +1,7 @@
+.dumps/
+node_modules/
+
+# Nested git repository with its own remote (ccch1mneyyy/dsh-TUI). Tracked
+# separately on purpose: absorbing it here would swallow 876 MB and bury its
+# own history. Sync it with `git -C frontend/dsh-tui ...`, not from this repo.
+frontend/dsh-tui/

@@ -1,0 +1,7 @@
+# Optional overlay; keep separate from other agents' plugin changes.
+- insert:
+    - id: alex-shell-reconsider
+      name: ./index.mjs
+      config:
+        interval: 50
+        unit: steps
