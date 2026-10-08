@@ -1,0 +1,14 @@
+# Local extensions; pass via --patch or include these rows in a profile.
+- insert:
+    - id: alex-file-observation-coverage
+      name: /home/alex/git/my/rt/plugins/apply-patch/observation.mjs
+    - id: alex-apply-patch
+      name: /home/alex/git/my/rt/plugins/apply-patch/index.mjs
+    - id: alex-workspace-context
+      name: /home/alex/git/my/rt/plugins/workspace-context/index.mjs
+    - id: alex-clipboard
+      name: /home/alex/git/my/rt/plugins/clipboard/index.mjs
+    - id: alex-trash
+      name: /home/alex/git/my/rt/plugins/trash/index.mjs
+    - id: alex-list
+      name: /home/alex/git/my/rt/plugins/list/index.mjs
