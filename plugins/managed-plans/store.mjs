@@ -132,14 +132,18 @@ export class PlanStore {
         if (!match) continue;
         const id = Number(match[1]);
         integer(id, 'imported plan id');
-        if (state.plans[id]) fail('ID_COLLISION', `Multiple existing files use plan id ${id}`);
+        let planId = id;
+        while (state.plans[planId]) {
+          planId = Math.max(state.next_id, planId + 1);
+          state.next_id = planId + 1;
+        }
         const relative = `${directory}/${name}`;
         const content = this._readFile(this._file(relative));
         const title = /^#\s+(.+)$/m.exec(content)?.[1] || name.replace(/^\d+-|\.md$/gi, '');
         const category = CATEGORIES.includes(directory) ? directory : 'tasks';
         const revision = { revision: 1, title, content, hash: hashOf(content), category, status: directory === 'staging' ? 'staged' : directory === 'closed' ? 'closed' : 'approved', created_at: now(), origin: null, comments: [], decisions: [], imported: true };
-        state.plans[id] = { plan_id: id, current_revision: 1, filename: name, path: relative, revisions: [revision] };
-        state.next_id = Math.max(state.next_id, id + 1);
+        state.plans[planId] = { plan_id: planId, current_revision: 1, filename: name, path: relative, revisions: [revision] };
+        state.next_id = Math.max(state.next_id, planId + 1);
       }
     }
     state.bootstrapped = true;
