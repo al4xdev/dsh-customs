@@ -1,23 +1,29 @@
 # Local extensions; pass via --patch or include these rows in a profile.
 - insert:
     - id: alex-file-observation-coverage
-      name: /home/alex/git/my/rt/plugins/apply-patch/observation.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/apply-patch/observation.mjs
     - id: alex-apply-patch
-      name: /home/alex/git/my/rt/plugins/apply-patch/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/apply-patch/index.mjs
     - id: alex-workspace-context
-      name: /home/alex/git/my/rt/plugins/workspace-context/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/workspace-context/index.mjs
     - id: alex-project-mcp
-      name: /home/alex/git/my/rt/plugins/project-mcp/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/project-mcp/index.mjs
     - id: alex-clipboard
-      name: /home/alex/git/my/rt/plugins/clipboard/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/clipboard/index.mjs
     - id: alex-trash
-      name: /home/alex/git/my/rt/plugins/trash/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/trash/index.mjs
     - id: alex-list
-      name: /home/alex/git/my/rt/plugins/list/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/list/index.mjs
     - id: alex-shell-reconsider
-      name: /home/alex/git/my/rt/plugins/shell-reconsider/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/shell-reconsider/index.mjs
       config:
         interval: 50
         unit: steps
     - id: alex-grammar-fix
-      name: /home/alex/git/my/rt/plugins/grammar-fix/index.mjs
+      name: /home/alex/git/my/dsh-customs/plugins/grammar-fix/index.mjs
+    - id: alex-managed-plans
+      name: /home/alex/git/my/dsh-customs/plugins/managed-plans/index.mjs
+      config:
+        wakeAgent: true
+    - id: alex-managed-plans-tui
+      name: /home/alex/git/my/dsh-customs/plugins/managed-plans/tui.mjs

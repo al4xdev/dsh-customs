@@ -1,7 +1,14 @@
 .dumps/
 node_modules/
 
+# Packed frontend build consumed by the task10 profile wiring. A build output,
+# not source: it is large and reproduced by tools/task10-frontend/bootstrap.mjs.
+tools/task10-frontend/artifacts/
+
 # Nested git repository with its own remote (ccch1mneyyy/dsh-TUI). Tracked
 # separately on purpose: absorbing it here would swallow 876 MB and bury its
 # own history. Sync it with `git -C frontend/dsh-tui ...`, not from this repo.
 frontend/dsh-tui/
+
+# Nested git repository with its own remote (OpenSaozi/dsh-antigravity).
+plugins/dsh-antigravity/

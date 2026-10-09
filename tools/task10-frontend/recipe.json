@@ -1,0 +1,11 @@
+{
+  "url": "https://github.com/ccch1mneyyy/dsh-TUI.git",
+  "base": "c2eee95218d1decfce138f7d31ef7099cc391d00",
+  "pnpm": "11.21.0",
+  "node": "^22.19 || >=24",
+  "vendorDshStd": "614dfa1ac168db79fcf4577cf0ebb34e2e3b944b",
+  "patch": "frontend.patch",
+  "patchSha256": "5972e7782b0a79553648361c88189a7d5432026eceed0e48fcefdd6306a41d2a",
+  "package": "@deepseek-harness-tui/dsh-tui",
+  "version": "0.14.0"
+}

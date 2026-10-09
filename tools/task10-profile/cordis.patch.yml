@@ -1,0 +1,9 @@
+# Isolated replacement only. Model and permission policy remain bundle defaults.
+# Managed plugin entries are generated solely from plugins/activation.json.
+- id: plan-mode
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- id: dsh-tui
+  config:
+    externalPlanCommand: true

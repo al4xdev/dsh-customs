@@ -2,7 +2,7 @@
 
 ## Status and authorization
 
-Design approved by the owner through the task 10 review question (Approve implementation). The owner assigned task number 10 and authorized engine-first implementation followed by the frontend addon/extension, initially isolated and reversible. No native plugin has yet been disabled and no core/frontend implementation has yet been changed. All confirmed interview decisions below are the implementation contract.
+Design approved by the owner. Engine/store/tools and the artifact scene are implemented; the pinned frontend source has the opt-in /plan route and public native Markdown API. The real isolated engine lifecycle passed, including revision conflicts and save-only categories. Per the owner's request, activation now targets the **default `dsh-tui` profile**: native `plan-mode` is disabled there, the two managed-plan plugins are inserted through the central manifest, and the patched frontend (pinned v0.14.0 commit `c2eee952`) is installed as a local file dependency. A real-profile activation check confirmed all five tools and the `managedPlans` service register. The owner performs the TUI validation personally, so visual/keyboard end-to-end acceptance remains pending and no completion is claimed. All confirmed interview decisions below remain the implementation contract.
 
 ## Architecture
 
