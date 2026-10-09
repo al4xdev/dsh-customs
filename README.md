@@ -38,8 +38,8 @@ per-machine configuration survives every sync.
 ## New machine
 
 ```sh
-git clone <this repo> ~/git/my/rt
-cd ~/git/my/rt
+git clone <this repo> ~/git/my/dsh-customs
+cd ~/git/my/dsh-customs
 node tools/activate.mjs          # report drift, change nothing (exit 1 if any)
 node tools/activate.mjs --write  # apply
 ```

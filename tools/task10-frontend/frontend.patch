@@ -1,0 +1,400 @@
+diff --git a/README.md b/README.md
+index a8c6c62..370015f 100644
+--- a/README.md
++++ b/README.md
+@@ -17,6 +17,31 @@
+ 
+ # dsh-TUI
+ 
++### Managed plan addon seam (local source extension)
++
++Plugin config `externalPlanCommand: true` routes bare `/plan` to the registered
++command instead of the native picker (default `false`; arguments unchanged).
++Disable native plan-mode before registering a replacement that opens its scene.
++The flag grants no execution authority and implements no persistence.
++
++Scenes receive `ui.Markdown`, `ui.markdownSourceRange` and `ui.markdownSourceBlocks`, also exported from
++`@deepseek-harness-tui/dsh-tui/ui`. Render with injected host React and
++`{ preserveSource: true, children: source }`; existing renderers/fallbacks apply.
++The helpers select exact 1-based source ranges with quoted context. Bind anchors
++to immutable revision/hash. Optional `sourceNavigation: { line, onSelect,
++commentLines, scrollRef }` adds a block cursor and mouse selection using the native
++renderer. List items are separate anchors; diagrams/tables/paragraphs retain their
++whole source block. Wrapped terminal rows are never treated as source lines.
++Use a vertical `ScrollBox` (`flexDirection: 'column'`) for scrollable artifacts;
++keep the Markdown root at the content origin when using its scroll anchor.
++Expanded managed-plan tool cards also render their human presentation as native
++Markdown; ordinary tools, error views, machine JSON and native size caps stay unchanged.
++The local managed-plan scene uses `c` to add/edit comments and `Esc` to save a
++comment draft. `d` asks for `y/n` confirmation before deleting a draft; its audit
++record remains. `O` reopens the current plan as a new staged revision of the same
++ID (already staged is a no-op). Historical revisions stay read-only, and reopened
++plans always require fresh owner approval before execution.
++
+ > An interactive terminal UI plugin for DeepSeek Harness. It ships a
+ > pixel-whale header, live work status, streaming thinking, double-Esc time
+ > rewind, a context progress bar, and a TPS gauge. It mounts as a pure plugin,
+diff --git a/README_ZH.md b/README_ZH.md
+index 714ef2b..036093b 100644
+--- a/README_ZH.md
++++ b/README_ZH.md
+@@ -18,6 +18,27 @@
+ 
+ # dsh-TUI
+ 
++### 托管计划插件接缝（本地源码扩展）
++
++插件配置 `externalPlanCommand: true` 让裸 `/plan` 调用注册命令而非原生选择器。
++默认 `false`，带参数形式不变。注册打开场景的替代命令前禁用原生 plan-mode。
++此开关不授予执行权限，也不实现持久化。
++
++场景收到 `ui.Markdown`、`ui.markdownSourceRange` 与 `ui.markdownSourceBlocks`，也可从
++`@deepseek-harness-tui/dsh-tui/ui` 导入。使用注入的宿主 React，传入
++`{ preserveSource: true, children: source }`，复用原生渲染器及回退。
++辅助函数选择从 1 开始的源行范围及引用文本；锚点需绑定不可变版本与哈希。
++可选 `sourceNavigation: { line, onSelect, commentLines, scrollRef }` 通过原生渲染器
++增加块光标及鼠标选择。列表项单独定位；图表、表格及段落保持完整源块。
++终端折行绝不作为源行。可滚动文档使用纵向 `ScrollBox`（`flexDirection: 'column'`）；
++使用滚动锚点时，Markdown 根节点应位于内容原点。
++展开后的托管计划工具卡用原生 Markdown 渲染人类可读结果；其他工具、错误视图、
++模型 JSON 与原生大小限制保持不变。
++本地托管计划场景用 `c` 添加/编辑评论，`Esc` 保存评论草稿。
++`d` 在删除草稿前要求 `y/n` 确认，保留审计记录。
++`O` 将当前计划以相同 ID 的新版本重新放入 staging（已在 staging 则不新增版本）。
++历史版本只读；重新打开的计划必须再次获得所有者批准，才能执行。
++
+ > 面向 DeepSeek Harness 的交互式终端界面插件：像素鲸鱼顶栏、实时工作状态、流式思考展示、双击 Esc 时间回溯、上下文进度条与 TPS 仪表。
+ > 零核心改动，纯插件挂载。安装即启用，卸载不留核心补丁。
+ 
+diff --git a/package.json b/package.json
+index 329e3e3..cffee63 100644
+--- a/package.json
++++ b/package.json
+@@ -49,6 +49,10 @@
+       "types": "./lib/types/index.d.ts",
+       "import": "./lib/types/index.js"
+     },
++    "./ui": {
++      "types": "./lib/types/ui.d.ts",
++      "import": "./lib/types/ui.js"
++    },
+     "./working-activity": {
+       "types": "./lib/types/working-activity.d.ts",
+       "import": "./lib/types/working-activity.js"
+diff --git a/src/adapter/channel/ui-policy.ts b/src/adapter/channel/ui-policy.ts
+index 0a08b0e..3185e8f 100644
+--- a/src/adapter/channel/ui-policy.ts
++++ b/src/adapter/channel/ui-policy.ts
+@@ -175,6 +175,7 @@ export const CHANNEL_UI_PROPERTIES = [
+   'configuredPreset',
+   'configuredActivityFrames',
+   'configuredLang',
++  'externalPlanCommand',
+   'tokens',
+   'mainCost',
+   'subagentCost',
+diff --git a/src/adapter/ports/channel-ui.ts b/src/adapter/ports/channel-ui.ts
+index 97ada6d..c003399 100644
+--- a/src/adapter/ports/channel-ui.ts
++++ b/src/adapter/ports/channel-ui.ts
+@@ -121,6 +121,8 @@ export interface ChannelUi {
+   readonly configuredActivityFrames: string | undefined
+   /** Explicit cordis.yml `lang` (undefined = settings/lang.json wins). */
+   readonly configuredLang: string | undefined
++  /** Deployment opt-in: bare /plan invokes the external registry command. */
++  readonly externalPlanCommand: boolean
+   /** Running token totals across the session's assistant messages. */
+   readonly tokens: TokenUsage
+   /** 本会话主会话用量按模型分桶（费用估算输入）。与 `tokens` 并行累计，
+diff --git a/src/components/Markdown.tsx b/src/components/Markdown.tsx
+index e3aa5f1..6bdbadf 100644
+--- a/src/components/Markdown.tsx
++++ b/src/components/Markdown.tsx
+@@ -13,6 +13,9 @@ import { CodeBlockFrame } from './CodeBlockFrame.js'
+ import { MermaidDiagram } from './MermaidDiagram.js'
+ import { InlineMathParagraph } from './InlineMathParagraph.js'
+ import { MathBlock } from './MathBlock.js'
++import { markdownNavigationTokens, markdownTokenRanges, type MarkdownSourceRange } from '../markdown-source.js'
++import type { DOMElement } from '../ink/dom.js'
++import type { ScrollBoxHandle } from '../ink/components/ScrollBox.js'
+ 
+ /**
+  * Markdown 渲染组件：marked 分词 + ANSI 格式化。
+@@ -27,8 +30,17 @@ import { MathBlock } from './MathBlock.js'
+  * 路径，直接合成段落 token，省掉 lexer 调用。
+  */
+ 
+-type Props = {
++export type MarkdownProps = {
+   children: string
++  /** Artifact mode: do not strip prompt XML tags from the immutable source. */
++  preserveSource?: boolean
++  /** Opt-in artifact navigation; selection identifies source blocks, not wrapped rows. */
++  sourceNavigation?: {
++    readonly line: number
++    readonly onSelect: (range: MarkdownSourceRange) => void
++    readonly commentLines?: readonly number[]
++    readonly scrollRef?: React.RefObject<ScrollBoxHandle | null>
++  }
+   /** 为 true 时全部文本内容以 dim 样式呈现 */
+   dimColor?: boolean
+   /** 为 false 时跳过 token 缓存（流式尾部的内容逐帧变化，缓存必然失效） */
+@@ -259,7 +271,27 @@ function renderTokensToNodes(
+  * block — the dominant long-output stall (string-width via wrap-ansi, 60%+
+  * of CPU in streaming profiles).
+  */
+-function MarkdownImpl({ children, dimColor = false, cacheTokens = true, inlineMathImages = true }: Props): React.ReactNode {
++function MarkdownSourceBlock({ range, navigation, children }: React.PropsWithChildren<{
++  range: MarkdownSourceRange
++  navigation: NonNullable<MarkdownProps['sourceNavigation']>
++}>): React.ReactNode {
++  const element = React.useRef<DOMElement>(null)
++  const selected = navigation.line >= range.startLine && navigation.line <= range.endLine
++  const commented = navigation.commentLines?.some(line => line >= range.startLine && line <= range.endLine)
++  React.useLayoutEffect(() => {
++    if (selected && element.current) navigation.scrollRef?.current?.scrollToElement(element.current)
++  }, [selected, navigation.scrollRef])
++  return (
++    <Box ref={element} flexDirection="row" flexShrink={0} onClick={() => navigation.onSelect(range)}>
++      <Box width={2} flexShrink={0}>
++        <Text color={selected ? 'accent' : 'subtle'}>{selected ? '▌' : commented ? '●' : ' '}</Text>
++      </Box>
++      <Box flexDirection="column" flexGrow={1} flexShrink={0}>{children}</Box>
++    </Box>
++  )
++}
++
++function MarkdownImpl({ children, dimColor = false, cacheTokens = true, inlineMathImages = true, preserveSource = false, sourceNavigation }: MarkdownProps): React.ReactNode {
+   const [highlight, setHighlight] = React.useState<CliHighlight | null>(null)
+   // Inline math is baked into the ANSI text, so the switch must invalidate
+   // the memo below (MathBlock nodes subscribe on their own).
+@@ -284,18 +316,31 @@ function MarkdownImpl({ children, dimColor = false, cacheTokens = true, inlineMa
+   configureMarked()
+ 
+   const renderedNodes = React.useMemo(() => {
+-    const source = stripPromptXMLTags(children)
++    const source = preserveSource ? children : stripPromptXMLTags(children)
++    const tokens = lexWithCache(source, cacheTokens)
++    const images = inlineMathImages && mathRendering === 'image' && !dimColor
++    if (sourceNavigation) {
++      const navigationTokens = markdownNavigationTokens(tokens)
++      const ranges = markdownTokenRanges(source, navigationTokens)
++      return navigationTokens.flatMap((token, index) => {
++        const range = ranges[index]
++        if (!range) return []
++        return [<MarkdownSourceBlock key={index} range={range} navigation={sourceNavigation}>
++          {renderTokensToNodes([token], highlight, dimColor, images)}
++        </MarkdownSourceBlock>]
++      })
++    }
+     return renderTokensToNodes(
+-      lexWithCache(source, cacheTokens),
++      tokens,
+       highlight,
+       dimColor,
+       // Dimmed text (thinking) cannot dim an image, so it keeps Unicode.
+-      inlineMathImages && mathRendering === 'image' && !dimColor,
++      images,
+     )
+-  }, [children, dimColor, highlight, cacheTokens, mathRendering, inlineMathImages, palette])
++  }, [children, dimColor, highlight, cacheTokens, mathRendering, inlineMathImages, palette, preserveSource, sourceNavigation])
+ 
+   return (
+-    <Box flexDirection="column" gap={1}>
++    <Box flexDirection="column" gap={1} flexShrink={sourceNavigation ? 0 : 1}>
+       {renderedNodes}
+     </Box>
+   )
+@@ -311,5 +356,7 @@ export const Markdown = React.memo(
+     prev.children === next.children &&
+     prev.dimColor === next.dimColor &&
+     prev.cacheTokens === next.cacheTokens &&
++    prev.preserveSource === next.preserveSource &&
++    prev.sourceNavigation === next.sourceNavigation &&
+     prev.inlineMathImages === next.inlineMathImages,
+ )
+diff --git a/src/components/messages/AssistantToolUseMessage.tsx b/src/components/messages/AssistantToolUseMessage.tsx
+index 02c40fc..bca63c6 100644
+--- a/src/components/messages/AssistantToolUseMessage.tsx
++++ b/src/components/messages/AssistantToolUseMessage.tsx
+@@ -22,6 +22,7 @@ import { agentMessageStateColor, agentMessageStateText } from './TranscriptLeave
+ import type { AgentMessageState } from './agentTeam.js'
+ import { liveOutputMaxLines, liveOutputView } from './liveOutputLines.js'
+ import { isPatchDiff, parseFilePatch, patchHeader, type ToolPatchDiff } from '../diffPatch.js'
++import { Markdown } from '../Markdown.js'
+ 
+ type Props = {
+   tool: ToolRow
+@@ -918,6 +919,13 @@ export function AssistantToolUseMessage({
+   const shownLines: BodyLine[] = liveLines.length === 0 || revealedLines.length < rendered.length
+     ? revealedLines
+     : [...lines, ...liveLines, ...rendered.slice(lines.length)]
++  // Local plan presenters keep machine JSON untouched. Only their settled,
++  // expanded human view opts into Markdown; retain native caps/errors otherwise.
++  const planMarkdown = !isError && !isRunning && !sourceFolded && (verbose || isExpanded)
++    && tool.resultView?.card === 'generic'
++    && ['plan_read', 'plan_stage', 'plan_reopen', 'plan_close', 'plan_list', 'exit_plan_mode'].includes(tool.name)
++    && body.length <= VERBOSE_BODY_WINDOW
++    ? body.map(line => line.text).join('\n') : undefined
+   // Nested split-diff context panes must also yield to interaction highlights.
+   // `none` leaves them transparent so the selected/expanded root shows through.
+   const ordinaryToolBackground = isSelected || isExpanded ? 'none' : toolBackground
+@@ -988,6 +996,12 @@ export function AssistantToolUseMessage({
+               reveal={revealable ? { key: `${revealKey}:split` } : undefined}
+             />
+           </Box>
++        ) : planMarkdown !== undefined ? (
++          <Box flexDirection="column" paddingLeft={3} flexShrink={0}>
++            <Markdown preserveSource>{planMarkdown}</Markdown>
++            {disclosure.map((line, index) => <Text key={index} dimColor>{line.text}</Text>)}
++            {footnote !== undefined && <Text color="subtle">{footnote}</Text>}
++          </Box>
+         ) : (
+           shownLines.map((line, index) => (
+             <Box key={index} flexDirection="row">
+diff --git a/src/dsh-adapter/channel/state.ts b/src/dsh-adapter/channel/state.ts
+index 7c795c8..9e68474 100644
+--- a/src/dsh-adapter/channel/state.ts
++++ b/src/dsh-adapter/channel/state.ts
+@@ -88,6 +88,7 @@ export interface ChannelLaunchOptions {
+   configuredProvider?: string
+   configuredModel?: string
+   configuredLang?: string
++  externalPlanCommand?: boolean
+   configuredActivityFrames?: string
+   agentPreset?: string
+   modes?: readonly SessionModeSpec[]
+@@ -153,7 +154,7 @@ export function createInitialChannelView(
+   'responseChars' | 'activeToolCount' | 'turnStart' | 'lastUserText' |
+   'notifications' | 'contextWindow' | 'reasoningEffort' | 'mode' | 'modeIndex' |
+   'activityFrames' | 'configuredProvider' | 'configuredModel' |
+-  'configuredPreset' | 'configuredActivityFrames' | 'configuredLang' | 'diffLayout' |
++  'configuredPreset' | 'configuredActivityFrames' | 'configuredLang' | 'externalPlanCommand' | 'diffLayout' |
+   'thinkingFold' | 'jobGroupFold' | 'toolBackground' | 'scrollGutter' | 'pageMargin' |
+   'foldTerminalCommand' | 'turnUsageRow' | 'promptSessionLabel' | 'expandEditor' | 'smoothStreaming' |
+   'statusBar' | 'whale' | 'whaleIdle' | 'splashFont' | 'brand' | 'minimalUi' | 'activityEnabled' | 'contextBarEnabled' |
+@@ -173,6 +174,7 @@ export function createInitialChannelView(
+     activityFrames: normalizeActivityPreset(options.activityFrames), configuredProvider: options.configuredProvider,
+     configuredModel: options.configuredModel, configuredPreset: options.configuredPreset,
+     configuredActivityFrames: options.configuredActivityFrames, configuredLang: options.configuredLang,
++    externalPlanCommand: options.externalPlanCommand === true,
+     diffLayout: options.diffLayout ?? 'auto', thinkingFold: options.thinkingFold ?? 'preview',
+     jobGroupFold: normalizeJobGroupFold(options.jobGroupFold),
+     toolBackground: normalizeToolBackground(options.toolBackground), scrollGutter: normalizeScrollGutter(options.scrollGutter),
+diff --git a/src/dsh-adapter/index.ts b/src/dsh-adapter/index.ts
+index 771f49a..ab559a8 100644
+--- a/src/dsh-adapter/index.ts
++++ b/src/dsh-adapter/index.ts
+@@ -34,6 +34,8 @@ export const inject = ['agents']
+  * directory, and display preferences.
+  */
+ export interface Config {
++  /** Route bare /plan to the registered addon command instead of the native picker. */
++  externalPlanCommand?: boolean
+   /** Existing session to attach; a fresh session is created when absent. */
+   sessionId?: string
+   /** Agent backend the session runs on: `dsh` (default), the DeepSeek
+@@ -303,6 +305,7 @@ export const Config: Schema<Config, RuntimeConfig<Config>> = editableConfig<Conf
+   activityFrames: Schema.string().required(false),
+   contextBar: Schema.boolean().default(true),
+   fullscreen: Schema.boolean().default(true),
++  externalPlanCommand: Schema.boolean().default(false),
+   terminalImages: Schema.boolean().default(true),
+   lang: Schema.string().required(false),
+   preset: Schema.string().required(false),
+diff --git a/src/dsh-adapter/plugin.ts b/src/dsh-adapter/plugin.ts
+index ba8231c..5aa3e0f 100644
+--- a/src/dsh-adapter/plugin.ts
++++ b/src/dsh-adapter/plugin.ts
+@@ -705,6 +705,7 @@ export async function apply(ctx: Context, runtimeConfig: RuntimeConfig<Config>,
+     // Raw cordis.yml `lang` / `activityFrames`: /reload must not override a
+     // static deployment choice with the persisted preference.
+     configuredLang: config.lang,
++    externalPlanCommand: config.externalPlanCommand,
+     configuredActivityFrames: config.activityFrames,
+     effort: config.effort,
+     activity: config.activity,
+diff --git a/src/screens/Chat.tsx b/src/screens/Chat.tsx
+index aa96613..51f46df 100644
+--- a/src/screens/Chat.tsx
++++ b/src/screens/Chat.tsx
+@@ -3552,7 +3552,9 @@ export function Chat({
+         const plan = channel.capabilities().plan
+         const mounted = plan.route !== 'none'
+         const parts = rawInput.trim().split(/\s+/).filter(Boolean)
+-        if (mounted && parts.length === 0) {
++        // Registry presence alone cannot distinguish native plan-mode from an
++        // addon browser. Only an explicit deployment opt-in bypasses the picker.
++        if (mounted && parts.length === 0 && !channel.externalPlanCommand) {
+           setHelpOpen(false)
+           dispatchOverlay({
+             type: 'open',
+diff --git a/src/ui.ts b/src/ui.ts
+index e2bce92..f8d5993 100644
+--- a/src/ui.ts
++++ b/src/ui.ts
+@@ -30,3 +30,5 @@ export { useTerminalImages, useTerminalImageCellSize, useTerminalImageProtocol }
+ export { useBlink } from './hooks/useBlink.js'
+ export { Ansi } from './ink/Ansi.js'
+ export type { Key } from './ink/events/input-event.js'
++export { Markdown, type MarkdownProps } from './components/Markdown.js'
++export { markdownSourceRange, markdownSourceBlocks, type MarkdownSourceRange, type MarkdownSourceBlock } from './markdown-source.js'
+diff --git a/src/markdown-source.ts b/src/markdown-source.ts
+new file mode 100644
+index 0000000..3d8fb88
+--- /dev/null
++++ b/src/markdown-source.ts
+@@ -0,0 +1,53 @@
++import { marked, type Token } from 'marked'
++import { configureMarked } from './terminal-utils/markdown.js'
++
++/** Source coordinates, never terminal rows. The caller binds these to revision/hash. */
++export interface MarkdownSourceRange {
++  readonly startLine: number
++  readonly endLine: number
++  readonly quote: string
++}
++
++export interface MarkdownSourceBlock extends MarkdownSourceRange {
++  readonly type: string
++}
++
++/** Keep each list item selectable without losing native list formatting/numbering. */
++export function markdownNavigationTokens(tokens: readonly Token[]): Token[] {
++  return tokens.flatMap(token => token.type === 'list'
++    ? token.items.map((item, index) => ({ ...token, raw: item.raw, items: [item],
++      start: token.ordered ? Number(token.start) + index : token.start }))
++    : [token])
++}
++
++/** Select exact 1-based source lines; CRLF is retained in quoted context. */
++export function markdownSourceRange(source: string, startLine: number, endLine = startLine): MarkdownSourceRange {
++  const lines = source.split('\n')
++  if (!Number.isSafeInteger(startLine) || !Number.isSafeInteger(endLine) ||
++      startLine < 1 || endLine < startLine || endLine > lines.length) {
++    throw new RangeError('Markdown source range must identify existing 1-based lines')
++  }
++  return { startLine, endLine, quote: lines.slice(startLine - 1, endLine).join('\n') }
++}
++
++/** Match lexer blocks to immutable source, including gaps such as link definitions. */
++export function markdownTokenRanges(source: string, tokens: readonly Token[]): (MarkdownSourceBlock | null)[] {
++  const normalized = source.replace(/\r\n/g, '\n')
++  let cursor = 0
++  return tokens.map(token => {
++    const raw = token.raw.replace(/\r\n/g, '\n')
++    const start = normalized.indexOf(raw, cursor)
++    if (start < 0 || !raw) throw new Error('Markdown block cannot be mapped to its source')
++    cursor = start + raw.length
++    if (token.type === 'space' || token.type === 'def' || !raw.trim()) return null
++    const startLine = normalized.slice(0, start).split('\n').length
++    const endLine = startLine + raw.trimEnd().split('\n').length - 1
++    return { ...markdownSourceRange(source, startLine, endLine), type: token.type }
++  })
++}
++
++/** Navigation anchors: wrapped text, tables and diagrams keep their whole source block. */
++export function markdownSourceBlocks(source: string): MarkdownSourceBlock[] {
++  configureMarked()
++  return markdownTokenRanges(source, markdownNavigationTokens(marked.lexer(source))).filter((range): range is MarkdownSourceBlock => range !== null)
++}

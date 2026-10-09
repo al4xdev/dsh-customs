@@ -3,18 +3,25 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import { defineTool, stringOutput, assertActive, resolveHost } from '../common.mjs';
 import { PlanStore } from './store.mjs';
 import { ManagedPlanMode } from './mode.mjs';
+import { managedPlanPresentation } from './presentation.mjs';
 const { Service } = await import(resolveHost('@deepseek-ai/cordis'));
 const { createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
 const { z } = await import(resolveHost('zod'));
 export const name = 'alex-managed-plans';
 export const inject = ['tools', 'systemPrompt', 'sessionProjections', 'commands', 'agents', 'sessionPersistence', 'sandboxPolicy'];
-const text = (description, required = false) => ({ type: 'string', description, required });
-const number = (description, required = false) => ({ type: 'integer', minimum: 1, description, required });
+const text = (description, required = false) => ({ type: 'string', description, ...(required ? { required: true } : {}) });
+const number = (description, required = false) => ({ type: 'integer', description, ...(required ? { required: true } : {}) });
+const optional = ({ required: _required, ...spec }) => spec;
 const categories = { type: 'string', enum: ['tasks', 'backlog', 'para-o-dono'], required: true, description: 'Proposed destination; only owner approval of tasks permits execution.' };
 const json = value => JSON.stringify(value);
 function heading(plan) { return /^#{1,6}\s+(.+)$/m.exec(plan)?.[1] ?? 'Proposed plan'; }
 function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object, key); }
+function rejectActorFlags(value) {
+  for (const key of ['actor', 'owner_session_id', 'owner_cancel_authorized', 'origin']) {
+    if (hasOwn(value, key)) throw new Error(`${key} is host-derived authority, not an input field.`);
+  }
+}
 function within(target, root) { const part = relative(root, target); return part === '' || (part !== '..' && !part.startsWith(`..${sep}`) && !isAbsolute(part)); }
 
 export class ManagedPlans extends Service {
@@ -96,6 +103,7 @@ export class ManagedPlans extends Service {
   }
   async stage(args, exec) {
     assertActive(exec);
+    rejectActorFlags(args);
     if (typeof args.plan !== 'string' || !/^#{1,6}\s+\S/.test(args.plan.trimStart())) throw new Error('Plan must start with a Markdown heading.');
     if (Buffer.byteLength(args.plan) > 256 * 1024) throw new Error('Plan exceeds the 256 KiB artifact limit.');
     const result = await this.withStore(exec.agent, true, async (store, binding) => {
@@ -110,13 +118,32 @@ export class ManagedPlans extends Service {
     exec.concludeTurn();
     return json(result);
   }
+  async reopen(args, exec) {
+    assertActive(exec);
+    rejectActorFlags(args);
+    const result = await this.withStore(exec.agent, true, async (store, binding) => {
+      // This tool only copies the current proposal into staging; arbitrary source
+      // edits, owner decisions and cancellation authority are deliberately absent.
+      const staged = await store.reopen({ plan_id: args.plan_id, expected_revision: args.expected_revision, reason: args.reason,
+        origin: { session_id: binding.owner_session_id, call_id: exec.callId } });
+      this.mode.commit(exec.agent, true);
+      await this.ctx.sessionPersistence.flush();
+      return { ...staged, initial_cwd: binding.initial_cwd, waiting_for_owner: true, execution_authorized: false,
+        next_action: 'Stop this turn. Reopening is only a proposal; wait for owner review. After feedback, revise with plan_stage using the same id. Never implement without new approval.' };
+    });
+    exec.concludeTurn();
+    return json(result);
+  }
   registerTools() {
     const stageParameters = { title: text('Artifact title.', true), plan: text('Complete Markdown beginning with a heading.', true), category: categories,
       plan_id: number('Existing id for a revision; omit for harness allocation.'), expected_revision: number('Required when revising an existing id.') };
-    const register = (name, description, parameters, execute) => this.ctx.tools.register(defineTool({ name, description, parameters, output: stringOutput, execute }));
+    const register = (name, description, parameters, execute) => this.ctx.tools.register(defineTool({ name, description, parameters, output: stringOutput, ...managedPlanPresentation(name), execute }));
     register('plan_stage', 'Stage a numbered Markdown artifact for owner review. Never self-approve; submission concludes the current turn. Harness manages filenames and moves.', stageParameters, (args, exec) => this.stage(args, exec));
+    register('plan_reopen', 'Propose reopening the current approved, rejected or closed plan: copy exact content/title/category into a fresh staged revision of the same id. Already staged is a no-op. Never approves, implements or edits history; concludes the turn awaiting owner review. After feedback use plan_stage to revise.',
+      { plan_id: number('Existing plan id.', true), expected_revision: number('Required exact current source revision.', true), reason: text('Why reopening is proposed; recorded with its source revision.', true) },
+      (args, exec) => this.reopen(args, exec));
     register('exit_plan_mode', 'Compatibility adapter: stage a Markdown plan for owner review, not an automatic mode exit or execution grant.',
-      { plan: stageParameters.plan, title: text('Optional artifact title.'), category: { ...categories, required: false }, plan_id: stageParameters.plan_id, expected_revision: stageParameters.expected_revision },
+      { plan: stageParameters.plan, title: text('Optional artifact title.'), category: optional(categories), plan_id: stageParameters.plan_id, expected_revision: stageParameters.expected_revision },
       (args, exec) => this.stage(args, exec));
     register('plan_list', 'List the plans belonging to the immutable initial session folder; does not create files.',
       { category: text('Optional tasks, backlog, para-o-dono, staging or closed.'), status: text('Optional staged, rejected, approved or closed.') },
@@ -128,6 +155,7 @@ export class ManagedPlans extends Service {
       { plan_id: number('Plan id.', true), expected_revision: number('Exact current revision.', true), outcome: { type: 'string', enum: ['completed', 'decided'], required: true }, reason: text('Why it is complete/decided.', true), evidence: text('Concrete completed result or recorded owner answer.', true) },
       async (args, exec) => {
         assertActive(exec);
+        rejectActorFlags(args);
         return json(await this.withStore(exec.agent, true, async (s, binding) => {
           const current = await s.read(args.plan_id);
           if (current.origin?.session_id !== binding.owner_session_id || !current.execution_authorized && args.outcome === 'completed') throw new Error('Only the originating owner session can close its authorized managed work.');
@@ -144,7 +172,7 @@ export class ManagedPlans extends Service {
     await this.ctx.sessionPersistence.flush();
     return { planning: true, queued: true };
   }
-  async command({ agent, rawInput, signal }) {
+  async command({ agent, rawInput, signal, commandId }) {
     signal.throwIfAborted();
     const raw = rawInput.trim();
     try {
@@ -157,13 +185,37 @@ export class ManagedPlans extends Service {
       const payload = JSON.parse(raw.slice(3));
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid plan UI action.');
       // This is an authenticated human CommandRuntime boundary, not a model tool.
-      // Derive session/root from the invocation; ignore any supplied actor/path flags.
+      // Derive session/root from the invocation. A delegated model session or an
+      // actor-shaped payload can never stand in for the authenticated root human.
+      if (['comment', 'delete_comment', 'reopen', 'decide', 'cancel'].includes(payload.action)) {
+        rejectActorFlags(payload);
+        const binding = await this.binding(agent);
+        if (agent.session.id !== binding.owner_session_id) throw new Error('Only the authenticated root owner session can review or reopen managed plans.');
+      }
       let data;
       if (payload.action === 'list') data = await this.withStore(agent, false, s => s.list({ category: payload.category, status: payload.status }));
+      else if (payload.action === 'history') data = await this.withStore(agent, false, s => s.history(payload.plan_id));
       else if (payload.action === 'read') data = await this.withStore(agent, false, s => s.read(payload.plan_id, { revision: payload.revision }));
       else if (payload.action === 'new') data = await this.newPlan(agent, payload.request);
       else if (payload.action === 'comment') data = await this.withStore(agent, true, (s, binding) => s.saveComment({ plan_id: payload.plan_id, revision: payload.revision, hash: payload.hash,
         line_start: payload.line_start, line_end: payload.line_end, text: payload.text, comment_id: payload.comment_id, owner_session_id: binding.owner_session_id }));
+      else if (payload.action === 'delete_comment') data = await this.withStore(agent, true, (s, binding) => s.deleteComment({ plan_id: payload.plan_id, revision: payload.revision,
+        hash: payload.hash, comment_id: payload.comment_id, owner_session_id: binding.owner_session_id }));
+      else if (payload.action === 'reopen') {
+        if (typeof commandId !== 'string' || !commandId.trim()) throw new Error('Reopening requires an authenticated command invocation id.');
+        if (hasOwn(payload, 'request_id') && (typeof payload.request_id !== 'string' || !payload.request_id.trim() || payload.request_id.length > 256)) throw new Error('request_id must be nonempty text up to 256 characters.');
+        // Read the current source without bootstrapping files. New approval routing
+        // belongs to this authenticated invocation, not the historical creator;
+        // the store retains that old origin in reopening.source_origin instead.
+        const current = await this.withStore(agent, false, s => s.read(payload.plan_id));
+        data = await this.withStore(agent, true, (s, binding) => s.reopen({ plan_id: current.plan_id, expected_revision: payload.expected_revision,
+          hash: payload.hash, reason: payload.reason, owner_session_id: binding.owner_session_id,
+          origin: { session_id: binding.owner_session_id, call_id: commandId,
+            ...(hasOwn(payload, 'request_id') ? { request_id: payload.request_id } : {}) } }));
+        this.mode.commit(agent, true);
+        // O is a quiet owner review operation: no inbox notice, delivery or wake.
+        data = { ...data, waiting_for_owner: true, execution_authorized: false, notice: data.reopened ? 'Reopened as a fresh staged revision; new owner approval is required.' : 'Already staged; opened the current revision without creating another.' };
+      }
       else if (payload.action === 'decide') {
         data = await this.withStore(agent, true, (s, binding) => s.decide({ plan_id: payload.plan_id, revision: payload.revision, hash: payload.hash, decision: payload.decision, owner_session_id: binding.owner_session_id }));
         const current = await this.withStore(agent, false, s => s.read(payload.plan_id));

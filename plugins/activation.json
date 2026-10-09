@@ -30,9 +30,18 @@
       "id": "alex-grammar-fix",
       "module": "grammar-fix/index.mjs",
       "profiles": ["dsh-tui"]
+    },
+    {
+      "id": "alex-managed-plans",
+      "module": "managed-plans/index.mjs",
+      "profiles": ["dsh-tui"],
+      "config": { "wakeAgent": true }
+    },
+    {
+      "id": "alex-managed-plans-tui",
+      "module": "managed-plans/tui.mjs",
+      "profiles": ["dsh-tui"]
     }
   ],
-  "knownInactive": {
-    "managed-plans": "Implemented (217 lines + store/mode/tui) but activated by no profile. Its isolated-core.patch.yml is a temporary CLI overlay that disables native plan-mode. Kept out of 'plugins' so the sync never enables it implicitly; decide its fate explicitly."
-  }
+  "knownInactive": {}
 }

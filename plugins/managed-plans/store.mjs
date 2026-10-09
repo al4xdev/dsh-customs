@@ -17,6 +17,7 @@ const integer = (value, name, min = 1) => {
 };
 const clone = value => JSON.parse(JSON.stringify(value));
 const now = () => new Date().toISOString();
+const activeComments = revision => revision.comments.filter(comment => comment.status !== 'deleted');
 
 /**
  * Host boundary: authenticate owner review/comment/cancellation outside this store.
@@ -230,7 +231,7 @@ export class PlanStore {
   }
 
   _summary(plan, revision = plan.revisions.at(-1)) {
-    return { plan_id: plan.plan_id, revision: revision.revision, hash: revision.hash, title: revision.title, category: revision.category, status: revision.status, path: plan.path, pending_review: revision.revision === plan.current_revision && revision.status === 'staged', execution_authorized: !revision.imported && revision.revision === plan.current_revision && revision.status === 'approved' && revision.category === 'tasks', origin: revision.origin, created_at: revision.created_at };
+    return { plan_id: plan.plan_id, revision: revision.revision, hash: revision.hash, title: revision.title, category: revision.category, status: revision.status, path: plan.path, pending_review: revision.revision === plan.current_revision && revision.status === 'staged', execution_authorized: !revision.imported && revision.revision === plan.current_revision && revision.status === 'approved' && revision.category === 'tasks', origin: revision.origin, created_at: revision.created_at, reopening: revision.reopening ?? null };
   }
 
   _cas(plan, revision, hash) {
@@ -258,7 +259,17 @@ export class PlanStore {
       const [plan, artifact] = this._get(state, planId, revision);
       const lines = artifact.content.split('\n');
       const selected = lines.slice(offset - 1, limit === undefined ? undefined : offset - 1 + limit);
-      return { ...this._summary(plan, artifact), content: selected.join('\n'), offset, line_start: offset, line_end: selected.length ? offset + selected.length - 1 : null, total_lines: lines.length, comments: artifact.comments, decisions: artifact.decisions, closure: artifact.closure ?? null };
+      return { ...this._summary(plan, artifact), current_revision: plan.current_revision, content: selected.join('\n'), offset, line_start: offset, line_end: selected.length ? offset + selected.length - 1 : null, total_lines: lines.length, comments: activeComments(artifact), deleted_comments: artifact.comments.filter(comment => comment.status === 'deleted'), decisions: artifact.decisions, closure: artifact.closure ?? null };
+    });
+  }
+
+  async history(planId) {
+    return this._transaction(state => {
+      const [plan] = this._get(state, planId);
+      // History is metadata only; opening a row uses the same revision-bound read.
+      return plan.revisions.map(revision => ({ ...this._summary(plan, revision),
+        current_revision: plan.current_revision, is_current: revision.revision === plan.current_revision,
+        comment_count: activeComments(revision).length, deleted_comment_count: revision.comments.length - activeComments(revision).length })).reverse();
     });
   }
 
@@ -309,13 +320,81 @@ export class PlanStore {
       if (artifact.status !== 'staged') fail('INVALID_STATE', 'Only staged revisions accept draft comments');
       const lines = artifact.content.split('\n');
       if (line_end < line_start || line_end > lines.length) fail('INVALID_INPUT', 'Comment range outside source');
-      let comment = comment_id === undefined ? null : artifact.comments.find(c => c.comment_id === comment_id);
+      const overlaps = c => c.status === 'draft' && c.owner_session_id === owner_session_id && c.line_start <= line_end && line_start <= c.line_end;
+      // Repeated c/save on an already annotated line edits its draft, even when a
+      // client lost the returned id. Different revisions never share this lookup.
+      let comment = comment_id === undefined ? artifact.comments.find(overlaps) : artifact.comments.find(c => c.comment_id === comment_id);
       if (comment_id !== undefined && !comment) fail('NOT_FOUND', 'Unknown comment');
       if (comment && comment.owner_session_id !== owner_session_id) fail('COMMENT_OWNER_MISMATCH', 'Comment belongs to another owner session');
+      if (comment && comment.status !== 'draft') fail('INVALID_STATE', 'Only draft comments can be edited; deleted and sent comments are immutable');
+      if (artifact.comments.some(c => c !== comment && overlaps(c))) fail('COMMENT_RANGE_CONFLICT', 'This range already contains another comment; edit its original range');
       const values = { plan_id, revision, hash, line_start, line_end, text, quoted_context: lines.slice(line_start - 1, line_end).join('\n'), owner_session_id, status: 'draft', updated_at: now() };
       if (comment) Object.assign(comment, values);
       else { comment = { comment_id: randomUUID(), created_at: now(), ...values }; artifact.comments.push(comment); }
       return comment;
+    });
+  }
+
+  async deleteComment({ plan_id, revision, hash, comment_id, owner_session_id }) {
+    this._writeAllowed();
+    requireText(comment_id, 'comment_id'); requireText(owner_session_id, 'owner_session_id');
+    return this._transaction(state => {
+      const [plan, artifact] = this._get(state, plan_id, revision);
+      this._cas(plan, revision, hash);
+      if (artifact.status !== 'staged') fail('INVALID_STATE', 'Only current staged revisions accept draft comment deletion');
+      const comment = artifact.comments.find(value => value.comment_id === comment_id);
+      if (!comment) fail('NOT_FOUND', 'Unknown comment');
+      if (comment.owner_session_id !== owner_session_id) fail('COMMENT_OWNER_MISMATCH', 'Comment belongs to another owner session');
+      // Retried deletion acknowledges the existing tombstone, never resurrects it.
+      if (comment.status === 'deleted') return comment;
+      if (comment.status !== 'draft') fail('INVALID_STATE', 'Sent/history comments cannot be deleted');
+      comment.status = 'deleted';
+      comment.deleted_at = now();
+      comment.deleted_by_session_id = owner_session_id;
+      return comment;
+    });
+  }
+
+  async reopen({ plan_id, expected_revision, hash, reason, origin, owner_session_id }) {
+    this._writeAllowed();
+    integer(expected_revision, 'expected_revision'); requireText(reason, 'reason');
+    requireText(origin?.session_id, 'origin.session_id'); requireText(origin?.call_id, 'origin.call_id');
+    if (origin.request_id !== undefined) requireText(origin.request_id, 'origin.request_id');
+    if (owner_session_id !== undefined) {
+      requireText(owner_session_id, 'owner_session_id'); requireText(hash, 'hash');
+    }
+    // Human request ids survive a UI transport retry; session authority and the
+    // actual command id still come from the authenticated host, never the payload.
+    const key = JSON.stringify(['reopen', owner_session_id ?? origin.session_id, origin.request_id ?? origin.call_id]);
+    const fingerprint = hashOf(JSON.stringify({ plan_id, expected_revision, hash, reason, session_id: origin.session_id, owner_session_id }));
+    return this._transaction(state => {
+      if (state.idempotency[key]) {
+        if (state.idempotency[key].fingerprint !== fingerprint) fail('IDEMPOTENCY_CONFLICT', 'Origin call reused with different input');
+        return state.idempotency[key].result;
+      }
+      const [plan, source] = this._get(state, plan_id);
+      if (expected_revision !== plan.current_revision) fail('STALE_REVISION', 'expected_revision must match the current revision');
+      if (hash !== undefined) this._cas(plan, expected_revision, hash);
+      const reopening = { intent: owner_session_id === undefined ? 'model-proposal' : 'owner-review', reason,
+        source_revision: source.revision, source_hash: source.hash, source_status: source.status, source_origin: clone(source.origin),
+        requested_by_session_id: owner_session_id ?? origin.session_id, origin: clone(origin), requested_at: now() };
+      // Also audit no-op opens without changing the staged revision's immutable
+      // source, feedback, or the provenance of its original reopening proposal.
+      (plan.reopen_requests ??= []).push(reopening);
+      let reopened = false;
+      if (source.status !== 'staged') {
+        if (!['approved', 'rejected', 'closed'].includes(source.status)) fail('INVALID_STATE', 'Plan cannot be reopened from this state');
+        const oldPath = plan.path;
+        const revision = ++plan.current_revision;
+        plan.revisions.push({ revision, title: source.title, content: source.content, hash: source.hash, category: source.category,
+          status: 'staged', created_at: now(), origin: clone(origin), reopening, comments: [], decisions: [] });
+        plan.path = `staging/${plan.filename.replace(/\.md$/i, '')}.r${revision}.md`;
+        this._mirror(state, plan, oldPath, source.content);
+        reopened = true;
+      }
+      const result = { ...this._summary(plan), reopened };
+      state.idempotency[key] = { fingerprint, result };
+      return result;
     });
   }
 
@@ -334,9 +413,10 @@ export class PlanStore {
         const oldPath = plan.path;
         plan.path = `${artifact.category}/${path.basename(oldPath)}`;
         this._mirror(state, plan, oldPath, artifact.content);
-      } else for (const comment of artifact.comments) comment.status = 'sent';
+      } else for (const comment of activeComments(artifact)) comment.status = 'sent';
       const result = this._summary(plan);
-      const notice = { notification_id: randomUUID(), session_id: artifact.origin?.session_id ?? null, plan_id, revision, hash, decision, category: artifact.category, execution_authorized: result.execution_authorized, action: decision === 'approve' ? (result.execution_authorized ? 'execute' : 'saved') : artifact.comments.length ? 'revise' : 'wait', comments: decision === 'reject' ? clone(artifact.comments) : [], created_at: now(), acknowledged_at: null };
+      const comments = activeComments(artifact);
+      const notice = { notification_id: randomUUID(), session_id: artifact.origin?.session_id ?? null, plan_id, revision, hash, decision, category: artifact.category, execution_authorized: result.execution_authorized, action: decision === 'approve' ? (result.execution_authorized ? 'execute' : 'saved') : comments.length ? 'revise' : 'wait', comments: decision === 'reject' ? clone(comments) : [], created_at: now(), acknowledged_at: null };
       if (notice.session_id) state.notifications.push(notice);
       result.notification_id = notice.session_id ? notice.notification_id : null;
       artifact.decisions.push({ decision, owner_session_id, revision, hash, category: artifact.category, created_at: now(), result: clone(result) });

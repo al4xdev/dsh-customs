@@ -64,6 +64,7 @@ const USAGE = `Usage: node tools/activate.mjs [--check|--write] [--profile NAME]
 // repo-local install and the plain resolution chain are tried as well.
 function loadYaml() {
   const attempts = [
+    ...(options.profiles ?? []).map(profile => join(PROFILES_DIR, profile, 'noop.js')),
     join(PROFILES_DIR, 'noop.js'),
     join(PROFILES_DIR, 'node_modules', 'yaml', 'noop.js'),
     join(options.repoRoot, 'noop.js'),
@@ -107,11 +108,13 @@ function scalar(value) {
   return /^[A-Za-z0-9_./-][A-Za-z0-9_./-]*$/.test(value) ? value : JSON.stringify(value);
 }
 
-// `profile === null` means "the repo's own generic overlay": every plugin, with
-// no per-profile filtering.
+// Generic overlays retain historical inclusion unless explicitly opted out.
+// Isolated replacements must opt out to avoid conflicting with native plugins.
 function desiredEntries(manifest, profile, repoRoot) {
   return manifest.plugins
-    .filter(plugin => profile === null || !plugin.profiles || plugin.profiles.includes(profile))
+    .filter(plugin => profile === null
+      ? plugin.overlay !== false
+      : !plugin.profiles || plugin.profiles.includes(profile))
     .map(plugin => ({
       id: plugin.id,
       name: resolve(repoRoot, 'plugins', plugin.module),

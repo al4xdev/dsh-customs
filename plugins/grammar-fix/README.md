@@ -11,8 +11,9 @@ DSH `llm` service.
 - Undo restores the previous text.
 - `Ctrl+Shift+G`: open the external editor in terminals that distinguish this shortcut.
 
-Corrections run on the current session model in a separate request with reasoning
-disabled and temperature 0. They are not added to the agent conversation history.
+Corrections run on the current session model in a separate request with minimal reasoning
+(preferring off, falling back to low or the model default when unsupported) and default temperature.
+They are not added to the agent conversation history.
 The request preserves the original language and leaves technical terms untouched.
 
 This TUI version does not expose a public draft replacement API. `install.mjs`
