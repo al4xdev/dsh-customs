@@ -151,6 +151,20 @@ who wants the gate back must restore it, not merely delete a stale field. Scoped
 registrations also are not automatically excluded by filters intended only for
 inherited/global tools.
 
+## `/mcp` cannot see these servers
+
+The TUI's `/mcp` report (`dsh-adapter/channel/reports.js`) enumerates
+`ctx.get('tools').schemas()` with **no scope**, and `schemas(scope?)` without an
+argument reads the root registry (`dsh-tools/lib/types/index.d.ts:711`). Servers
+mounted here live in the Agent's scope, because that is what makes them load only
+for a session opened in the project. So `/mcp` reports "No MCP servers configured"
+even while the servers are connected and answering `ListToolsRequest`.
+
+This is a reporting limitation, not a failed mount. Confirm the mount by calling
+an `mcp__<serverName>__<tool>` tool, or by the server's own stderr. Registering at
+root instead would make `/mcp` list them, but would hand every server to every
+session regardless of project — the opposite of the intent.
+
 ## Offline verification
 
 From this repository (no real archive, ADB, or remote endpoint is launched):
