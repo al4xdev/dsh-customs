@@ -1,9 +1,10 @@
 # Native grammar fixer for DSH TUI
 
-Behaviour port of `/home/alex/.pi/agent/extensions/grammar-fix.ts`, not of its
-harness. Only the correction itself was carried over: no language table, no model
-picker, no config file, no spinner. Model, credentials, and provider lookup come
-from the DSH `llm` service.
+Behaviour port of the Pi extension `pi-grammar-fix`
+(https://github.com/al4xdev/pi-grammar-fix), not of its harness. Only the
+correction itself was carried over: no language table, no model picker, no
+config file, no spinner. Model, credentials, and provider lookup come from the
+DSH `llm` service.
 
 - `Ctrl+G`: correct the draft without submitting it or opening an external editor.
 - `Esc` or `Ctrl+C` during correction: cancel and preserve the draft.

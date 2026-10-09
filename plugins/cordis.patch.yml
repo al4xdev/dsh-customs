@@ -6,6 +6,8 @@
       name: /home/alex/git/my/rt/plugins/apply-patch/index.mjs
     - id: alex-workspace-context
       name: /home/alex/git/my/rt/plugins/workspace-context/index.mjs
+    - id: alex-project-mcp
+      name: /home/alex/git/my/rt/plugins/project-mcp/index.mjs
     - id: alex-clipboard
       name: /home/alex/git/my/rt/plugins/clipboard/index.mjs
     - id: alex-trash

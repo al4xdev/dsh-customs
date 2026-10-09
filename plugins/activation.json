@@ -17,6 +17,7 @@
     { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs" },
     { "id": "alex-apply-patch", "module": "apply-patch/index.mjs" },
     { "id": "alex-workspace-context", "module": "workspace-context/index.mjs" },
+    { "id": "alex-project-mcp", "module": "project-mcp/index.mjs" },
     { "id": "alex-clipboard", "module": "clipboard/index.mjs" },
     { "id": "alex-trash", "module": "trash/index.mjs" },
     { "id": "alex-list", "module": "list/index.mjs" },
