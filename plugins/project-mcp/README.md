@@ -165,5 +165,11 @@ startup failure rolls back earlier connections; unload during config IO cannot
 launch a child; native schemas, policy rejection and project discovery hold.
 Test fixtures are created in the operating system temporary directory.
 
-No profile activation, existing project config, manifest or other plugin is
-changed by this implementation.
+## Live validation
+
+The offline tests fabricate the `agent/created` dispatch, so they do not cover the
+real `AgentRegistry` handoff. That path was confirmed in a running TUI session
+opened in a project with an enabled server: the native client mounted it and the
+server logged `connected and ready`. A second project whose entries are all
+`enabled: false` reports no MCP servers, which is the intended outcome —
+discovery ran and deliberately contributed nothing.
