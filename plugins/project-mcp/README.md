@@ -144,10 +144,12 @@ Legacy Codex `approval:'prompt'` / `approval:'writes'` are not native MCP config
 Native DSH offers scoped `tools/pre-execute` decisions `{kind:'ask'}` (requires
 an approval service returning `allowed-once`, otherwise denies) and monotonic
 `agent.ctx.tools.guard()` denial. Preserving a write-only approval policy needs
-an audited tool classifier and native approval composition; this initial wrapper
-does **not** implement it. Keep those servers disabled rather than silently
-relaxing policy under `danger-full-access`. Scoped registrations also are not
-automatically excluded by filters intended only for inherited/global tools.
+an audited tool classifier and native approval composition; this wrapper does
+**not** implement it. Those field names are rejected outright so their absence
+stays explicit instead of degrading into a silent policy relaxation — an owner
+who wants the gate back must restore it, not merely delete a stale field. Scoped
+registrations also are not automatically excluded by filters intended only for
+inherited/global tools.
 
 ## Offline verification
 
