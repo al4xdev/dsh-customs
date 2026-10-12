@@ -30,7 +30,11 @@
     {
       "id": "alex-grammar-fix",
       "module": "grammar-fix/index.mjs",
-      "profiles": ["dsh-tui"]
+      "profiles": ["dsh-tui"],
+      "config": {
+        "model": "google-antigravity/gemini-3.8-flash-low",
+        "language": "Brazilian Portuguese (pt-BR)"
+      }
     },
     {
       "id": "alex-managed-plans",

@@ -21,6 +21,9 @@
         unit: steps
     - id: alex-grammar-fix
       name: /home/alex/git/my/dsh-customs/plugins/grammar-fix/index.mjs
+      config:
+        model: google-antigravity/gemini-3.8-flash-low
+        language: Brazilian Portuguese (pt-BR)
     - id: alex-managed-plans
       name: /home/alex/git/my/dsh-customs/plugins/managed-plans/index.mjs
       config:
