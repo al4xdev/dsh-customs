@@ -5,5 +5,9 @@
   "scripts": {
     "check": "node tools/activate.mjs",
     "activate": "node tools/activate.mjs --write"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "yaml": "2.9.1"
   }
 }
