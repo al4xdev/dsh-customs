@@ -13,7 +13,9 @@
     "test:clipboard": "node --test plugins/clipboard/clipboard.test.mjs",
     "test:workspace-context": "node --test plugins/workspace-context/workspace-context.test.mjs",
     "test:list": "node --test plugins/list/list.test.mjs",
-    "test:apply-patch": "node --test plugins/apply-patch/apply-patch.test.mjs"
+    "test:apply-patch": "node --test plugins/apply-patch/apply-patch.test.mjs",
+    "workshop:doctor": "node tools/workshop/bootstrap.mjs --doctor",
+    "test:workshop": "node --test tools/workshop/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

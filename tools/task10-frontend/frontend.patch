@@ -1,17 +1,34 @@
 diff --git a/README.md b/README.md
-index a8c6c62..370015f 100644
+index a8c6c62..9f1bec5 100644
 --- a/README.md
 +++ b/README.md
-@@ -17,6 +17,31 @@
+@@ -17,6 +17,48 @@
  
  # dsh-TUI
  
 +### Managed plan addon seam (local source extension)
 +
 +Plugin config `externalPlanCommand: true` routes bare `/plan` to the registered
-+command instead of the native picker (default `false`; arguments unchanged).
++command instead of the native picker (default `false`). In this opt-in, legacy
++`/plan on` and `/plan off` are blocked with artifact/autoApprove usage guidance;
++other arguments pass through unchanged. A stale native picker is closed and its
++keyboard/click callbacks cannot dispatch native controls. Help and completion
++describe project artifacts rather than advertising native mode switches.
++It treats `/plan` as a project-artifact command: native Plan is removed from the
++Shift+Tab cycle, and historical `plan/mode` events are ignored only for mode
++presentation/interpretation, without rewriting history. Real sandbox and approval
++policies remain effective; project `autoApprove` does not auto-approve permissions.
++With `false`, native Plan behavior is unchanged.
 +Disable native plan-mode before registering a replacement that opens its scene.
 +The flag grants no execution authority and implements no persistence.
++Native components remain available upstream; this is a reversible routing/UI
++override, not a mock-success handler or a deletion of native support. Run
++`pnpm run verify:external-plan` after upstream merges; this source-only regression
++gate is also included in `verify:build`. Source checks do not replace the normal
++build/render tests or updating the installed frontend.
++For a pre-build review, invoke the three gate scripts directly with `node`
++(see the `verify:external-plan` script in `package.json`): the package manager
++may install/prepare dependencies before `pnpm run`, triggering a local compile.
 +
 +Scenes receive `ui.Markdown`, `ui.markdownSourceRange` and `ui.markdownSourceBlocks`, also exported from
 +`@deepseek-harness-tui/dsh-tui/ui`. Render with injected host React and
@@ -34,19 +51,40 @@ index a8c6c62..370015f 100644
  > An interactive terminal UI plugin for DeepSeek Harness. It ships a
  > pixel-whale header, live work status, streaming thinking, double-Esc time
  > rewind, a context progress bar, and a TPS gauge. It mounts as a pure plugin,
+@@ -251,6 +293,8 @@ OpenAI’s terms. Full instructions and current boundaries:
+ 
+ `Enter` send · `Tab` complete · `Ctrl+Enter` interrupt and send · `Alt+Up` recall the last message · `Esc` dismiss, double-`Esc` rewinds · `Ctrl+B` side panel · `Ctrl+O` details · `Ctrl+R` history (`↑`/`↓` and `Ctrl+R` are scoped to the current project) · `Ctrl+V` paste · `Ctrl+Shift+E` fullscreen draft editor · `?` shortcuts · `←` open the session manager (DSH backgrounds the current session first).
+ 
++With the Grammar Fix addon mounted, `Ctrl+G` corrects the draft without sending it. `Esc` or `Ctrl+C` cancels the correction; `Ctrl+Z` restores the previous draft. Without the addon, `Ctrl+G` keeps its default external-editor action (`$VISUAL` / `$EDITOR`). While the addon owns `Ctrl+G`, choose another external-editor shortcut in `/settings`.
++
+ While the model is working: `Enter` steers, `Tab` queues a follow-up, `Ctrl+Enter` interrupts and sends. Input that names a command is still a command — with or without arguments — so `/model` or `/new` reach their own gate (and the `/` overlay sinks the commands that affect the running conversation) instead of silently becoming an interruption; only text that is not a command — and a direct skill gesture such as `/skill-name …` — steers.
+ 
+ On native Windows, fragmented Win32 input records are reassembled across short input delays instead of appearing as numeric protocol text. The platform check only reports that this machine might run the private mode (win32-input-mode); a bare `ESC[` fragment is held only after one record has actually been decoded, while a fragment whose own shape is already record-specific holds on its own (which is how even the first record can survive a split). Windows terminals that never enter the mode (mintty, GitBash) therefore keep the classic VT path: a lone `Esc` keeps its normal response time, and a letter typed after a timed-out `ESC[` is not swallowed.
 diff --git a/README_ZH.md b/README_ZH.md
-index 714ef2b..036093b 100644
+index 714ef2b..17ea9db 100644
 --- a/README_ZH.md
 +++ b/README_ZH.md
-@@ -18,6 +18,27 @@
+@@ -18,6 +18,39 @@
  
  # dsh-TUI
  
 +### 托管计划插件接缝（本地源码扩展）
 +
 +插件配置 `externalPlanCommand: true` 让裸 `/plan` 调用注册命令而非原生选择器。
-+默认 `false`，带参数形式不变。注册打开场景的替代命令前禁用原生 plan-mode。
++默认 `false`。启用后，旧 `/plan on` 和 `/plan off` 会被阻止，并提示产物浏览与
++autoApprove 的正确用法；其他参数原样转发。残留的原生选择器会关闭，键盘与点击
++回调不会派发原生控制。帮助与补全描述项目产物，不再宣传原生模式切换。
++启用后，`/plan` 是项目计划产物命令：原生 Plan
++不再出现在 Shift+Tab 循环中，历史 `plan/mode` 事件仅在模式呈现与解释时被忽略，
++不会改写历史。真实 sandbox 与审批策略仍然有效；项目 `autoApprove` 不会自动批准权限。
++设为 `false` 时，原生 Plan 行为不变。注册打开场景的替代命令前禁用原生 plan-mode。
 +此开关不授予执行权限，也不实现持久化。
++上游原生组件仍然保留：这是可逆的路由/UI 覆盖，不是伪造成功的 mock，也不是删除
++原生支持。合并上游后运行 `pnpm run verify:external-plan`；此源码回归也已加入
++`verify:build`。源码检查不能替代常规构建/渲染验证或更新已安装的 frontend。
++构建前审查请直接用 `node` 执行三个门禁脚本（见 `package.json` 的
++`verify:external-plan`）：包管理器可能在 `pnpm run` 前安装/prepare 依赖，
++从而触发本地编译。
 +
 +场景收到 `ui.Markdown`、`ui.markdownSourceRange` 与 `ui.markdownSourceBlocks`，也可从
 +`@deepseek-harness-tui/dsh-tui/ui` 导入。使用注入的宿主 React，传入
@@ -66,8 +104,17 @@ index 714ef2b..036093b 100644
  > 面向 DeepSeek Harness 的交互式终端界面插件：像素鲸鱼顶栏、实时工作状态、流式思考展示、双击 Esc 时间回溯、上下文进度条与 TPS 仪表。
  > 零核心改动，纯插件挂载。安装即启用，卸载不留核心补丁。
  
+@@ -212,6 +245,8 @@ OpenAI 条款约束。完整操作与当前边界：[Codex 后端](docs/codex-ba
+ 
+ `Enter` 发送 · `Tab` 补全 · `Ctrl+Enter` 打断并发送 · `Alt+Up` 取回上一条 · `Esc` 逐层关闭，空输入双击回溯 · `Ctrl+B` 侧栏 · `Ctrl+O` 详情 · `Ctrl+R` 搜历史（`↑`/`↓` 与 `Ctrl+R` 按当前项目隔离） · `Ctrl+V` 粘贴 · `Ctrl+Shift+E` 全屏草稿编辑器 · `?` 快捷键 · `←` 打开会话管理（DSH 会先将当前会话转后台）。
+ 
++挂载 Grammar Fix 插件后，`Ctrl+G` 修正草稿但不发送。`Esc` 或 `Ctrl+C` 取消修正，`Ctrl+Z` 恢复原草稿。未挂载插件时，`Ctrl+G` 保留默认外部编辑器动作（`$VISUAL` / `$EDITOR`）。插件占用 `Ctrl+G` 时，可在 `/settings` 为外部编辑器设置其他快捷键。
++
+ 模型工作时：`Enter` 加塞、`Tab` 排队、`Ctrl+Enter` 打断并立即发送。输入只要构成命令就仍按命令执行（带不带参数都一样）——`/model`、`/new` 会走到该命令自己的门禁（`/` 浮窗也据此把影响当前对话的命令沉到灰区），不会被当成插话；只有不构成命令的文本和直接调用技能的手势（`/技能名 …`）才加塞。
+ 
+ 原生 Windows 下，分片的 Win32 输入记录会跨短暂输入延迟重组，不再作为数字协议串进入输入框。平台检测只能说明这台机器可能运行该私有模式（win32-input-mode）：裸 `ESC[` 分片只有在真正解码到一条记录之后才会被扣住，而自身形状已足够像一条记录的分片可自行挂起（这也是首条记录即使被切分仍可能恢复的原因）。从不进入该模式的 Windows 终端（mintty、GitBash 等）因此保持经典 VT 路径：单独 `Esc` 保持既有响应时间，`ESC[` 超时释放后紧随输入的字母也不会被吞掉。
 diff --git a/package.json b/package.json
-index 329e3e3..cffee63 100644
+index 329e3e3..e35096b 100644
 --- a/package.json
 +++ b/package.json
 @@ -49,6 +49,10 @@
@@ -81,6 +128,346 @@ index 329e3e3..cffee63 100644
      "./working-activity": {
        "types": "./lib/types/working-activity.d.ts",
        "import": "./lib/types/working-activity.js"
+@@ -151,6 +155,7 @@
+     "verify:packaged-presets": "node scripts/verify-packaged-presets.mjs",
+     "verify:minimal-preset-tools": "node scripts/verify-minimal-preset-tools.mjs",
+     "verify:agent-capabilities": "node --import tsx/esm scripts/verify-agent-capabilities.ts",
++    "verify:external-plan": "node scripts/verify-external-plan-chat-source.mjs && node --import tsx/esm scripts/verify-managed-plan-completions.ts && node --import tsx/esm scripts/verify-external-plan-modes.ts",
+     "verify:minimal-ui-naming": "node --import tsx/esm scripts/verify-minimal-ui-naming.ts",
+     "verify:liangshen-bootstrap": "node scripts/verify-liangshen-bootstrap.mjs",
+     "verify:liangshen-instruction-hint": "node scripts/verify-liangshen-instruction-hint.mjs",
+diff --git a/scripts/run-verify-build.mjs b/scripts/run-verify-build.mjs
+index 1b2e038..2a60ee3 100644
+--- a/scripts/run-verify-build.mjs
++++ b/scripts/run-verify-build.mjs
+@@ -68,6 +68,7 @@ const GATES = [
+   'verify:initial-prompt',
+   'verify:minimal-preset-tools',
+   'verify:agent-capabilities',
++  'verify:external-plan',
+   'verify:minimal-ui-naming',
+   'verify:liangshen-bootstrap',
+   'verify:inject-channel',
+diff --git a/scripts/verify-agent-capabilities.ts b/scripts/verify-agent-capabilities.ts
+index 1b878ec..b06e71b 100644
+--- a/scripts/verify-agent-capabilities.ts
++++ b/scripts/verify-agent-capabilities.ts
+@@ -293,7 +293,7 @@ for (const [presetId, services, expected] of [
+   // 读三者拼接（scripts/lib/channel-composition.mjs），断言不变。
+   const source = compositionSource()
+   ok(
+-    source.includes('annotateCommandCapabilities(commands, capabilitiesOf())'),
++    source.includes('annotateCommandCapabilities(commands, capabilitiesOf(), state.externalPlanCommand)'),
+     'the command-list refresh path annotates through the shared capability facts',
+   )
+ }
+diff --git a/scripts/verify-external-plan-chat-source.mjs b/scripts/verify-external-plan-chat-source.mjs
+new file mode 100644
+index 0000000..3f0bfd7
+--- /dev/null
++++ b/scripts/verify-external-plan-chat-source.mjs
+@@ -0,0 +1,94 @@
++/** Source-only regression: node scripts/verify-external-plan-chat-source.mjs
++ * Executes the actual Chat dispatch/effect/keyboard/click bodies without loading
++ * the renderer, generated lib/, or a parallel implementation of /plan.
++ */
++import assert from 'node:assert/strict'
++import { readFileSync } from 'node:fs'
++import ts from 'typescript'
++
++const source = ts.createSourceFile('Chat.tsx', readFileSync(new URL('../src/screens/Chat.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
++const nodes = []
++function visit(node) { nodes.push(node); ts.forEachChild(node, visit) }
++visit(source)
++const text = node => node.getText(source)
++function unique(predicate, label) {
++  const matches = nodes.filter(predicate)
++  assert.equal(matches.length, 1, `Expected exactly one ${label}`)
++  return matches[0]
++}
++function execute(body, context) {
++  const compiled = ts.transpile(body, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext })
++  return new Function(...Object.keys(context), compiled)(...Object.values(context))
++}
++const planCase = unique(node => ts.isCaseClause(node) && text(node.expression) === "'plan'", 'plan command case')
++const keyboard = unique(node => ts.isIfStatement(node) && text(node.expression) === "overlay.kind === 'plan'", 'plan keyboard branch')
++const picker = unique(node => ts.isJsxSelfClosingElement(node) && text(node.tagName) === 'PlanPicker', 'PlanPicker')
++const onPick = picker.attributes.properties.find(node => ts.isJsxAttribute(node) && text(node.name) === 'onPick').initializer.expression
++const render = unique(node => ts.isJsxExpression(node) && node.expression && ts.isBinaryExpression(node.expression) && text(node.expression.right).includes('<PlanPicker'), 'PlanPicker render gate').expression.left
++const effect = unique(node => ts.isCallExpression(node) && text(node.expression) === 'React.useEffect' && text(node.arguments[0]).includes("channel.externalPlanCommand && overlay.kind === 'plan'"), 'stale picker cleanup').arguments[0]
++
++function fixture(externalPlanCommand, route = 'registry') {
++  const commands = [], overlays = [], notifications = []
++  const context = {
++    channel: { externalPlanCommand, mode: { plan: true }, capabilities: () => ({ plan: { route } }), notify: (...args) => notifications.push(args) },
++    dispatchOverlay: action => overlays.push(action),
++    runExternalCommand: (...args) => { commands.push(args); return true },
++    setHelpOpen() {}, t: key => key, images: [], rawInput: '',
++    overlay: { kind: 'plan', index: 0 }, key: {}, plainReturn: false, index: 0,
++  }
++  return { context, commands, overlays, notifications }
++}
++for (const external of [false, true]) {
++  for (const input of ['', ' on', ' off', ' on extra', ' off extra', ' auto on', ' auto off', ' auto status', ' status', ' open 7', ' approve 7']) {
++    const f = fixture(external)
++    f.context.rawInput = input
++    assert.equal(execute(`switch ('plan') { ${text(planCase)} }`, f.context), true)
++    if (external && /^ (on|off)( |$)/.test(input)) {
++      assert.deepEqual(f.commands, [], 'legacy on/off must never be forwarded or translated to auto')
++      assert.deepEqual(f.overlays, [])
++      assert.equal(f.notifications[0][0], 'plan-artifact-native-controls-disabled')
++    } else if (!external && input === '') {
++      assert.deepEqual(f.overlays, [{ type: 'open', overlay: { kind: 'plan', index: 0 } }])
++      assert.deepEqual(f.commands, [])
++    } else {
++      assert.deepEqual(f.commands, [['plan', input, []]], 'artifact arguments and native arguments pass through verbatim')
++      assert.deepEqual(f.overlays, [])
++    }
++  }
++  const missing = fixture(external, 'none')
++  assert.equal(execute(`switch ('plan') { ${text(planCase)} }`, missing.context), false)
++  assert.deepEqual(missing.commands, [])
++  for (const index of [0, 1]) {
++    const f = fixture(external)
++    f.context.overlay.index = index
++    assert.equal(execute(`return ${text(render)}`, f.context), !external)
++    execute(text(effect.body), f.context)
++    assert.deepEqual(f.overlays, external ? [{ type: 'close' }] : [], 'hidden stale modal must be retired without a keypress')
++    f.overlays.length = 0
++    f.context.plainReturn = true
++    execute(text(keyboard), f.context)
++    assert.deepEqual(f.overlays, [{ type: 'close' }])
++    assert.deepEqual(f.commands, external ? [] : [['plan', index === 0 ? '' : ' off']])
++    f.commands.length = 0
++    f.overlays.length = 0
++    f.context.index = index
++    execute(text(onPick.body), f.context)
++    assert.deepEqual(f.overlays, [{ type: 'close' }])
++    assert.deepEqual(f.commands, external ? [] : [['plan', index === 0 ? '' : ' off']], 'stale click cannot dispatch native controls')
++  }
++  for (const key of [{ upArrow: true }, { downArrow: true }, { escape: true }, {}]) {
++    const f = fixture(external)
++    f.context.key = key
++    execute(text(keyboard), f.context)
++    assert.deepEqual(f.commands, [])
++    assert.deepEqual(f.overlays, external || key.escape ? [{ type: 'close' }] : key.upArrow || key.downArrow ? [{ type: 'move', delta: key.upArrow ? -1 : 1, count: 2 }] : [])
++  }
++}
++for (const input of [' on', ' off']) {
++  const f = fixture(true, 'none')
++  f.context.rawInput = input
++  assert.equal(execute(`switch ('plan') { ${text(planCase)} }`, f.context), true, 'legacy controls stay consumed even without the artifact provider')
++  assert.deepEqual(f.commands, [])
++  assert.equal(f.notifications[0][0], 'plan-artifact-native-controls-disabled')
++}
++console.log('PASS: real Chat source blocks native Plan controls and stale picker actions only in external profiles; native dispatch preserved.')
+diff --git a/scripts/verify-external-plan-modes.ts b/scripts/verify-external-plan-modes.ts
+new file mode 100644
+index 0000000..bf9f893
+--- /dev/null
++++ b/scripts/verify-external-plan-modes.ts
+@@ -0,0 +1,75 @@
++/** Source regression: node --import tsx/esm scripts/verify-external-plan-modes.ts */
++import assert from 'node:assert/strict'
++import { createModeActions } from '../src/dsh-adapter/channel/mode-actions.js'
++import { createPermissionModeActions } from '../src/dsh-adapter/channel/mode-permission-actions.js'
++import { createPermissionModeRoster } from '../src/dsh-adapter/channel/mode-roster.js'
++import { DEFAULT_SESSION_MODES, externalPlanSessionModes } from '../src/sessionModes.js'
++
++for (const permissionAware of [false, true]) {
++  for (const externalPlanCommand of [false, true]) {
++    const events = [
++      { type: 'sandbox/mode', data: { mode: 'read-only' } },
++      { type: 'approval/policy', data: { policy: 'ask' } },
++      { type: 'plan/mode', data: { active: true } },
++    ]
++    const session = { events, append(type: string, data: object) { events.push({ type, data } as never) } }
++    const agent = { id: 'fixture', session }
++    const capture = { agent }
++    const commands: string[] = []
++    const ctx = {
++      logger: { warn() {} },
++      get(name: string) {
++        if (name === 'planMode') {
++          assert.equal(externalPlanCommand, false, 'external artifacts must not consult native planMode')
++          return { get: () => ({ active: true }) }
++        }
++        return undefined
++      },
++    } as never
++    const roster = createPermissionModeRoster(ctx, {
++      configuredModes: DEFAULT_SESSION_MODES, externalPlanCommand, agent: () => agent as never,
++    })
++    assert.deepEqual(roster.modes.map(mode => mode.id), externalPlanCommand ? ['default', 'full'] : ['default', 'plan', 'full'])
++    roster.rebuild(agent as never)
++    assert.equal(roster.modes.some(mode => mode.plan === true), !externalPlanCommand)
++    const state = { mode: roster.modes[0]!, modeIndex: 0, externalPlanCommand, emit() {} }
++    const deps = {
++      owner: { current: () => true }, runtime: { mode: 'new' } as never,
++      binding: { agent, capture: () => capture, isCurrent: () => true } as never,
++      sessionModes: roster.modes, roster,
++      async executeRegistryCommand(name: string, input: string) {
++        commands.push(name + input)
++        return 'ok'
++      }, notify() {},
++    }
++    const actions = permissionAware ? createPermissionModeActions(ctx, state, deps) : createModeActions(ctx, state, deps)
++    actions.refreshMode()
++    assert.equal(state.mode.id, externalPlanCommand ? 'default' : 'plan', 'old plan/mode only selects Plan in native profiles')
++    assert.equal(events.length, 3, 'refresh never rewrites durable history')
++    if (!externalPlanCommand) continue
++    await actions.applyMode(DEFAULT_SESSION_MODES[1]!)
++    assert.equal(events.length, 3, 'native Plan target must not mutate sandbox/approval')
++    assert.deepEqual(commands, [])
++    await actions.cycleMode()
++    assert.equal(state.mode.id, 'full')
++    assert.deepEqual(commands, [], 'Shift+Tab must not execute the project artifact command')
++    assert.deepEqual(events.slice(3), [
++      { type: 'sandbox/mode', data: { mode: 'danger-full-access' } },
++      { type: 'approval/policy', data: { policy: 'never' } },
++    ], 'real sandbox and approval switches remain effective')
++    const before = structuredClone(events)
++    actions.onSessionEvent(session as never, { type: 'plan/mode', data: { active: false } } as never)
++    await Promise.resolve()
++    assert.deepEqual(events, before, 'old native exit must not restore permissions')
++    actions.refreshMode()
++    assert.equal(state.mode.id, 'full', 'historical Plan must not mask real full-access state')
++    await actions.cycleMode()
++    assert.equal(state.mode.id, 'default')
++    assert.equal(events.filter(event => event.type === 'plan/mode').length, 1)
++  }
++}
++assert.deepEqual(externalPlanSessionModes([{ id: 'only-native', plan: true }]).map(mode => mode.id), ['default', 'full'])
++assert.deepEqual(externalPlanSessionModes([{ id: 'custom', plan: false, sandbox: 'read-only', approval: 'never' }]), [
++  { id: 'custom', sandbox: 'read-only', approval: 'never' },
++])
++console.log('PASS: external artifacts exclude native Plan routing/history and preserve real sandbox/approval; native profiles unchanged.')
+diff --git a/scripts/verify-launchpad.tsx b/scripts/verify-launchpad.tsx
+index 40c1d4f..d1041d5 100644
+--- a/scripts/verify-launchpad.tsx
++++ b/scripts/verify-launchpad.tsx
+@@ -456,6 +456,42 @@ function cellAtText(term: InstanceType<typeof XTerm>, lines: readonly string[],
+ /** 一行里同时含全部 needle。 */
+ const rowHasAll = (line: string, needles: readonly string[]): boolean => needles.every(n => line.includes(n))
+ 
++{
++  const bridgeKey = Symbol.for('alex.dsh.grammar-fix')
++  const bridges = globalThis as Record<symbol, unknown>
++  const previous = bridges[bridgeKey]
++  const pending: { resolve: (text: string) => void; signal?: AbortSignal }[] = []
++  bridges[bridgeKey] = {
++    describe: () => ({ language: 'English', model: 'grammar-model' }),
++    fix: (_text: string, _current: unknown, signal?: AbortSignal) => new Promise<string>(resolve => {
++      pending.push({ resolve, signal })
++    }),
++  }
++  const ev: Ev[] = []
++  const s = await openLaunchpad(ev, { query: 'I has a draft' })
++  try {
++    await s.send('\u0007')
++    await settled(() => s.screen().includes('grammar-model') && s.screen().includes('English'))
++    check('grammar activity shows bridge metadata', pending.length === 1 && s.screen().includes('English'), s.screen())
++    await s.send('\u001b')
++    check('grammar cancellation preserves draft', pending[0]?.signal?.aborted === true && last(ev, 'query') === undefined)
++    await s.send('\u0007')
++    await settled(() => pending.length === 2 && s.screen().includes('grammar-model'))
++    pending[0]!.resolve('stale correction')
++    await new Promise<void>(resolve => setImmediate(resolve))
++    check('canceled operation cannot clear newer activity', s.screen().includes('grammar-model') && last(ev, 'query') === undefined)
++    pending[1]!.resolve('I have a draft')
++    await settled(() => last(ev, 'query')?.value === 'I have a draft' && !s.screen().includes('grammar-model'))
++    check('grammar result updates draft and clears activity', last(ev, 'query')?.value === 'I have a draft')
++    await s.send('\u001a')
++    check('grammar undo restores original draft', last(ev, 'query')?.value === 'I has a draft')
++  } finally {
++    s.close()
++    if (previous === undefined) delete bridges[bridgeKey]
++    else bridges[bridgeKey] = previous
++  }
++}
++
+ // ── A. 版面 ─────────────────────────────────────────────────────────────────
+ const baseEvents: Ev[] = []
+ const base = await openLaunchpad(baseEvents)
+@@ -2628,6 +2664,7 @@ for (const cols of [120, 100, 72, 60, 48]) {
+   s2.close()
+ }
+ 
++
+ if (failures === 0) console.log(`\nverify-launchpad: ${checks} checks, all passed`)
+ else console.error(`\nverify-launchpad: ${failures} of ${checks} checks FAILED`)
+-process.exit(failures === 0 ? 0 : 1)
+\ No newline at end of file
++process.exit(failures === 0 ? 0 : 1)
+diff --git a/scripts/verify-managed-plan-completions.ts b/scripts/verify-managed-plan-completions.ts
+new file mode 100644
+index 0000000..7aa5543
+--- /dev/null
++++ b/scripts/verify-managed-plan-completions.ts
+@@ -0,0 +1,63 @@
++/** Source regression: node --import tsx/esm scripts/verify-managed-plan-completions.ts */
++import assert from 'node:assert/strict'
++import { createCommandCompletions } from '../src/dsh-adapter/channel/command-completions.js'
++import { setLang, tOr } from '../src/i18n.js'
++import { localizedDescription } from '../src/commands.js'
++import { annotateCommandCapabilities, resolveAgentCapabilities } from '../src/dsh-adapter/channel/capabilities.js'
++import { TIPS } from '../src/tips.js'
++
++const state = { commandList: [{ name: 'plan', description: 'Managed plans' }], externalPlanCommand: true } as never
++const complete = createCommandCompletions({
++  state: () => state,
++  themeHost: {} as never,
++  workspaceCommands: () => [],
++  model: {
++    warmModelNodes() {}, modelNodes: () => [], warmPresetOptions() {}, presetOptions: () => [], warmEffortLevels() {},
++  },
++})
++const root = complete('/plan ').map(item => item.name)
++if (JSON.stringify(root) !== JSON.stringify(['plan new', 'plan auto'])) {
++  throw new Error(`managed /plan suggestions are wrong: ${JSON.stringify(root)}`)
++}
++const auto = complete('/plan auto ').map(item => item.name)
++if (JSON.stringify(auto) !== JSON.stringify(['plan auto on', 'plan auto off', 'plan auto status'])) {
++  throw new Error(`managed /plan auto suggestions are wrong: ${JSON.stringify(auto)}`)
++}
++console.log('PASS: managed /plan completion omits legacy on/off and offers new/auto controls.')
++
++setLang('en')
++assert.match(complete('/plan ')[0]!.description, /project plan artifacts/)
++assert.match(complete('/plan ')[1]!.description, /project autoApprove/)
++for (const item of complete('/plan auto ')) assert.match(item.description, /project autoApprove/)
++setLang('zh')
++const localized = complete('/plan ').map(item => tOr(item.descriptionKey!, item.description))
++assert.match(localized[0]!, /项目计划产物/)
++assert.match(localized[1]!, /项目 autoApprove/)
++;(state as { externalPlanCommand: boolean }).externalPlanCommand = false
++assert.deepEqual(complete('/plan ').map(item => item.name), ['plan on', 'plan off'])
++console.log('PASS: artifact labels localize project scope; native completion remains on/off.')
++
++const commands = [
++  { name: 'plan', description: 'Toggle native Plan mode', descriptionKey: 'cmd-desc-plan' },
++  { name: 'goal', description: 'Set a goal' },
++]
++const capabilities = resolveAgentCapabilities({
++  agent: undefined,
++  commandService: { find(_agent: unknown, name: string) { return name === 'plan' ? {} : undefined } } as never,
++  service: () => undefined, toolPresent: () => false, presetId: undefined,
++})
++assert.equal(annotateCommandCapabilities(commands, capabilities), commands, 'native command descriptions stay unchanged')
++const artifacts = annotateCommandCapabilities(commands, capabilities, true)
++assert.equal(artifacts[1], commands[1], 'unrelated command descriptors stay unchanged')
++assert.equal(commands[0]!.descriptionKey, 'cmd-desc-plan', 'annotation does not mutate upstream descriptors')
++setLang('en')
++assert.match(localizedDescription(artifacts[0]!), /project .plan artifacts/)
++setLang('zh')
++assert.match(localizedDescription(artifacts[0]!), /项目 .plan 产物/)
++const unavailable = annotateCommandCapabilities(commands, { ...capabilities, plan: { route: 'none', reasonKey: 'capability-reason-no-plan-command' } }, true)
++setLang('en')
++assert.match(localizedDescription(unavailable[0]!), /project \/plan provider is not mounted/)
++assert.doesNotMatch(TIPS.find(tip => tip.id === 'cmd-plan-goal')!.en, /enters plan mode/)
++assert.doesNotMatch(TIPS.find(tip => tip.id === 'keys-shift-tab')!.en, /default → plan/)
++assert.doesNotMatch(TIPS.find(tip => tip.id === 'flow-plan-review')!.en, /press 1 \/ 2/)
++console.log('PASS: Help/completion descriptors label project artifacts, native descriptors remain intact, and tips do not advertise legacy controls.')
 diff --git a/src/adapter/channel/ui-policy.ts b/src/adapter/channel/ui-policy.ts
 index 0a08b0e..3185e8f 100644
 --- a/src/adapter/channel/ui-policy.ts
@@ -106,6 +493,46 @@ index 97ada6d..c003399 100644
    /** Running token totals across the session's assistant messages. */
    readonly tokens: TokenUsage
    /** 本会话主会话用量按模型分桶（费用估算输入）。与 `tokens` 并行累计，
+diff --git a/src/components/GrammarFixActivity.tsx b/src/components/GrammarFixActivity.tsx
+new file mode 100644
+index 0000000..3ae00c7
+--- /dev/null
++++ b/src/components/GrammarFixActivity.tsx
+@@ -0,0 +1,34 @@
++import React from 'react'
++import { Box, Text, useTerminalSize } from '../ui.js'
++import { t } from '../i18n.js'
++import { truncateToWidth } from '../ink/truncateToWidth.js'
++import {
++  GRAMMAR_FRAME_MS, GRAMMAR_JOKES, grammarReducedMotion, grammarTrailFrame,
++} from './grammarFixPresentation.js'
++import type { GrammarFixPresentation } from './grammarFixPresentation.js'
++
++/** The original two-line Pi widget, plus DSH-only elapsed/cancel affordances. */
++export function GrammarFixActivity({ presentation }: { presentation: GrammarFixPresentation }): React.ReactNode {
++  const { columns } = useTerminalSize()
++  const [frame, setFrame] = React.useState(0)
++  const reducedMotion = grammarReducedMotion()
++  React.useEffect(() => {
++    setFrame(0)
++    if (reducedMotion) return
++    const timer = setInterval(() => setFrame(value => (value + 1) % 16), GRAMMAR_FRAME_MS)
++    ;(timer as { unref?: () => void }).unref?.()
++    return () => clearInterval(timer)
++  }, [presentation.startedAt, reducedMotion])
++  const width = Math.max(0, columns - 3)
++  const context = `${presentation.language} · ${presentation.model}`
++  const joke = t(GRAMMAR_JOKES[presentation.joke]!)
++  const elapsed = Math.max(0, Math.floor((Date.now() - presentation.startedAt) / 1000))
++  const fit = (text: string) => truncateToWidth(text.replace(/[\r\n\x1b]/g, ' '), width)
++  return (
++    <Box flexDirection="column" paddingLeft={2} paddingRight={1} marginBottom={1}>
++      <Text wrap="truncate">{fit(`${grammarTrailFrame(frame, presentation.trail)} (${context})`)}</Text>
++      <Text wrap="truncate">{fit(`💬 ${joke}`)}</Text>
++      <Text color="subtle" wrap="truncate">{fit(`${t('grammar-correcting')} · ${elapsed}s · ${t('grammar-cancel-hint')}`)}</Text>
++    </Box>
++  )
++}
 diff --git a/src/components/Markdown.tsx b/src/components/Markdown.tsx
 index e3aa5f1..6bdbadf 100644
 --- a/src/components/Markdown.tsx
@@ -213,6 +640,218 @@ index e3aa5f1..6bdbadf 100644
 +    prev.sourceNavigation === next.sourceNavigation &&
      prev.inlineMathImages === next.inlineMathImages,
  )
+diff --git a/src/components/PromptInput.tsx b/src/components/PromptInput.tsx
+index 4a50231..69becf3 100644
+--- a/src/components/PromptInput.tsx
++++ b/src/components/PromptInput.tsx
+@@ -45,6 +45,8 @@ import { actionMatches } from '../utils/keymap.js'
+ import { CommandSuggestions } from './CommandSuggestions.js'
+ import { FileSuggestions } from './FileSuggestions.js'
+ import { HelpMenu } from './HelpMenu.js'
++import { GrammarFixActivity } from './GrammarFixActivity.js'
++import { createGrammarFixPresentation, grammarFixSuccess, type GrammarFixBridge, type GrammarFixPresentation } from './grammarFixPresentation.js'
+ import { OverlayAbove, useOverlayListRows } from './OverlayAbove.js'
+ import { listWindow } from './listWindow.js'
+ import { SuggestionCard, cardContentWidth } from './SuggestionCard.js'
+@@ -1226,6 +1228,25 @@ export function PromptInput({
+   const clipboardBusyRef = React.useRef(false)
+   /** True while the external editor owns the terminal (editor-key round-trip). */
+   const editorBusyRef = React.useRef(false)
++  const grammarAbortRef = React.useRef<AbortController | null>(null)
++  const [grammarPresentation, setGrammarPresentation] = React.useState<GrammarFixPresentation | null>(null)
++  const grammarDraftRef = React.useRef<{ text: string; lease: DraftImageLease } | null>(null)
++  const cancelGrammarFix = (notify: boolean): void => {
++    if (!grammarAbortRef.current) return
++    grammarAbortRef.current.abort()
++    grammarAbortRef.current = null
++    grammarDraftRef.current = null
++    editorBusyRef.current = false
++    setGrammarPresentation(null)
++    if (notify) channel.notify(t('grammar-canceled'))
++  }
++  // A provider may ignore abort. Release the UI immediately and fence its late
++  // continuation by controller identity, including same-text session switches.
++  React.useEffect(() => {
++    const draft = grammarDraftRef.current
++    if (draft && (suspended || value !== draft.text || !draftImageLeaseIsCurrent(draft.lease))) cancelGrammarFix(false)
++  }, [value, draftImagesGenerationRef.current, suspended])
++  React.useEffect(() => () => grammarAbortRef.current?.abort(), [])
+   /** Enter dedupe window: cmd pipelines can deliver one Enter as `\r`+`\n`. */
+   const lastEnterAtRef = React.useRef(0)
+   React.useEffect(() => {
+@@ -2318,7 +2339,14 @@ export function PromptInput({
+     // The editor round-trip ends by resuming stdin one microtask before the
+     // outcome lands — drop any key squeezed into that gap so the prompt's
+     // setValue can never overwrite fresh typing (and vice versa).
+-    if (editorBusyRef.current) return
++    if (editorBusyRef.current) {
++      if (grammarAbortRef.current) {
++        event?.stopImmediatePropagation()
++        if (key.escape || (key.ctrl && input === 'c')) cancelGrammarFix(true)
++        else if (key.ctrl && input === 'g') channel.notify(t('grammar-busy'), { color: 'warning' })
++      }
++      return
++    }
+ 
+     // Ctrl+Shift+E (remappable via /settings): toggle the fullscreen draft
+     // editor. Matched before anything else so it works both while editing
+@@ -2616,7 +2644,65 @@ export function PromptInput({
+       return
+     }
+ 
+-    // Ctrl+G (remappable via /settings): edit the current draft in
++    // Ctrl+G fixes the draft in place; unlike the external editor it owns no TTY.
++    const grammarShortcut = input === 'g' && key.ctrl && !key.shift && !key.meta && !key.super
++    const grammar = grammarShortcut
++      ? (globalThis as Record<symbol, unknown>)[Symbol.for('alex.dsh.grammar-fix')] as GrammarFixBridge | undefined
++      : undefined
++    if (grammarShortcut && (grammar || !actionMatches('editor', input, key))) {
++      event?.stopImmediatePropagation()
++      if (!value.trim() || value.trimStart().startsWith('/')) {
++        channel.notify(t(!value.trim() ? 'grammar-empty' : 'grammar-command'))
++        return
++      }
++      if (!grammar) {
++        channel.notify(t('grammar-unavailable'), { color: 'warning' })
++        return
++      }
++      syncImageGeneration()
++      advanceDraftRevision()
++      const lease = captureDraftImageLease()
++      const abort = new AbortController()
++      grammarAbortRef.current = abort
++      grammarDraftRef.current = { text: value, lease }
++      editorBusyRef.current = true
++      const current = { provider: channel.provider, model: channel.model }
++      const isCurrent = () => grammarAbortRef.current === abort && !abort.signal.aborted
++        && draftImageLeaseIsCurrent(lease) && valueRef.current === value
++      void (async () => {
++        try {
++          setGrammarPresentation(createGrammarFixPresentation(grammar.describe(current)))
++          const corrected = await grammar.fix(value, current, abort.signal, (message, metadata) => {
++            if (!isCurrent()) return
++            setGrammarPresentation(previous => previous && { ...previous, ...metadata, phase: metadata?.phase ?? message })
++          })
++          if (!isCurrent()) return
++          if (!corrected.trim()) throw new Error(t('grammar-no-text'))
++          if (corrected !== value) {
++            const beforeBlock = foldBlockRef.current
++            updateFoldBlock(null)
++            setInput(corrected, corrected.length, 'step', beforeBlock)
++            setSelectedCommand(0)
++            setFileSelected(0)
++          }
++          channel.notify(grammarFixSuccess(corrected === value))
++        } catch (error: unknown) {
++          if (isCurrent()) {
++            const err = error as { message?: string }
++            channel.notify(t('grammar-failed', { error: String(err?.message ?? error) }), { color: 'error' })
++          }
++        } finally {
++          // An old canceled request must not clear a newer request's busy state.
++          if (grammarAbortRef.current === abort) {
++            grammarAbortRef.current = null
++            grammarDraftRef.current = null
++            editorBusyRef.current = false
++            setGrammarPresentation(null)
++          }
++        }
++      })()
++      return
++    }
+     // $VISUAL/$EDITOR (issue #123, readline's edit-and-execute-command). The
+     // draft is written to a temp file, the terminal is handed to the editor
+     // (Ink's alt-screen handoff), and the saved text replaces the input when
+@@ -4507,6 +4593,7 @@ export function PromptInput({
+           ))}
+         </Box>
+       )}
++      {grammarPresentation && <GrammarFixActivity presentation={grammarPresentation} />}
+       {lastNotification && toastVisible && (
+         // position=absolute takes zero layout height so the transcript never
+         // shifts when a notification appears/disappears; the layer floats one
+diff --git a/src/components/grammarFixPresentation.ts b/src/components/grammarFixPresentation.ts
+new file mode 100644
+index 0000000..0c378d3
+--- /dev/null
++++ b/src/components/grammarFixPresentation.ts
+@@ -0,0 +1,76 @@
++import { t } from '../i18n.js'
++
++// Adapted from https://github.com/al4xdev/pi-grammar-fix (Copyright 2026 al4xdev, MIT).
++// Original license: plugins/grammar-fix/LICENSE.pi-grammar-fix in dsh-customs.
++export const TRAIL_THEMES = [
++  { walker: '✍️ ', dirty: '❌', clean: '✨' },
++  { walker: '🪄 ', dirty: '🐛', clean: '🦋' },
++  { walker: '🧹 ', dirty: '💩', clean: '🧼' },
++  { walker: '🔍 ', dirty: '❓', clean: '✅' },
++  { walker: '🚀 ', dirty: '🐌', clean: '⚡' },
++] as const
++export const GRAMMAR_JOKES = [
++  'grammar-joke-0', 'grammar-joke-1', 'grammar-joke-2', 'grammar-joke-3',
++  'grammar-joke-4', 'grammar-joke-5', 'grammar-joke-6', 'grammar-joke-7',
++  'grammar-joke-8', 'grammar-joke-9', 'grammar-joke-10', 'grammar-joke-11',
++  'grammar-joke-12', 'grammar-joke-13',
++] as const
++export const GRAMMAR_ICONS = [
++  '✍️', '✏️', '📝', '📄', '🖊️', '🖋️', '🖌️', '✒️', '📌', '📎',
++  '🗒️', '📑', '📚', '📖', '🔍', '🔎', '💡', '✨', '⭐', '🌟',
++  '🎯', '🚀', '⚡', '🔥', '🧠', '💬', '💭', '🗨️', '✅', '✔️',
++  '☑️', '✓', '⚠️', '❌', '🔄', '⏳', '⌛', '📏', '📐', '✂️',
++  '🧹', '🪄', '🔧', '🛠️', '🧩', '📂', '🗂️', '🏆', '🎉', '👏', '💪',
++] as const
++export const GRAMMAR_FRAME_MS = 150
++export const GRAMMAR_TRAIL_LENGTH = 8
++
++export interface GrammarFixMetadata {
++  /** Human language label and model ID (without provider), resolved by the bridge. */
++  language: string
++  model: string
++}
++export interface GrammarFixProgress {
++  language?: string
++  model?: string
++  phase?: string
++}
++export interface GrammarFixBridge {
++  describe: (current: { provider?: string; model?: string }) => GrammarFixMetadata
++  fix: (text: string, current: { provider?: string; model?: string }, signal?: AbortSignal,
++    onProgress?: (message: string, metadata?: GrammarFixProgress) => void) => Promise<string>
++}
++export interface GrammarFixPresentation extends GrammarFixMetadata {
++  startedAt: number
++  joke: number
++  trail: number
++}
++
++/** Pick once per operation, never once per render. Random/clock injection keeps tests pure. */
++export function createGrammarFixPresentation(metadata: GrammarFixMetadata, random = Math.random, now = Date.now): GrammarFixPresentation {
++  return {
++    language: metadata.language || t('grammar-language-auto'),
++    model: metadata.model || t('grammar-session-model'),
++    startedAt: now(),
++    joke: Math.floor(random() * GRAMMAR_JOKES.length),
++    trail: Math.floor(random() * TRAIL_THEMES.length),
++  }
++}
++export function grammarFixSuccess(unchanged: boolean, random = Math.random): string {
++  return `${GRAMMAR_ICONS[Math.floor(random() * GRAMMAR_ICONS.length)]} ${t(unchanged ? 'grammar-no-changes' : 'grammar-fixed')}`
++}
++/** Pi repeats each endpoint once: 0..7,7..0,0..7 (not a 14-frame wave). */
++export function grammarTrailStep(frame: number): number {
++  const phase = ((Math.floor(frame) % 16) + 16) % 16
++  return phase < GRAMMAR_TRAIL_LENGTH ? phase : 15 - phase
++}
++export function grammarTrailFrame(frame: number, trail: number): string {
++  const theme = TRAIL_THEMES[trail % TRAIL_THEMES.length]!
++  const step = grammarTrailStep(frame)
++  return Array.from({ length: GRAMMAR_TRAIL_LENGTH }, (_, index) => index < step ? theme.clean : index === step ? theme.walker : theme.dirty).join(' ')
++}
++
++/** NO_COLOR controls color, not animation; motion has its own explicit opt-out. */
++export function grammarReducedMotion(env: Record<string, string | undefined> = process.env): boolean {
++  return env.DSH_GRAMMAR_REDUCED_MOTION === '1'
++}
 diff --git a/src/components/messages/AssistantToolUseMessage.tsx b/src/components/messages/AssistantToolUseMessage.tsx
 index 02c40fc..bca63c6 100644
 --- a/src/components/messages/AssistantToolUseMessage.tsx
@@ -252,6 +891,288 @@ index 02c40fc..bca63c6 100644
          ) : (
            shownLines.map((line, index) => (
              <Box key={index} flexDirection="row">
+diff --git a/src/dsh-adapter/channel/capabilities.ts b/src/dsh-adapter/channel/capabilities.ts
+index ade3a74..94ae5a0 100644
+--- a/src/dsh-adapter/channel/capabilities.ts
++++ b/src/dsh-adapter/channel/capabilities.ts
+@@ -181,10 +181,19 @@ function recordedPresetId(agent: Agent): string | undefined {
+ export function annotateCommandCapabilities(
+   commands: readonly LocalCommand[],
+   capabilities: AgentCapabilities,
++  externalPlanCommand = false,
+ ): LocalCommand[] {
+   let annotated: LocalCommand[] | undefined
+   commands.forEach((command, index) => {
+     const gate = COMMAND_CAPABILITIES.get(command.name)
++    if (command.name === 'plan' && externalPlanCommand) {
++      annotated ??= [...commands]
++      annotated[index] = { ...command,
++        description: 'Browse project .plan artifacts (not native Plan mode)',
++        descriptionKey: capabilities.plan.route === 'none' ? 'plan-artifact-unavailable' : 'plan-artifact-browser-desc',
++      }
++      return
++    }
+     if (gate === undefined || gate(capabilities).route !== 'none') return
+     annotated ??= [...commands]
+     annotated[index] = { ...command, descriptionKey: `cmd-desc-${command.name}-unavailable` }
+diff --git a/src/dsh-adapter/channel/command-completions.ts b/src/dsh-adapter/channel/command-completions.ts
+index f6ed05e..fe2fe18 100644
+--- a/src/dsh-adapter/channel/command-completions.ts
++++ b/src/dsh-adapter/channel/command-completions.ts
+@@ -122,9 +122,20 @@ export function createCommandCompletions(deps: {
+         { name: 'zoom', description: 'Zoom the active panel', descriptionKey: 'sugg-panel-zoom-desc' },
+         ...parseSidePanelIds(getSidePanelPanels()).map(id => ({ name: id, description: `Open the ${id} panel`, descriptionKey: 'sugg-panel-id-desc' as const })),
+       ]
+-      if (path.length === 1 && path[0] === 'plan') return [
+-        { name: 'on', description: 'Enter plan mode: read-only, plan before acting', descriptionKey: 'plan-mode-on-desc' },
+-        { name: 'off', description: 'Exit plan mode, back to normal execution', descriptionKey: 'plan-mode-off-desc' },
++      if (path.length === 1 && path[0] === 'plan') {
++        if (state.externalPlanCommand) return [
++          { name: 'new', description: 'Create project plan artifacts for a request', descriptionKey: 'plan-artifact-new-desc' },
++          { name: 'auto', description: 'Configure project autoApprove', descriptionKey: 'plan-artifact-auto-desc' },
++        ]
++        return [
++          { name: 'on', description: 'Enter plan mode: read-only, plan before acting', descriptionKey: 'plan-mode-on-desc' },
++          { name: 'off', description: 'Exit plan mode, back to normal execution', descriptionKey: 'plan-mode-off-desc' },
++        ]
++      }
++      if (path.length === 2 && path[0] === 'plan' && path[1] === 'auto' && state.externalPlanCommand) return [
++        { name: 'on', description: 'Enable project autoApprove', descriptionKey: 'plan-artifact-auto-on-desc' },
++        { name: 'off', description: 'Disable project autoApprove; require owner approval', descriptionKey: 'plan-artifact-auto-off-desc' },
++        { name: 'status', description: 'Show the project autoApprove setting', descriptionKey: 'plan-artifact-auto-status-desc' },
+       ]
+       return commandTrees?.children(path) ?? []
+     })
+diff --git a/src/dsh-adapter/channel/extensions.ts b/src/dsh-adapter/channel/extensions.ts
+index abb58bb..6d77652 100644
+--- a/src/dsh-adapter/channel/extensions.ts
++++ b/src/dsh-adapter/channel/extensions.ts
+@@ -206,6 +206,7 @@ export function attachDshExtensions(
+   // after the configured/default modes, rebuilt from the live service snapshot.
+   const permissionRoster = createPermissionModeRoster(ctx, {
+     configuredModes: configuredSessionModes,
++    externalPlanCommand: state.externalPlanCommand,
+     agent: () => binding.agent,
+     warn: message => ctx.logger.warn(message),
+   })
+@@ -230,7 +231,7 @@ export function attachDshExtensions(
+   // Annotated from the start: Help and `/` completion read `commandList`
+   // before the first skill-catalog refresh publishes a new one, and a command
+   // whose capability is missing must never look usable in that window.
+-  state.commandList = annotateCommandCapabilities(LOCAL_COMMANDS, capabilitiesOf())
++  state.commandList = annotateCommandCapabilities(LOCAL_COMMANDS, capabilitiesOf(), state.externalPlanCommand)
+   Object.defineProperty(state, 'autoRecapOnOpen', {
+     configurable: true,
+     enumerable: true,
+@@ -385,7 +386,7 @@ export function attachDshExtensions(
+       // Annotate before publishing: Help and `/` completion both read
+       // `commandList`, so a command whose capability is missing says so
+       // instead of looking usable and failing on use.
+-      state.commandList = annotateCommandCapabilities(commands, capabilitiesOf())
++      state.commandList = annotateCommandCapabilities(commands, capabilitiesOf(), state.externalPlanCommand)
+       state.emit()
+     },
+     commandDescriptions: name => commandTrees?.descriptions(name),
+diff --git a/src/dsh-adapter/channel/mode-actions.ts b/src/dsh-adapter/channel/mode-actions.ts
+index 578c7d2..3cc2b88 100644
+--- a/src/dsh-adapter/channel/mode-actions.ts
++++ b/src/dsh-adapter/channel/mode-actions.ts
+@@ -11,7 +11,7 @@ import { agentCapabilityEvidence, resolveAgentCapabilities } from './capabilitie
+ import type { DshChannelBinding } from './binding.js'
+ 
+ type Binding = DshChannelBinding
+-type ModeState = Pick<ChannelState, 'mode' | 'modeIndex' | 'emit'>
++type ModeState = Pick<ChannelState, 'mode' | 'modeIndex' | 'emit'> & Partial<Pick<ChannelState, 'externalPlanCommand'>>
+ 
+ /**
+  * Fail-soft reporting for a session-mode write. The mutation path reaches
+@@ -60,7 +60,7 @@ export function createModeActions(
+    *  instead of this module keeping its own registry lookup (the same fact
+    *  `/plan` dispatch and the command-list annotation use). */
+   const planRoute = (agent: Agent): CommandRoute =>
+-    resolveAgentCapabilities(agentCapabilityEvidence(ctx, agent)).plan.route
++    state.externalPlanCommand ? 'none' : resolveAgentCapabilities(agentCapabilityEvidence(ctx, agent)).plan.route
+   type ModeCapture = ReturnType<Binding['capture']>
+   const current = (capture: ModeCapture): boolean => owner.current() && binding.isCurrent(capture)
+   const capturedSession = (capture: ModeCapture) => capture.agent.session
+@@ -70,6 +70,7 @@ export function createModeActions(
+ // union, so they are matched by name through casts — the same pattern as
+ // `agent-preset/selected` in renderEvent and the goal projection above.
+ const foldPlanActive = (events: readonly SessionEvent[]): boolean => {
++  if (state.externalPlanCommand) return false
+   let active = false
+   for (const event of events) {
+     if ((event as { type: string }).type === 'plan/mode') {
+@@ -207,6 +208,8 @@ const prePlanModeSpec = (log: readonly SessionEvent[]): SessionModeSpec | undefi
+ 
+   const applyModeUnsafe = async (spec: SessionModeSpec, capture: ModeCapture): Promise<void> => {
+     if (!current(capture)) return
++    // Reject native Plan targets before their permission atoms can land.
++    if (state.externalPlanCommand && spec.plan === true) return
+     // This action writes durable session policy. The runtime snapshot comes
+     // from composition and is immutable for this Channel lifetime, so an
+     // observed plan exit cannot bypass the renderer/Port shadow guard.
+@@ -214,7 +217,7 @@ const prePlanModeSpec = (log: readonly SessionEvent[]): SessionModeSpec | undefi
+     const agent = capture.agent
+     const session = capturedSession(capture)
+     pendingPlanExitRestores.delete(session)
+-  const planMode = ctx.get('planMode') as
++  const planMode = (state.externalPlanCommand ? undefined : ctx.get('planMode')) as
+     | { get?(a: Agent): { active: boolean; pending?: boolean } }
+     | undefined
+   const planActive = foldPlanActive(snapshotLiveSessionEvents(session))
+@@ -227,7 +230,7 @@ const prePlanModeSpec = (log: readonly SessionEvent[]): SessionModeSpec | undefi
+   if (planActive && planMode?.get?.(agent).pending === undefined) {
+     explicitPlanExits.delete(session)
+   }
+-  if (spec.plan !== undefined && (planMode?.get?.(agent).pending ?? planActive) !== spec.plan) {
++  if (!state.externalPlanCommand && spec.plan !== undefined && (planMode?.get?.(agent).pending ?? planActive) !== spec.plan) {
+     if (planRoute(agent) === 'none') {
+       notify(t('mode-plan-unavailable'), { color: 'warning' })
+       return
+@@ -288,6 +291,7 @@ const prePlanModeSpec = (log: readonly SessionEvent[]): SessionModeSpec | undefi
+     const capture = binding.capture()
+     if (!current(capture) || session !== capturedSession(capture)) return
+     const eventType = (event as { type: string }).type
++    if (state.externalPlanCommand && eventType === 'plan/mode') return
+     if (eventType === 'plan/mode' || eventType === 'sandbox/mode' || eventType === 'approval/policy') {
+       refreshMode()
+     }
+diff --git a/src/dsh-adapter/channel/mode-permission-actions.ts b/src/dsh-adapter/channel/mode-permission-actions.ts
+index 5a3bdc2..6a19154 100644
+--- a/src/dsh-adapter/channel/mode-permission-actions.ts
++++ b/src/dsh-adapter/channel/mode-permission-actions.ts
+@@ -12,7 +12,7 @@ import type { PermissionModeRoster } from './mode-roster.js'
+ import type { ChannelState } from './types.js'
+ 
+ type Binding = DshChannelBinding
+-type ModeState = Pick<ChannelState, 'mode' | 'modeIndex' | 'emit'>
++type ModeState = Pick<ChannelState, 'mode' | 'modeIndex' | 'emit'> & Partial<Pick<ChannelState, 'externalPlanCommand'>>
+ type ModeCapture = ReturnType<Binding['capture']>
+ /** The composition seam `createModeActions` owns; this factory forwards every
+  *  member verbatim so both stay in lockstep. */
+@@ -63,20 +63,22 @@ const foldApprovalPolicy = (events: readonly SessionEvent[]): string | undefined
+ function derivePermissionModeIndex(
+   modes: readonly SessionModeSpec[],
+   events: readonly SessionEvent[],
++  externalPlanCommand = false,
+ ): number {
++  const planActive = !externalPlanCommand && foldPlanActive(events)
+   const identity = foldPermissionPreset(events)
+   if (identity !== undefined) {
+     const permissionIndex = modes.findIndex(
+       spec =>
+         spec.permission === identity
+-        && (spec.plan === undefined || foldPlanActive(events) === spec.plan),
++        && (spec.plan === undefined || planActive === spec.plan),
+     )
+     if (permissionIndex >= 0) return permissionIndex
+   }
+   const index = modes.findIndex(
+     spec =>
+       spec.permission === undefined
+-      && (spec.plan === undefined || foldPlanActive(events) === spec.plan)
++      && (spec.plan === undefined || planActive === spec.plan)
+       && (spec.sandbox === undefined || foldSandboxMode(events) === spec.sandbox)
+       && (spec.approval === undefined || foldApprovalPolicy(events) === spec.approval),
+   )
+@@ -137,7 +139,7 @@ export function createPermissionModeActions(
+    *  every refresh: a registry mount/unmount and a re-bind both land here. */
+   const refreshMode = (): void => {
+     roster.rebuild(binding.agent)
+-    const index = derivePermissionModeIndex(sessionModes, snapshotLiveSessionEvents(binding.agent.session))
++    const index = derivePermissionModeIndex(sessionModes, snapshotLiveSessionEvents(binding.agent.session), state.externalPlanCommand)
+     state.modeIndex = index
+     state.mode = sessionModes[index]!
+   }
+@@ -159,15 +161,16 @@ export function createPermissionModeActions(
+ 
+   const applyModeUnsafe = async (spec: SessionModeSpec, capture: ModeCapture): Promise<void> => {
+     if (!owner.current() || !binding.isCurrent(capture)) return
++    if (state.externalPlanCommand && spec.plan === true) return
+     // This action writes durable session policy; the permission switch writes
+     // the same kind of durable identity, so it is under the same guard.
+     assertShadowPolicy('mutate', deps.runtime.mode)
+     const agent = capture.agent
+     const session = agent.session
+-    const planMode = ctx.get('planMode') as
++    const planMode = (state.externalPlanCommand ? undefined : ctx.get('planMode')) as
+       | { get?(a: Agent): { active: boolean; pending?: boolean } }
+       | undefined
+-    const planActive = foldPlanActive(snapshotLiveSessionEvents(session))
++    const planActive = !state.externalPlanCommand && foldPlanActive(snapshotLiveSessionEvents(session))
+     const planChange = spec.plan !== undefined && (planMode?.get?.(agent).pending ?? planActive) !== spec.plan
+     if (planActive && planMode?.get?.(agent).pending === undefined) {
+       explicitPlanExits.delete(session)
+@@ -203,7 +206,7 @@ export function createPermissionModeActions(
+     try {
+       const capture = binding.capture()
+       if (!owner.current() || !binding.isCurrent(capture)) return
+-      const index = derivePermissionModeIndex(sessionModes, snapshotLiveSessionEvents(capture.agent.session))
++      const index = derivePermissionModeIndex(sessionModes, snapshotLiveSessionEvents(capture.agent.session), state.externalPlanCommand)
+       await applyMode(sessionModes[(index + 1) % sessionModes.length]!, capture)
+     } catch (error) {
+       reportModeSwitchFailure(ctx, notify, refreshMode, error)
+@@ -215,6 +218,7 @@ export function createPermissionModeActions(
+     const sessionEvent = event as SessionEvent
+     base.onSessionEvent(subject, sessionEvent)
+     const type = (sessionEvent as { type: string }).type
++    if (state.externalPlanCommand && type === 'plan/mode') return
+     if (type === 'permission/preset') refreshMode()
+     if (type !== 'plan/mode' || (sessionEvent.data as unknown as { active?: boolean }).active !== false) return
+     const remembered = permission.prePlanPermissionIdentity(subject)
+diff --git a/src/dsh-adapter/channel/mode-roster.ts b/src/dsh-adapter/channel/mode-roster.ts
+index 298182f..dafab42 100644
+--- a/src/dsh-adapter/channel/mode-roster.ts
++++ b/src/dsh-adapter/channel/mode-roster.ts
+@@ -3,6 +3,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
+ import { isCommandCompletionToken } from '../../commands.js'
+ import {
+   canonicalPresetFor,
++  externalPlanSessionModes,
+   permissionCycleEntry,
+   permissionModeSpec,
+   stablePermissionRosterOrder,
+@@ -105,17 +106,19 @@ export function createPermissionModeRoster(
+   ctx: Context,
+   deps: {
+     configuredModes: readonly SessionModeSpec[]
++    externalPlanCommand?: boolean
+     agent: () => Agent
+     warn?: (message: string) => void
+   },
+ ): PermissionModeRoster {
+   const warn = deps.warn ?? ((message: string) => ctx.logger.warn(message))
+-  const configuredIds = configuredPermissionIds(deps.configuredModes)
++  const configuredModes = deps.externalPlanCommand ? externalPlanSessionModes(deps.configuredModes) : deps.configuredModes
++  const configuredIds = configuredPermissionIds(configuredModes)
+   const warned = new Set<string>()
+   const order = new WeakMap<object, readonly string[]>()
+   // Mutated in place: a consumer that captured this array keeps observing the
+   // live roster across rebuilds (see the interface contract).
+-  const modes: SessionModeSpec[] = [...deps.configuredModes]
++  const modes: SessionModeSpec[] = [...configuredModes]
+ 
+   const bundlesOf = (): readonly PermissionPresetBundle[] => {
+     let service: unknown
+@@ -134,7 +137,7 @@ export function createPermissionModeRoster(
+ 
+   const rebuild = (target: Agent): void => {
+     const snapshot = readRuntimePermissionSnapshot(ctx, target)
+-    const excluded = staticCanonicalTargets(deps.configuredModes, bundlesOf())
++    const excluded = staticCanonicalTargets(configuredModes, bundlesOf())
+     const candidates = new Map<string, PermissionPresetOption>()
+     if (snapshot !== undefined) {
+       for (const option of snapshot.options) {
+@@ -165,7 +168,7 @@ export function createPermissionModeRoster(
+       if (option !== undefined) dynamic.push(permissionModeSpec(option))
+     }
+     modes.length = 0
+-    for (const spec of [...deps.configuredModes, ...dynamic]) modes.push(spec)
++    for (const spec of [...configuredModes, ...dynamic]) modes.push(spec)
+   }
+ 
+   // Main rebuilds once at construction, before the roster is first read.
 diff --git a/src/dsh-adapter/channel/state.ts b/src/dsh-adapter/channel/state.ts
 index 7c795c8..9e68474 100644
 --- a/src/dsh-adapter/channel/state.ts
@@ -314,31 +1235,62 @@ index ba8231c..5aa3e0f 100644
      configuredActivityFrames: config.activityFrames,
      effort: config.effort,
      activity: config.activity,
-diff --git a/src/screens/Chat.tsx b/src/screens/Chat.tsx
-index aa96613..51f46df 100644
---- a/src/screens/Chat.tsx
-+++ b/src/screens/Chat.tsx
-@@ -3552,7 +3552,9 @@ export function Chat({
-         const plan = channel.capabilities().plan
-         const mounted = plan.route !== 'none'
-         const parts = rawInput.trim().split(/\s+/).filter(Boolean)
--        if (mounted && parts.length === 0) {
-+        // Registry presence alone cannot distinguish native plan-mode from an
-+        // addon browser. Only an explicit deployment opt-in bypasses the picker.
-+        if (mounted && parts.length === 0 && !channel.externalPlanCommand) {
-           setHelpOpen(false)
-           dispatchOverlay({
-             type: 'open',
-diff --git a/src/ui.ts b/src/ui.ts
-index e2bce92..f8d5993 100644
---- a/src/ui.ts
-+++ b/src/ui.ts
-@@ -30,3 +30,5 @@ export { useTerminalImages, useTerminalImageCellSize, useTerminalImageProtocol }
- export { useBlink } from './hooks/useBlink.js'
- export { Ansi } from './ink/Ansi.js'
- export type { Key } from './ink/events/input-event.js'
-+export { Markdown, type MarkdownProps } from './components/Markdown.js'
-+export { markdownSourceRange, markdownSourceBlocks, type MarkdownSourceRange, type MarkdownSourceBlock } from './markdown-source.js'
+diff --git a/src/i18n.ts b/src/i18n.ts
+index 2409d82..cec9c5f 100644
+--- a/src/i18n.ts
++++ b/src/i18n.ts
+@@ -74,6 +74,36 @@ export const LANGS = ['zh', 'en'] as const
+ export type I18nText = string | { one: string; other: string }
+ 
+ const dict = {
++  // Pi grammar-fix widget copy; English deliberately matches the reference.
++  'grammar-language-auto': { zh: '自动（保留原语言）', en: 'Auto (keep original language)' },
++  'grammar-session-model': { zh: '当前会话模型', en: 'Session model' },
++  'grammar-correcting': { zh: '正在修正语法…', en: 'Correcting grammar…' },
++  'grammar-cancel-hint': { zh: 'Esc / Ctrl+C 取消', en: 'Esc / Ctrl+C cancels' },
++  'grammar-unavailable': { zh: '此配置未启用语法修正。', en: 'Grammar fixer unavailable in this profile.' },
++  'grammar-empty': { zh: '编辑器为空 — 无需修正。', en: 'Editor is empty — nothing to fix.' },
++  'grammar-command': { zh: '这看起来是命令 — 跳过。', en: 'This looks like a command — skipping.' },
++  'grammar-busy': { zh: '语法修正已在进行中…', en: 'Grammar fix is already in progress…' },
++  'grammar-fixed': { zh: '语法已修正。请检查后发送！', en: 'Grammar fixed. Review and send!' },
++  'grammar-no-changes': { zh: '无需修改 — 文本已正确。', en: 'No changes — the text is already OK.' },
++  'grammar-failed': { zh: '❌ 修正失败：{{error}}', en: '❌ Fix failed: {{error}}' },
++  'grammar-canceled': { zh: '修正已取消；草稿保留。', en: 'Correction canceled; draft preserved.' },
++  'grammar-no-text': { zh: '模型未返回文本。', en: 'The model returned no text.' },
++  'grammar-draft-updated': { zh: '草稿已更新。', en: 'Draft updated.' },
++  'grammar-editor-unavailable': { zh: '外部编辑器不可用。', en: 'External editor unavailable.' },
++  'grammar-joke-0': { zh: '教 AI 使用牛津逗号…', en: 'Teaching Oxford commas to your AI...' },
++  'grammar-joke-1': { zh: '调试英语语法错误…', en: 'Debugging English syntax errors...' },
++  'grammar-joke-2': { zh: '把错别字打磨得闪闪发光…', en: 'Polishing your typos until they shine...' },
++  'grammar-joke-3': { zh: '把 irregardless 换成真正的英语…', en: "Replacing 'irregardless' with actual English..." },
++  'grammar-joke-4': { zh: '让你的消息像资深开发者写的…', en: 'Making your message sound like a Senior Dev...' },
++  'grammar-joke-5': { zh: '理清主谓一致关系…', en: 'Untangling subject-verb agreements...' },
++  'grammar-joke-6': { zh: '咨询古老的语法巫师…', en: 'Consulting the ancient grammar wizards...' },
++  'grammar-joke-7': { zh: '在同事看到之前修正错别字…', en: 'Fixing typos before your team sees them...' },
++  'grammar-joke-8': { zh: '补上遗漏的分号和逗号…', en: 'Adding missing semicolons and commas...' },
++  'grammar-joke-9': { zh: '把开发者俚语转成标准英语…', en: 'Translating dev-slang into proper English...' },
++  'grammar-joke-10': { zh: '追捕失控的撇号…', en: 'Hunting down rogue apostrophes...' },
++  'grammar-joke-11': { zh: '从 2026 年起把 u 变成 you…', en: "Turning 'u' into 'you' since 2026..." },
++  'grammar-joke-12': { zh: '并行消除双重否定…', en: 'Eliminating double negatives in parallel...' },
++  'grammar-joke-13': { zh: '重构 english.txt…', en: 'Refactoring english.txt...' },
+   // ── channel.ts ───────────────────────────────────────────────────────
+   // Working spinner labels. WorkingSpinner resolves these through the
+   // `spinner-verb-*` dynamic family so the status stays localized after a
+@@ -1037,6 +1067,14 @@ const dict = {
+   'plan-mode-on-desc': { zh: '进入计划模式：只读，先规划后动手', en: 'Enter plan mode: read-only, plan before acting' },
+   'plan-mode-off': { zh: '关闭', en: 'Off' },
+   'plan-mode-off-desc': { zh: '退出计划模式，恢复正常执行', en: 'Exit plan mode, back to normal execution' },
++  'plan-artifact-browser-desc': { zh: '浏览项目 .plan 产物（不是原生 Plan 模式）', en: 'Browse project .plan artifacts (not native Plan mode)' },
++  'plan-artifact-unavailable': { zh: '项目 /plan 提供者未挂载；无法打开产物浏览器', en: 'The project /plan provider is not mounted; artifact browser unavailable' },
++  'plan-artifact-native-controls-disabled': { zh: '此 /plan 管理项目产物，不是原生 Plan 模式。用 /plan 浏览，或 /plan auto on|off|status。', en: 'This /plan manages project artifacts, not native Plan mode. Use /plan to browse or /plan auto on|off|status.' },
++  'plan-artifact-new-desc': { zh: '为请求创建项目计划产物', en: 'Create project plan artifacts for a request' },
++  'plan-artifact-auto-desc': { zh: '配置项目 autoApprove', en: 'Configure project autoApprove' },
++  'plan-artifact-auto-on-desc': { zh: '开启项目 autoApprove', en: 'Enable project autoApprove' },
++  'plan-artifact-auto-off-desc': { zh: '关闭项目 autoApprove，要求所有者审批', en: 'Disable project autoApprove; require owner approval' },
++  'plan-artifact-auto-status-desc': { zh: '显示项目 autoApprove 设置', en: 'Show the project autoApprove setting' },
+   'hooks-not-mounted': { zh: 'DSH hooks（dsh-hooks-claude / dsh-hooks-codex）未在本 leaf 挂载。', en: 'DSH hooks (dsh-hooks-claude / dsh-hooks-codex) are not mounted in this leaf.' },
+   'hooks-mount-hint': { zh: '需要时可在 cordis.yml 挂载对应 hooks 插件。', en: 'Mount the matching hooks plugin in cordis.yml when needed.' },
+   'update-unavailable': { zh: '当前运行方式不支持自动更新（需经 dsh --profile 启动），请在终端执行 dsh plugin --profile <name> update @deepseek-harness-tui/dsh-tui', en: 'Automatic update is unavailable in this launch mode (needs dsh --profile). Run dsh plugin --profile <name> update @deepseek-harness-tui/dsh-tui in a terminal.' },
 diff --git a/src/markdown-source.ts b/src/markdown-source.ts
 new file mode 100644
 index 0000000..3d8fb88
@@ -398,3 +1350,289 @@ index 0000000..3d8fb88
 +  configureMarked()
 +  return markdownTokenRanges(source, markdownNavigationTokens(marked.lexer(source))).filter((range): range is MarkdownSourceBlock => range !== null)
 +}
+diff --git a/src/screens/Chat.tsx b/src/screens/Chat.tsx
+index aa96613..76d690d 100644
+--- a/src/screens/Chat.tsx
++++ b/src/screens/Chat.tsx
+@@ -646,6 +646,13 @@ export function Chat({
+    * list while the fresh one loads, exactly as the boolean era did.
+    */
+   const [overlay, dispatchOverlay] = React.useReducer(chatOverlayReducer, NO_OVERLAY)
++  React.useEffect(() => {
++    // Retire a native picker left over from a binding/config change; hiding it
++    // alone would leave the composer blocked by an invisible modal.
++    if (channel.externalPlanCommand && overlay.kind === 'plan') {
++      dispatchOverlay({ type: 'close' })
++    }
++  }, [channel.externalPlanCommand, overlay.kind])
+   // `/migrate` picker rows (null = collecting in the background; the picker
+   // shows its empty state until the sub-second scan lands).
+   const [migrateRows, setMigrateRows] = React.useState<MigratePickerRow[] | null>(null)
+@@ -3552,7 +3559,14 @@ export function Chat({
+         const plan = channel.capabilities().plan
+         const mounted = plan.route !== 'none'
+         const parts = rawInput.trim().split(/\s+/).filter(Boolean)
+-        if (mounted && parts.length === 0) {
++        // Registry presence alone cannot distinguish native plan-mode from an
++        // addon browser. Only an explicit deployment opt-in bypasses the picker.
++        if (channel.externalPlanCommand && (parts[0] === 'on' || parts[0] === 'off')) {
++          setHelpOpen(false)
++          channel.notify(t('plan-artifact-native-controls-disabled'), { color: 'warning' })
++          return true
++        }
++        if (mounted && parts.length === 0 && !channel.externalPlanCommand) {
+           setHelpOpen(false)
+           dispatchOverlay({
+             type: 'open',
+@@ -4844,6 +4858,10 @@ export function Chat({
+       return
+     }
+     if (overlay.kind === 'plan') {
++      if (channel.externalPlanCommand) {
++        dispatchOverlay({ type: 'close' })
++        return
++      }
+       if (key.upArrow || key.downArrow) {
+         dispatchOverlay({ type: 'move', delta: key.upArrow ? -1 : 1, count: 2 })
+       } else if (plainReturn) {
+@@ -5637,13 +5655,14 @@ export function Chat({
+               />
+             </Box>
+           )}
+-          {overlay.kind === 'plan' && (
++          {overlay.kind === 'plan' && !channel.externalPlanCommand && (
+             <Box flexDirection="column" marginTop={1}>
+               <PlanPicker
+                 focusIndex={overlay.index}
+                 currentOn={channel.mode.plan === true}
+                 onPick={(index) => {
+                   dispatchOverlay({ type: 'close' })
++                  if (channel.externalPlanCommand) return
+                   const on = index === 0
+                   void runExternalCommand('plan', on ? '' : ' off')
+                 }}
+@@ -6145,6 +6164,7 @@ export function Chat({
+         brand={brand}
+         starred={starred}
+         onStarClick={runStarAction}
++        provider={channel.provider}
+         firstRun={onboardingPending}
+         actions={launchpadActions}
+         // 参数行四段点开的既有选择器（第五版）：pickerPanels 与聊天页共用
+diff --git a/src/screens/Launchpad.tsx b/src/screens/Launchpad.tsx
+index b200601..9535e60 100644
+--- a/src/screens/Launchpad.tsx
++++ b/src/screens/Launchpad.tsx
+@@ -4,6 +4,8 @@ import { SearchBox } from '../components/SearchBox.js'
+ import { OverlayAbove } from '../components/OverlayAbove.js'
+ import { CommandSuggestions } from '../components/CommandSuggestions.js'
+ import { LogoV2 } from '../components/LogoV2.js'
++import { GrammarFixActivity } from '../components/GrammarFixActivity.js'
++import { createGrammarFixPresentation, grammarFixSuccess, type GrammarFixBridge, type GrammarFixPresentation } from '../components/grammarFixPresentation.js'
+ import type { Brand } from '../branding.js'
+ import { resolveLaunchpadLayout, type LaunchpadLayout } from '../components/launchpadLayout.js'
+ import { type LaunchpadAction } from '../components/launchpadActions.js'
+@@ -16,6 +18,7 @@ import { isMinimalUiMode } from '../minimalUiMode.js'
+ import { stringWidth } from '../ink/stringWidth.js'
+ import { isPlainReturn } from '../utils/modifiers.js'
+ import { actionMatches } from '../utils/keymap.js'
++import { editInExternalEditor } from '../utils/externalEditor.js'
+ import { formatClipboardInsert, readClipboard, type ClipboardRead } from '../utils/clipboard.js'
+ import {
+   collapseToSingleLine,
+@@ -413,6 +416,7 @@ export function Launchpad({
+   inputPaused = false,
+   onParamPick,
+   model,
++  provider,
+   effort,
+   preset,
+   permission,
+@@ -488,6 +492,7 @@ export function Launchpad({
+    * 就整行不画（成组行矮一行，见 `resolveLaunchpadLayout` 的 `params`）。
+    */
+   model?: string | undefined
++  provider?: string | undefined
+   effort?: string | undefined
+   /** 当前 agent preset 的显示名（Standard/PTC/极简…）；缺省不画那一段。 */
+   preset?: string | undefined
+@@ -583,10 +588,30 @@ export function Launchpad({
+   // 用**当时最新**的 query/caret（PromptInput 用 revision 守同一条；这里没有
+   // 本地 state，用每次渲染刷新的 refs 守），不能吃按键那一刻的闭包旧值。
+   const queryRef = React.useRef(query)
++  const queryRevisionRef = React.useRef(0)
++  if (queryRef.current !== query) queryRevisionRef.current++
+   queryRef.current = query
+   const caretRef = React.useRef(caret)
+   caretRef.current = caret
+   const clipboardBusyRef = React.useRef(false)
++  const alexGrammarAbort = React.useRef<AbortController | null>(null)
++  const alexEditorBusy = React.useRef(false)
++  const alexGrammarUndo = React.useRef<string | null>(null)
++  const [grammarPresentation, setGrammarPresentation] = React.useState<GrammarFixPresentation | null>(null)
++  const grammarRevisionRef = React.useRef<number | null>(null)
++  const cancelGrammarFix = (notify: boolean): void => {
++    if (!alexGrammarAbort.current || grammarRevisionRef.current === null) return
++    alexGrammarAbort.current.abort()
++    alexGrammarAbort.current = null
++    grammarRevisionRef.current = null
++    alexEditorBusy.current = false
++    setGrammarPresentation(null)
++    if (notify) showPasteNotice(t('grammar-canceled'))
++  }
++  React.useEffect(() => {
++    if (grammarRevisionRef.current !== null && (inputPaused || grammarRevisionRef.current !== queryRevisionRef.current)) cancelGrammarFix(false)
++  }, [query, inputPaused])
++  React.useEffect(() => () => alexGrammarAbort.current?.abort(), [])
+   /** 粘贴提示：落地页没有 toast 基础设施，借 Tips 行显示 4 秒（失败不能静默）。 */
+   const [pasteNotice, setPasteNotice] = React.useState<string | undefined>(undefined)
+   const noticeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+@@ -727,6 +752,72 @@ export function Launchpad({
+     // 选择器盖在这一屏之上时键盘整块让位（Chat 的 overlay 分支处理；Esc 关
+     // 选择器回到这里）。没有这道闸，选择器分支没消费的键会漏进草稿。
+     if (inputPaused) return
++    if (alexEditorBusy.current) {
++      event?.stopImmediatePropagation()
++      if (key.escape || (key.ctrl && input === 'c')) cancelGrammarFix(true)
++      else if (grammarRevisionRef.current !== null && key.ctrl && input === 'g') showPasteNotice(t('grammar-busy'))
++      return
++    }
++    if (key.ctrl && !key.shift && input === 'z' && alexGrammarUndo.current !== null) {
++      event?.stopImmediatePropagation()
++      const previous = alexGrammarUndo.current
++      alexGrammarUndo.current = null
++      onQueryChange(previous, previous.length)
++      return
++    }
++    const grammar = (globalThis as Record<symbol, unknown>)[Symbol.for('alex.dsh.grammar-fix')] as GrammarFixBridge | undefined
++    const grammarPressed = input === 'g' && key.ctrl && !key.shift && !key.meta && !key.super
++      && (grammar !== undefined || !actionMatches('editor', input, key))
++    if (grammarPressed || actionMatches('editor', input, key)) {
++      event?.stopImmediatePropagation()
++      if (!query.trim() || (grammarPressed && query.startsWith('/'))) return
++      if (grammarPressed && !grammar) {
++        showPasteNotice(t('grammar-unavailable'))
++        return
++      }
++      const original = query
++      const revision = queryRevisionRef.current
++      const abort = new AbortController()
++      alexGrammarAbort.current = abort
++      alexEditorBusy.current = true
++      void (async () => {
++        try {
++          if (grammarPressed) {
++            grammarRevisionRef.current = revision
++            setGrammarPresentation(createGrammarFixPresentation(grammar!.describe({ provider, model })))
++          }
++          const outcome = grammarPressed
++            ? { kind: 'edited' as const, text: await grammar!.fix(original, { provider, model }, abort.signal, (_message, metadata) => {
++              if (abort.signal.aborted || alexGrammarAbort.current !== abort) return
++              if (metadata) setGrammarPresentation(current => current ? {
++                ...current,
++                language: metadata.language ?? current.language,
++                model: metadata.model ?? current.model,
++              } : current)
++            }) }
++            : await editInExternalEditor(original)
++          if (abort.signal.aborted || queryRevisionRef.current !== revision) return
++          if (outcome.kind === 'edited') {
++            alexGrammarUndo.current = original
++            onQueryChange(outcome.text, outcome.text.length)
++            showPasteNotice(grammarPressed ? grammarFixSuccess(outcome.text === original) : t('grammar-draft-updated'))
++          } else showPasteNotice(t('grammar-editor-unavailable'))
++        } catch (error: unknown) {
++          if (!abort.signal.aborted) {
++            const err = error as { message?: string }
++            showPasteNotice(String(err?.message ?? error))
++          }
++        } finally {
++          if (alexGrammarAbort.current === abort) {
++            alexGrammarAbort.current = null
++            grammarRevisionRef.current = null
++            alexEditorBusy.current = false
++            setGrammarPresentation(null)
++          }
++        }
++      })()
++      return
++    }
+     const composing = key.ctrl || key.meta || key.super
+     // 终端原生粘贴（bracketed paste：Ctrl+Shift+V / 右键 / Shift+Insert）：
+     // ink 把载荷标成 isPasted 交给 useInput；标记字节（\x1b[200~ / 201~）在
+@@ -935,6 +1026,7 @@ export function Launchpad({
+         {/* 词标与输入框之间的呼吸留白（第六版）：默认 2 行，矮屏阶梯先于
+             Tips 撤回 1 行（launchpadLayout 的 heroGapRows）——刻意呼吸，不是遗漏。 */}
+         <Box flexDirection="column" width={cardWidth} marginTop={layout.heroGapRows}>
++          {grammarPresentation && <GrammarFixActivity presentation={grammarPresentation} />}
+           {/* 输入框：圆角边框里**只有输入那一行**（第三版：参数行移出框外）。
+               边框在焦点回到输入框时提亮——终端里没有指针形状，颜色变化是
+               唯一的「这里在等你打字」反馈。光标按闪烁相位切换样式。 */}
+diff --git a/src/sessionModes.ts b/src/sessionModes.ts
+index 0f1dd73..62bdba3 100644
+--- a/src/sessionModes.ts
++++ b/src/sessionModes.ts
+@@ -19,6 +19,16 @@ export const DEFAULT_SESSION_MODES: readonly SessionModeSpec[] = [
+   { id: 'full', plan: false, sandbox: 'danger-full-access', approval: 'never' },
+ ]
+ 
++/** An external `/plan` owns project artifacts, never native mode atoms. */
++export function externalPlanSessionModes(modes: readonly SessionModeSpec[]): readonly SessionModeSpec[] {
++  const withoutPlan = (entries: readonly SessionModeSpec[]) => entries
++    .filter(spec => spec.plan !== true)
++    .map(({ plan: _plan, ...spec }) => spec)
++    .filter(spec => spec.permission !== undefined || spec.sandbox !== undefined || spec.approval !== undefined)
++  const filtered = withoutPlan(modes)
++  return filtered.length > 0 ? filtered : withoutPlan(DEFAULT_SESSION_MODES)
++}
++
+ /** Preset names the TUI treats as the canonical built-ins. They are covered
+  *  by the static modes of the default cycle, so they never enter the cycle as
+  *  dynamic entries; `/permission` targets them whenever the deployment's
+diff --git a/src/tips.ts b/src/tips.ts
+index 95ff236..1cbabbf 100644
+--- a/src/tips.ts
++++ b/src/tips.ts
+@@ -133,8 +133,8 @@ export const TIPS: readonly Tip[] = [
+   {
+     id: 'keys-shift-tab',
+     group: 'keys',
+-    zh: 'Shift+Tab 循环会话模式：默认→计划→完全访问（挂了第三方权限预设时按 registry 顺序追加到末尾）',
+-    en: 'Shift+Tab cycles modes: default → plan → full access (third-party presets append in registry order)',
++    zh: 'Shift+Tab 循环当前可用的会话模式；顺序取决于配置与 registry',
++    en: 'Shift+Tab cycles available session modes; order follows configuration and the registry',
+   },
+   {
+     id: 'keys-shift-up',
+@@ -441,8 +441,8 @@ export const TIPS: readonly Tip[] = [
+   {
+     id: 'cmd-plan-goal',
+     group: 'commands',
+-    zh: '/plan 计划模式；/goal 设置会话目标',
+-    en: '/plan enters plan mode; /goal sets a session goal',
++    zh: '/plan 打开当前配置的计划界面；/goal 设置会话目标',
++    en: '/plan opens the configured planning interface; /goal sets a session goal',
+   },
+ 
+   // ── 工作流 ────────────────────────────────────────────────
+@@ -563,8 +563,8 @@ export const TIPS: readonly Tip[] = [
+   {
+     id: 'flow-plan-review',
+     group: 'workflow',
+-    zh: '计划评审按 1 / 2 数字键快速批准或反馈',
+-    en: 'Plan review: press 1 / 2 to approve or give feedback fast',
++    zh: '计划评审按当前界面显示的操作键批准或反馈；不同提供者的快捷键不同',
++    en: 'Plan review: use the action keys shown in the active interface; shortcuts vary by provider',
+   },
+   {
+     id: 'flow-approval',
+diff --git a/src/ui.ts b/src/ui.ts
+index e2bce92..f8d5993 100644
+--- a/src/ui.ts
++++ b/src/ui.ts
+@@ -30,3 +30,5 @@ export { useTerminalImages, useTerminalImageCellSize, useTerminalImageProtocol }
+ export { useBlink } from './hooks/useBlink.js'
+ export { Ansi } from './ink/Ansi.js'
+ export type { Key } from './ink/events/input-event.js'
++export { Markdown, type MarkdownProps } from './components/Markdown.js'
++export { markdownSourceRange, markdownSourceBlocks, type MarkdownSourceRange, type MarkdownSourceBlock } from './markdown-source.js'

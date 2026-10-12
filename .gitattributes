@@ -1,0 +1,4 @@
+# Blank context lines in a unified patch contain a required literal space.
+# Preserve the exact hashed recipe bytes; validate source whitespace in its fork.
+tools/task10-frontend/frontend.patch whitespace=-blank-at-eol
+tools/workshop/patches/*.patch whitespace=-blank-at-eol

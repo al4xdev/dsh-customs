@@ -1,0 +1,15 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -90,6 +90,11 @@
+     "pi-ai",
+     "llm"
+   ],
++  "peerDependenciesMeta": {
++    "@deepseek-ai/dsh-client-runtime": {
++      "optional": true
++    }
++  },
+   "peerDependencies": {
+     "@deepseek-ai/dsh-api-remotes": "0.2.0-rc.2",
+     "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",

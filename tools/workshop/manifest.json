@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "package": "@deepseek-ai/dsh",
+    "version": "0.2.0-rc.2"
+  },
+  "prerequisites": { "nodeMajorMinimum": 24 },
+  "components": [
+    {
+      "id": "tui",
+      "role": "Custom terminal frontend: upstream base plus committed local grammar and managed-plan extensions",
+      "package": "@deepseek-harness-tui/dsh-tui",
+      "version": "0.14.0",
+      "repository": "https://github.com/ccch1mneyyy/dsh-TUI.git",
+      "commit": "c2eee95218d1decfce138f7d31ef7099cc391d00",
+      "packageManager": { "name": "pnpm", "version": "11.21.0" },
+      "patch": {
+        "path": "tools/task10-frontend/frontend.patch",
+        "sha256": "f2c4747d38adb0b6de2c786b449987af2d3e62e9fbcff2cdf69a8504690a908c"
+      },
+      "submodules": [
+        { "path": "vendor/dsh-std", "commit": "614dfa1ac168db79fcf4577cf0ebb34e2e3b944b" }
+      ],
+      "reproduction": {
+        "status": "ready",
+        "reason": "Pinned upstream plus patch reconstructs local committed fork c4f040104e9d45955ed346ce0b1a2d8cb2fab779; remote availability and a fresh full build still require explicit validation."
+      },
+      "build": {
+        "strategy": "frontend-recipe",
+        "commands": [
+          { "command": "pnpm", "args": ["install", "--frozen-lockfile", "--ignore-scripts"], "cwd": "." },
+          { "command": "pnpm", "args": ["compile"], "cwd": "." },
+          { "command": "npm", "args": ["pack", "--ignore-scripts"], "cwd": "." }
+        ]
+      }
+    },
+    {
+      "id": "pi-ai",
+      "role": "Portable Codex implicit-reasoning baseline; not the current host deployment or a moving branch HEAD",
+      "package": "@earendil-works/pi-ai",
+      "version": "0.87.1",
+      "repository": "https://github.com/al4xdev/pi.git",
+      "commit": "c043dedb60695f45fd9577ced676074f08d7f9b0",
+      "packageManager": { "name": "npm", "version": "12.2.0" },
+      "reproduction": {
+        "status": "ready",
+        "reason": "Build uses the official catalog from the new isolated pinned DSH seed, not this machine's modified live model catalog; resulting catalog/artifact hashes are recorded."
+      },
+      "build": {
+        "strategy": "pi-ai-recipe",
+        "commands": [
+          { "command": "npm", "args": ["ci", "--include=dev", "--ignore-scripts"], "cwd": "." },
+          { "command": "node", "args": ["<workshop>/tools/pi-ai-fork/prepare.mjs", "<source>", "<seed-node-modules>", "<artifact-root>"], "cwd": "." }
+        ]
+      }
+    },
+    {
+      "id": "antigravity",
+      "role": "Google provider fork, including committed runtime bundles; standalone source rebuild is not yet portable",
+      "package": "@deepseek-ai/dsh-llm-pi-ai-antigravity",
+      "version": "0.1.0-rc.5",
+      "repository": "https://github.com/al4xdev/dsh-antigravity.git",
+      "commit": "7dcd24272a0897cb0698b24cc9edc0a587c3bea7",
+      "patch": {
+        "path": "tools/workshop/patches/antigravity-optional-client-peer.patch",
+        "sha256": "a817dd2c8d6ddd2452d3d3678df83ed07793afd1fdd9240e55598610b794b9a5"
+      },
+      "packageManager": { "name": "npm", "version": "12.2.0" },
+      "reproduction": {
+        "status": "ready",
+        "reason": "Committed prebuilt lib export only. Hashed patch makes obsolete type/browser-only dsh-client-runtime peer optional for TUI/host installation; guard rejects any compiled JS reference to it. Source bundle still requires absent upstream workspace, browser-client integration is unverified, and OAuth configuration remains private/dotfiles-managed."
+      },
+      "build": {
+        "strategy": "committed-prebuilt",
+        "commands": [
+          { "command": "npm", "args": ["pack", "--ignore-scripts"], "cwd": "." }
+        ]
+      }
+    }
+  ]
+}

@@ -1,98 +1,138 @@
-# alex-dsh-machine-tools
+# dsh-customs — oficina reproduzível do DSH
 
-Local, reversible extensions for Alex's DSH instances. Nothing here modifies an
-installed DSH package: every tool is a Cordis plugin loaded from this repository
-by path.
+Este repositório é a base para reconstruir a oficina de Alex em outra máquina:
+fontes dos plugins, receitas dos forks, builds, artefatos e ligação aos perfis.
+Não é um backup da máquina nem um segundo lugar para guardar configurações pessoais.
 
-- `plugins/` — the plugins themselves plus `activation.json`, the single source
-  of truth for what is active where. See `plugins/README.md`.
-- `tools/activate.mjs` — the bootstrap that turns `activation.json` into the
-  actual `cordis.patch.yml` files DSH reads.
-- `.plan/` — task history. `.dumps/` — scratch, gitignored, local only.
-- `frontend/dsh-tui/` — a separate clone with its own remote. Deliberately not
-  tracked here; see `.gitignore`.
+## Divisão de responsabilidades
 
-## The problem this repository exists to solve
-
-The plugins live in the repo, but DSH does not learn about them from the repo.
-It reads them from a `cordis.patch.yml` per profile:
-
-```
-~/.dsh/profiles/{web,headless,tui,dsh-tui}/cordis.patch.yml
-```
-
-Those files are outside version control, carry hand-written per-machine config
-(local model providers, permission presets, theme, shortcuts) and long
-explanatory comments, and used to be edited by hand from several different
-sessions. The predictable result was drift: the repo's own copy of the overlay
-listed six plugins while the live profiles loaded seven.
-
-So activation is generated, not hand-written. `activation.json` is the only list.
-`tools/activate.mjs` resolves every module path against wherever this repo
-actually lives on the current machine, and rewrites *only* the contiguous run of
-managed `alex-*` entries — every other byte of the profile, comments included, is
-copied through untouched. Entries that do not start with the managed prefix
-(`llm-llamacpp`, `grammar-fix`, `antigravity-tui-login`, …) are never touched, so
-per-machine configuration survives every sync.
-
-## New machine
-
-```sh
-git clone <this repo> ~/git/my/dsh-customs
-cd ~/git/my/dsh-customs
-node tools/activate.mjs          # report drift, change nothing (exit 1 if any)
-node tools/activate.mjs --write  # apply
-```
-
-`--write` is safe to re-run; the operation is idempotent. A second run reports
-`in sync` for every target.
-
-Options:
-
-| Flag | Effect |
+| Lugar | Responsabilidade |
 | --- | --- |
-| *(none)* | read-only drift report; exit code 1 when a target is out of sync |
-| `--write` | apply the sync |
-| `--profile NAME` | limit to one profile (repeatable); skips the repo overlay |
-| `--root DIR` | resolve module paths against `DIR` instead of this repo's location |
-| `--json` | machine-readable report |
+| **dsh-customs** | Plugins, versões/pins, patches, ferramentas de preparação/build e wiring gerado |
+| **dotfiles** | Configurações pessoais de `.dsh`, providers, preferências e launchers da shell/serviços |
+| **Instalação DSH** | CLI e grafo de dependências produzido pela receita |
+| **Dados privados** | Sessões, attachments, credenciais e OAuth; não entram no manifesto nem no bootstrap |
 
-The `yaml` package is not vendored. Resolution falls back to the DSH profile
-tree, which always has it, so the bootstrap works on a fresh DSH machine without
-an install step. Add `yaml` as a local dependency if you want the repo to be
-self-contained.
+Os forks são repositórios separados. Não os absorvemos automaticamente no Git
+principal. O manifesto registra como reconstruí-los; mudanças ainda não commitadas
+neste checkout não aparecem magicamente num clone remoto.
 
-## Adding or moving a plugin
+## Mapa do repositório
 
-1. Put the plugin under `plugins/<name>/index.mjs`.
-2. Add a row to `plugins/activation.json`.
-3. `node tools/activate.mjs --write`.
+- `plugins/`: plugins locais. `plugins/activation.json` é a lista única de ativação.
+- `tools/workshop/manifest.json`: versões exatas, fontes/pins e estratégias da oficina.
+- `tools/workshop/bootstrap.mjs`: doctor sem efeitos, plano, preparação e bootstrap explícito.
+- `tools/task10-frontend/`: receita TUI upstream + patch das extensões locais commitadas.
+- `tools/pi-ai-fork/`: build/validação da correção pi-ai; ferramentas antigas de promoção
+  têm escopo desta máquina, não são instaladores universais.
+- `tools/activate.mjs`: gera somente os blocos gerenciados `alex-*` nos perfis.
+- `frontend/dsh-tui/` e `plugins/dsh-antigravity/`: checkouts locais separados, gitignored.
+- `.plan/`: histórico de tarefas. `.dumps/`: evidência/fixtures locais, gitignored.
 
-The script refuses to guess when it finds more than one separate run of managed
-entries in a single file, and it reports manifest rows whose module is missing —
-both cases would otherwise break every profile on the next DSH restart.
+## Nova máquina: sequência segura
 
-## Where machine config lives
+Requisitos da receita atual: Node **24+**, Git, npm e toolchain do frontend.
+Configurações devem ser restauradas pelo **dotfiles**, conforme o README dele.
+Não copie sessões/credenciais por meio desta receita.
 
-This repository owns the plugins and nothing else. The rest of the DSH
-configuration — `~/.dsh/AGENTS.md`, `~/.dsh/.agent-presets/` and the profiles
-themselves — is versioned by the separate dotfiles repo, which uses `$HOME` as
-its worktree (`git -C ~/git/my/dotfiles status`). Its `README.md` documents the
-fresh-box clone recipe.
+```fish
+git clone https://github.com/al4xdev/dsh-customs.git ~/git/my/dsh-customs
+cd ~/git/my/dsh-customs
+npm ci --ignore-scripts
+npm run workshop:doctor
+```
 
-The division: dotfiles carries the hand-written config, this repo carries the
-plugin sources and generates the `alex-*` wiring inside those profiles. After
-cloning dotfiles onto a new machine, run `node tools/activate.mjs --write` here
-so the generated rows point at the new layout.
+O doctor valida a receita e os hashes; não inicia o DSH, não conecta providers,
+não lê configs privadas e não instala nada. `ready: true` significa **receita
+consistente**, não build completo ou aceitação interativa comprovados.
 
-## Known gaps
+Escolha um destino **novo**, cujo diretório pai já exista. Não use a instalação
+ativa ou `.dsh`. A receita protege esses caminhos e recusa overwrite:
 
-- `plugins/managed-plans/` is implemented but loaded by no profile. It is
-  recorded under `knownInactive` in `activation.json` so the sync never enables
-  it implicitly.
-- Per-machine values inside the profiles (model routes, GGUF snapshot paths,
-  permission defaults) are intentionally left as they are; they are configuration,
-  not plugin wiring.
-- The profiles also reference one plugin outside this repo by absolute path:
-  `/home/alex/Applications/dsh-antigravity/tui-login.mjs`. It is not managed by
-  `activation.json`, so the bootstrap will not fix it on a new machine.
+```fish
+set WORKSHOP "$HOME/.local/share/dsh-workshop-rc2"
+node tools/workshop/bootstrap.mjs --plan --destination "$WORKSHOP" --json
+# Somente depois de revisar o plano; usa rede e compila fontes:
+node tools/workshop/bootstrap.mjs --bootstrap --destination "$WORKSHOP" --allow-network --allow-build --json
+```
+
+`--prepare` cria apenas plano/manifesto/seed em um destino ausente, sem executar
+comandos. Ele **não instala** e **não pode depois ser reutilizado por --bootstrap**:
+os dois modos exigem destinos novos distintos. Não apague staging parcial para
+esconder falhas; preserve seu receipt e escolha/revise uma nova tentativa.
+
+O resultado separa `runtime/`, `sources/`, `artifacts/` e `receipt.json`. Artefatos
+usados numa instalação precisam permanecer em **armazenamento durável**, não em
+`.dumps`. Aqui `.dumps` é usado somente para ensaios, nunca para ativação nova.
+
+**Perfis não são ativados automaticamente.** O bootstrap prepara a CLI com o
+pi-ai corrigido e o pacote Antigravity, além do artefato TUI. Instalar o bundle
+TUI nos perfis restaurados, gerar wiring e ajustar launchers do dotfiles são
+etapas explícitas posteriores. Ver [o guia da oficina](tools/workshop/README.md).
+
+## Receita atual e limites
+
+| Componente | Receita |
+| --- | --- |
+| DSH | `@deepseek-ai/dsh@0.2.0-rc.2` |
+| TUI | Base `c2eee952…`, patch completo equivalente ao fork local `c4f04010…`, pnpm `11.21.0` |
+| pi-ai | Baseline portátil `c043dedb…`, baseada em `0.87.1`, com correção de reasoning implícito; não segue HEAD |
+| Antigravity | Fork `7dcd2427…`, versão `0.1.0-rc.5`, exportação de `lib` já commitado |
+
+O host desta máquina já usa a promoção separada da tarefa 26: fonte `f5a24c96…`
+e artefato pi-ai `206545bfd51e`. Isso não atualiza os pins da oficina automaticamente.
+
+**Antigravity ainda não tem compilação standalone portátil.** Seu build espera
+arquivos do workspace upstream ausentes neste clone; empacotar o código já
+compilado não é o mesmo que reconstruí-lo da fonte. O empacotamento aplica um
+patch hashado para tornar opcional um peer legado usado só por tipos/client.
+Isso permite a instalação host/TUI, mas não comprova integração do client web.
+
+O catálogo usado pelo novo build pi-ai vem do DSH seed isolado, não do catálogo
+alterado desta máquina. Providers/modelos pessoais devem ser configurados
+explicitamente. O primeiro install npm ainda resolve dependências transitivas;
+o lock e hashes resultantes são registrados, sem promessa bit-a-bit entre datas.
+
+## Ativação dos plugins
+
+Após instalar os bundles corretos e restaurar os perfis pelo dotfiles:
+
+```fish
+node tools/activate.mjs --check --profile dsh-tui
+# Revise o drift antes da escrita:
+node tools/activate.mjs --write --profile dsh-tui
+```
+
+A geração resolve caminhos pelo checkout atual e preserva os bytes dos blocos
+não gerenciados, incluindo comentários/configs por máquina. Não clona forks,
+compila, instala bundles nem cria automaticamente perfis ausentes. A dependência
+`yaml` é local e fixada no lock deste repositório; não depende de um antigo npx.
+
+Opções: `--profile NAME` (repetível), `--root DIR`, `--json`, `--check`, `--write`.
+Sem `--profile`, o sync também pode atualizar o overlay do repositório.
+Manifestos inválidos, módulos ausentes e múltiplos blocos gerenciados separados
+são reportados; não se tenta adivinhar a configuração.
+
+## Estado da consolidação desta máquina
+
+A instalação local já executa as TUIs. O web ainda usa npx, e muitos links dos
+perfis dependem daquele cache. Existe também referência ativa a um adapter antigo
+em `.dumps`. **Nada disso pode ser limpo só pelo nome da pasta.**
+
+A tarefa 7 permanece aberta: provar reprodução primeiro, depois migrar dependentes
+com backup persistente/rollback e aprovação dos alvos; só então retirar duplicação.
+Não há `npm cache clean`, remoção automática, promoção live ou restart no bootstrap.
+
+## Validação
+
+```fish
+npm run test:workshop
+npm run test:lts:contracts
+npm run test:project-mcp
+npm run test:managed-plans
+```
+
+Os testes da oficina usam fixtures isoladas e comandos controlados; não substituem
+um build real ou teste manual dos perfis. A documentação em `tools/task10-profile/`
+registra provisionamento/promoção históricos e suas restrições, não uma promessa de
+instalação universal nem permissão de alterar o runtime ativo.
