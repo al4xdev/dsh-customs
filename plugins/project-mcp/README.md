@@ -11,7 +11,8 @@ that it has no project/scoped support were based on recursive searches that did
 not traverse package symlinks. This wrapper supplies project discovery/config;
 `@deepseek-ai/dsh-mcp-client` supplies the transport, reconnect supervisor, scoped
 tool registration, optional scoped resource registry and prompt instructions.
-There is no custom MCP transport or duplicated MCP SDK.
+The client transport stays native. Builtin servers use the official MCP server
+SDK through a small local module loader; there is no hand-written MCP protocol.
 
 ## Project opt-in
 
@@ -69,6 +70,90 @@ Project-local config is trusted executable configuration: opening an opted-in
 project may start its configured command. Review it before opening untrusted
 repositories. Environment values are explicit server inputs and may contain
 secrets; prefer local ignored config rather than committing credentials.
+
+## Builtin: project tool modules
+
+Install this checkout's pinned server dependency once (Node.js 20+):
+
+```fish
+npm ci
+```
+
+Opt in using the same project-local `.agents/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "local": {
+      "builtin": true,
+      "toolsDir": ".agents/tools",
+      "timeoutMs": 30000
+    }
+  }
+}
+```
+
+`toolsDir` defaults to `.agents/tools`, must exist as a directory, and must
+resolve within the canonical project root. Relative paths are project-relative;
+absolute paths inside the project also work. `timeoutMs` defaults to 30000 and
+must be an integer from 1 to 2147483647. Other accepted builtin fields are
+`enabled` and `failOnStartupError` (default true). Native `command`/`url` entries
+remain unchanged; their fields are not mixed into a builtin entry.
+
+Each immediate `*.mjs` file exports a `tools` array. For example,
+`.agents/tools/greet.mjs`:
+
+```js
+export const tools = [{
+  name: 'greet',
+  description: 'Greet someone in this project',
+  inputSchema: {
+    type: 'object',
+    properties: { name: { type: 'string' } },
+    required: ['name'],
+    additionalProperties: false,
+  },
+  async handler({ name }, ctx) {
+    ctx.signal.throwIfAborted();
+    return `Hello ${name} from ${ctx.root}`;
+  },
+}];
+```
+
+- Names use `[A-Za-z0-9_-]+`, are unique across all loaded modules, and appear
+  as `mcp__local__greet`, only in the owning Agent's scope. Native DSH tools
+  are not replaced or disabled.
+- `inputSchema` and optional `outputSchema` are JSON Schema objects with
+  `type: 'object'`. The official SDK's AJV provider validates them without a
+  lossy schema conversion. With no `$schema`, the default dialect is 2020-12;
+  declared draft-07, draft-06 and 2019-09 are also supported by that provider.
+- `handler(args, ctx)` receives validated arguments and
+  `{ root, cwd, env, serverName, signal }`. `cwd` is the project root; `env` is
+  the child process environment supplied by the native transport.
+- Strings become MCP text content; other JSON-serializable values become JSON
+  text (an undefined return becomes empty text). MCP results with `content`,
+  `structuredContent` or `isError` are passed through, with fallback text content
+  when omitted. An `outputSchema` requires a successful MCP result containing
+  matching `structuredContent`. Exceptions and schema failures become SDK tool
+  errors, which the native DSH bridge reports as failed calls.
+- `timeoutMs` sets the native client's call deadline and the handler's abort
+  signal. Client cancellation also reaches that signal. Cancellation is
+  **cooperative**: pass `ctx.signal` to `fetch`, abortable timers and other IO.
+  Ignoring it can leave work running after the client times out; there is no
+  hard interruption, worker isolation, or rollback of side effects.
+- Modules are imported once at startup, in filename order, with no hot reload.
+  An empty directory exports no tools. Import errors, broken/escaping symlinks,
+  invalid definitions and duplicate names fail startup with a file-specific
+  stderr diagnostic rather than silently dropping tools.
+- The official SDK owns version negotiation, stdio, discovery, calls and protocol
+  errors. The wrapper owns only module loading, schema/result adaptation and
+  project context. Its dependencies are local to this checkout and locked in
+  `package-lock.json`, not borrowed from the DSH client's private packages.
+
+**No sandbox:** importing a module executes trusted project code with full Node
+access, including transitive imports. The path guard is not containment. Console
+logging is redirected to stderr; modules must not write directly to stdout, which
+is reserved for MCP. Review modules before enabling an untrusted project.
 
 ## Composition and lifecycle
 
@@ -170,16 +255,21 @@ session regardless of project — the opposite of the intent.
 From this repository (no real archive, ADB, or remote endpoint is launched):
 
 ```fish
-node --test plugins/project-mcp/project-mcp.test.mjs
+npm ci
+npm run test:project-mcp
 ```
 
-Tests use the installed native Cordis, scope, prompt and tool registries, and
-only the tiny local `stub.mjs` server. They verify two unrelated scopes with the
-same server/tool names return their own canonical cwd; global/absent-project views
-see neither; Agent and wrapper teardown close every native transport/probe child;
-startup failure rolls back earlier connections; unload during config IO cannot
-launch a child; native schemas, policy rejection and project discovery hold.
-Test fixtures are created in the operating system temporary directory.
+Tests use the installed native Cordis, scope, prompt and tool registries, the
+tiny local `stub.mjs`, and the official-SDK builtin with temporary local modules.
+They verify separate Agent scopes, real handler calls, validated arguments and
+outputs, preserved results, cooperative timeout and explicit client cancellation
+of an already-running handler, canonical project context, startup diagnostics,
+escape guards, teardown, rollback and unload races. The cancellation regression
+also checks that no delayed completion occurs and the connection stays usable.
+The original stdio/HTTP config and lifecycle regressions remain covered. No real
+archive, ADB or remote server is connected. Existing fixtures use the operating
+system temporary directory; the explicit-cancellation fixture stays under the
+checkout's gitignored `.dumps/`.
 
 ## Live validation
 

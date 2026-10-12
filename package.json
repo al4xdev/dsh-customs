@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "check": "node tools/activate.mjs",
-    "activate": "node tools/activate.mjs --write"
+    "activate": "node tools/activate.mjs --write",
+    "test:project-mcp": "node --test plugins/project-mcp/project-mcp.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
