@@ -1,0 +1,22 @@
+# Corrigir integração pi-ai no OAuth real da TUI
+
+## Objetivo
+Corrigir a rejeição de reasoning none na compactação de c_test2 pelo caminho REAL OAuth/Codex da TUI, mantendo apenas o fork pi-ai existente. Usar goal ativo para execução e validação. Gemini fica separado por enquanto, sem migração nem novos forks.
+
+## Evidências e autorização
+- Plano21 anterior corrigiu adapter e validou compactNow sintético, mas o teste de resolução usou importador profile/package.json.
+- c_test2 a2342e81-a4d7-46ef-b892-1c28ef764035 apresentou compaction/end seq2545 rejeitando none em processo PID149772 iniciado após instalação; não é medidor visual nem processo antigo.
+- frontend OAuth CredentialGatedAdapter importa PiAiAdapter como peer; routeLinked resolve peers à instalação principal. oauth/pi-ai.ts ancora catálogo no manifest do adapter HOST e importa providers/all absoluto. O link só do perfil não chega a esse provider.
+- Usuário autorizou expressamente via escolha aplicar no host, ciente do impacto nos perfis da mesma instalação.
+
+## Alteração mínima
+1. Reutilizar artifact pi-ai 0.87.1+alex.codex-default.7f8948d3c423 já testado e commit c043ded no fork al4xdev/pi. Root ativo /home/alex/.local/share/dsh-cli, DSH 0.2.0-rc.2; não npx. Nenhuma edição em código instalado, DSH/TUI fonte, credenciais ou sessões originais.
+2. Adicionar override npm escopado ao adapter host `@deepseek-ai/dsh-llm-pi-ai@0.2.0-rc.2 -> @earendil-works/pi-ai: file:<artifact>`. Não fazer override global de todos providers inicialmente; respeitar localização nested que npm selecionar, pois TUI busca a partir adapter manifest.
+3. Rehearsal em .dumps com cópia manifest+lock: package-lock-only ignore-scripts/legacy-peer-deps/no-audit/no-fund. Comparar versões+integrity de TODAS packages fora pi-ai; recusar upgrades incidentais. Backups de manifest/lock root + estado de pi-ai e hashes adapter antes de qualquer alteração real. Preservar catálogo já empacotado com metadados locais gpt6.1-sol. Instalar somente mediante rehearsal verde; package-manager oficial npm, sem alterar mapas gerados à mão. Falha parcial exige inspeção/recovery sem declarar sucesso.
+4. Criar script host-install com dry-run/install/rollback e prova/receipt em tools/pi-ai-fork. Lockfile de referência e snapshots em .dumps privados. Guard de concorrência. Rollback restaura SOMENTE override adicionado e passa pelo npm com lock reviewed, sem sobrescrever novos ajustes silenciosamente. Não encerrar processos do usuário.
+5. Testar importer linked REAL frontend/lib/types/dsh-adapter/oauth/index.js e oauth/pi-ai.js via bootstrap oficial e resolução host/profile. Usar classes CredentialGatedAdapter e profiles/buildOAuthProfile reais, catálogo anchored host e stream alto nível; verificar payload esforço ausente e low/medium explícitos, fake credenciais e fetch SSE simulado, zero rede paga. Guard original none reproduz baseline vermelho antes install. Não confundir teste provider factory profile com OAuth real.
+6. Depois override host, remover override redundante somente de dsh-tui por manager oficial, preservando demais deps/cordis/config. Manager anterior concluiu pnpm mas expirou ao encerrar; se repetir, registrar timeout e confirmar estado efetivo manifest/lock/map via prova read-only antes reconciliar. Se for mais seguro manter link durante teste, remover apenas após caminho OAuth confirmado verde. Uma única instância pi-ai deve servir cada adapter/provider factory, não forçar peers duplicados.
+7. CompactNow sintético live em contexto isolado usando adapter OAuth REAL CredentialGatedAdapter da TUI, com credencial in-memory read-only, poucas chamadas, retries0/timeout e checkpoint durável/shrink. Não compactar c_teste/c_test2 automaticamente: usuário fará teste no clone em processo novo. Não modificar source frontend nem executar suas ferramentas herdadas.
+
+## Aceite
+Root host adapter bytes/versão e todos frameworks peers iguais; lock drift só pi-ai e subárvore estritamente necessária. OAuth linked class+catalog/provider apontam patched package, payload não envia none quando effort ausente, explícitos preservados. Regressões código pi-ai anteriores seguem verdes. Teste live no caminho TUI produz checkpoint menor e replay durável, sem writes credentials. Perfil coerente, roadmap/doc anterior corrigido para explicar limitação do teste inicial. Avisar usuário a abrir processo novo e testar c_test2, sem prometer corrigir outros erros de overflow/auth.

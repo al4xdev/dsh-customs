@@ -1,0 +1,22 @@
+# Resiliência Codex no DSH com retry oficial e upgrade seguro do pi-ai
+
+## Objetivo
+Recuperar desconexões transitórias Codex observadas1000/1012 para agentes longos sem replay genérico de saída nem duplicação de ferramentas CLIENT. Aplicar plugin pessoal e fork validado f5a24c ao host principal autorizado, preservando sessões, versões, catálogo e rollback. Não prometer continuidade infinita ou exatamente-uma-vez de ferramentas remotas.
+
+## Arquitetura decidida
+- Plugin local `plugins/codex-transient-close/index.mjs` registrado no perfil dsh-tui, inject llm, middleware público `llm/stream` com prepend:true.
+- Apenas provider openai-codex, chamadas marcadas `isAgentLoopRequest` da mesma instância oficial dsh-llm e sem purpose auxiliar. Apenas finish.error com failure.code PI_AI_ERROR e mensagem nativa ancorada `WebSocket closed (1000|1012)`; excluir razão auth/quota/billing/policy/oversize e status4xx. Outros códigos, providers, fins/cancelamento e exceções permanecem inalterados.
+- Copiar somente finish/failure para code TRANSPORT, preservando mensagem/metadados e todas as chunks anteriores; next chamado uma vez. Sem buffering/retry próprio, sem mutação readonly, sem redefinir adapters e sem alterar core/TUI.
+- Retry oficial existente: normal, maxRetries5, backoff500ms–10000ms jitter0.1; não alterar política OAuth sem seam suportada. Novo assistant/attempt no mesmo step/turn, audit llm/retry e esperas canceláveis oficiais; tool execution só após assistant/message de sucesso. Não incluir PI_AI_ERROR genérico em retryableCodes e não usar always/infinity.
+- Compactação/title/auxiliares não recebem retry deste plugin; seam summary-error é síncrona e não será usada como loop/backoff improvisado. Mantém configuração190k existente.
+
+## Implementação e validação
+1. Escrever plugin, README e testes focados de classificação/identity/disposal; integrar manifests pessoais seguindo padrões existentes sem incluir mudanças alheias. Verificar loader aceita plugin e marcador oficial não duplica módulo.
+2. Testes offline usando loop/session/tool/retry reais em memória e fake adapter: close1000/1012 depois tool args incompletos e completos deve produzir failed assistant/attempt e zero tool dispatch durante falha/backoff; tentativa seguinte recebe contexto durável sem parcial e executa ferramenta exatamente uma vez. Mesmo turn/step, limite5, auditoria, cancelamento, concorrência e negativas auth/quota/policy/1008/1009/substrings/outrosproviders/purposes/unmarked. Não executar modelos nem ferramentas reais.
+3. Atualizar tooling host-install para UPGRADES explícitos: não remover guards. Permitir somente artifact com commit aprovado f5a24c96d72732ba63aeca9a02295c320db04c2d e versão/hash/proveniência verificados; reconhecer override anterior gerenciado0.87.1+alex.codex-default.7f8948d3c423 em caminho durable com evidência. Snapshot novo precisa rollback para fork ANTERIOR, não para upstream antigo. Guardar manifest/lock/packagebytes/catalog e manter609entradas não-pi inalteradas.
+4. Preparar artifact scratch com catálogo host preservado byte a byte; dry-run, testes de upgrade/rollback e invariantes antes de instalar. npm política original/ignore-scripts, promover artifact em diretório durable do host e guardar receipts/backups privados .dumps. Não editar lib manualmente.
+5. Instalar somente após todas verificações passarem; adicionar plugin ao perfil pessoal preservando configuração e demaisplugins. Verificar freshWorker via bootstrap/resolução oficial: CredentialGatedAdapter hostidentity, catálogo/pi novo, middleware recebe marker correto e transporte fake1012 produz retry oficial seguro sem rede/credenciais. Rollback de teste em scratch e inspeção receipt, nenhum rollback real desnecessário.
+6. Commitar explicitamente somente arquivos próprios relacionados após testes (usuário autorizou commits desta correção), mantendo alterações alheias fora do índice. Fork já tem618f4f/f5a24c validados161tests/check; sem push/publicação. Não reiniciar processos ocupados; informar necessidade de abrir processo novo para carregar.
+
+## Aceitação
+Classificação específica e retries oficiais comprovados sem tool duplicado; cinco retries máximos e falhas permanentes/cancelamento terminal; fork novo instalado no host sem mudanças de peers/catalog JSON/modelos; caminho real OAuth e módulo-marker verificados offline; configuração190k intacta e rollback exato disponível. Host principal afeta seus perfis que compartilham instalação; servidor web npx separado não é coberto. Goal ativo guia execução até estes resultados.
