@@ -1,6 +1,9 @@
 .dumps/
 node_modules/
 
+# Mutable plan registry stays local; only reviewed Markdown artifacts are source.
+.plan/.state/
+
 # Packed frontend build consumed by the task10 profile wiring. A build output,
 # not source: it is large and reproduced by tools/task10-frontend/bootstrap.mjs.
 tools/task10-frontend/artifacts/
