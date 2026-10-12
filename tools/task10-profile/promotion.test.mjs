@@ -70,7 +70,7 @@ function fixture(name) {
   write(join(p.profile, '.plugin-manager/prior-state.json'), { exact: 'retained' });
   write(p.manifest, { managedIdPrefix: 'alex-', profiles: ['dsh-tui', 'web'], plugins: [{ id: 'alex-existing', module: 'existing/index.mjs' }], knownInactive: { 'managed-plans': 'prior exact explanation' } });
   write(join(work, 'plugins/existing/index.mjs'), 'export const fixture=true;\n');
-  for (const module of ['index.mjs', 'tui.mjs']) write(join(work, 'plugins/managed-plans', module), 'export const fixture=true;\n');
+  for (const module of ['index.mjs', 'tui.mjs', 'config.mjs', 'goal-resume.mjs']) write(join(work, 'plugins/managed-plans', module), 'export const fixture=true;\n');
   write(p.activate, text(join(repo, 'tools/activate.mjs')));
   for (const launcher of p.launchers) write(launcher, '# exact synthetic launcher bytes\n');
   write(p.preference, { preset: 'ptc' });
@@ -134,6 +134,11 @@ assert.equal(proposedManifest(manifest.content).content, manifest.content, 'mani
 const f = fixture('success');
 const original = snapshot(f.p.profile), originalManifest = text(f.p.manifest);
 const checked = await inspect(f.p, f.io);
+for (const module of ['config.mjs', 'goal-resume.mjs']) {
+  const path = join(f.p.repo, 'plugins/managed-plans', module);
+  assert.equal(checked.inputs[path], hash(readFileSync(path)), `${module} is observed by actual content hash`);
+}
+assert.equal(Object.hasOwn(checked.inputs, join(f.p.repo, 'plugins/managed-plans/mode.mjs')), false);
 assert.deepEqual(snapshot(f.p.profile), original);
 assert.equal(checked.selectedPreset.preference, 'ptc');
 assert.ok(checked.patch.final.includes('lang: en'));
@@ -180,6 +185,20 @@ assert.ok(existsSync(join(restored.quarantine, 'node_modules/added-by-fixture-in
 assert.ok(existsSync(join(restored.quarantine, '.plugin-manager/new-runtime-log.json')), 'runtime-generated metadata permits recovery and is quarantined');
 assert.equal(json(applied.receipt).rollback.verified, true);
 await assert.rejects(rollback({ receipt: applied.receipt, harnessClosed: true }, f.io), /Already rolled back/);
+
+for (const module of ['config.mjs', 'goal-resume.mjs']) {
+  const drift = fixture(`managed-plan-drift-${module}`);
+  await prepare({ paths: drift.p, state: drift.state, bundle: drift.bundle }, drift.io);
+  const path = join(drift.p.repo, 'plugins/managed-plans', module);
+  assert.equal(json(join(drift.state, 'plan.json')).inputs[path], hash(readFileSync(path)));
+  write(path, text(path) + '// changed after preparation\n');
+  const before = snapshot(drift.dir), commandsBefore = drift.commands.length;
+  await assert.rejects(apply({ state: drift.state, harnessClosed: true }, drift.io), error => /Preparation input drift/.test(error.message) && error.message.includes(path));
+  assert.deepEqual(snapshot(drift.dir), before, `${module} drift refuses before any fixture write`);
+  assert.equal(drift.commands.length, commandsBefore, 'input drift runs no subprocess or installer');
+  assert.equal(existsSync(join(drift.state, 'backup')), false);
+  assert.equal(existsSync(join(drift.state, 'receipt.json')), false);
+}
 
 for (const failure of ['validation', 'installation']) {
   const broken = fixture(failure), before = snapshot(broken.p.profile), beforeManifest = text(broken.p.manifest);

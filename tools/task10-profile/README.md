@@ -1,11 +1,12 @@
-# Task10 portable isolated profile (review before running)
+# Task10 historical isolated-profile recipe (review before running)
 
-Nothing has been provisioned, installed, built, activated or launched by this
-change. `plugins/activation.json` is the **only plugin list**. Its task10 engine
-and scene rows target only `dsh-tui-task10`, opt out of the generic repo overlay
-with `overlay:false`, and use production `wakeAgent:true`. The existing four
-profiles retain exactly their managed entries. `knownInactive` is now empty
-because managed-plans is declared only for this isolated profile, not production.
+For the current portable installation base, see [the workshop guide](../workshop/README.md).
+This document records the earlier Task10 isolated-profile handoff, not the current
+activation inventory. `plugins/activation.json` remains the **only plugin list**;
+managed-plans now targets `dsh-tui`, and no `dsh-tui-task10` rows are declared.
+Do not run these historical deployment commands assuming they enable that profile.
+Provisioning/building is separate from activation and requires an explicit reviewed
+profile configuration. Nothing in this document grants permission to alter a live runtime.
 
 ## CLI / API
 
@@ -39,9 +40,10 @@ before interactive acceptance, if needed. No false validation wakeAgent default.
 Frontend API: public `./ui` exports `Markdown`, source mapping helpers including
 `markdownSourceRange`, and the host scene UI provides them to managed-plans.
 Bare `/plan` routes externally only under the opt-in configuration; native
-frontend deployments retain their picker. The patch includes *all* tracked
-checkout differences (including bilingual docs) and untracked
-`src/markdown-source.ts`; no generated lib, node_modules or huge vendor export.
+frontend deployments retain their picker. The current patch records the committed
+32-file delta from upstream `c2eee952` to local fork `c4f04010`, including grammar
+and managed-plan fixes; no generated lib, node_modules or huge vendor export.
+Changing the recipe hash invalidates old preparation/build receipts.
 
 ## Exact pending owner-reviewed deployment
 
@@ -52,7 +54,7 @@ The tracked recipe pins URL/base/vendor commit and SHA256 of the source patch.
 Bootstrap runs: clone -> detached checkout -> recursive pinned submodules ->
 patch check/apply -> `pnpm install --frozen-lockfile --ignore-scripts` ->
 `pnpm compile` (includes vendor builds, **not** the big verification suite) ->
-public UI/package import smoke -> `pnpm pack --ignore-scripts` -> artifact SHA256
+public UI/package import smoke -> `npm pack --ignore-scripts` -> artifact SHA256
 receipt. Receipt is a local integrity record, not a signed reproducible-build
 attestation. Review its origin; the provisioner verifies bytes, not provenance.
 
@@ -97,10 +99,10 @@ The managed scene is English-only UI; plan and comment content is preserved as
 authored. Mouse clicks and arrows select native rendered source blocks. `c` edits
 an existing annotation, `Esc` saves a comment draft, and `d` requires `y/n` before
 deleting it. Deleted drafts retain audit metadata, but are not sent on rejection.
-Historical revisions are read-only. `O` reopens the current plan using the same ID
-and a new staged revision; already staged plans are simply opened. Old decisions,
-comments and closure evidence remain in revision history. No old execution grant
-survives reopening. The agent's `plan_reopen` is a proposal, never approval.
+Historical revisions are read-only. `O` now chooses an organization destination,
+including save-only Blocked. Returning Closed or imported plans to Tasks creates
+a fresh staged revision requiring approval. Old decisions, comments and closure
+evidence remain in history. The agent's `plan_reopen` is a proposal, never approval.
 
 Focused checks (no model calls):
 

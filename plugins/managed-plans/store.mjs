@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
-const CATEGORIES = ['backlog', 'tasks', 'para-o-dono'];
+const CATEGORIES = ['backlog', 'tasks', 'blocked', 'para-o-dono'];
 const DIRS = ['staging', ...CATEGORIES, 'closed', '.state'];
 const hashOf = text => createHash('sha256').update(text, 'utf8').digest('hex');
 const fail = (code, message) => { const e = new Error(message); e.code = code; throw e; };
@@ -235,7 +235,7 @@ export class PlanStore {
   }
 
   _summary(plan, revision = plan.revisions.at(-1)) {
-    return { plan_id: plan.plan_id, revision: revision.revision, hash: revision.hash, title: revision.title, category: revision.category, status: revision.status, path: plan.path, pending_review: revision.revision === plan.current_revision && revision.status === 'staged', execution_authorized: !revision.imported && revision.revision === plan.current_revision && revision.status === 'approved' && revision.category === 'tasks', origin: revision.origin, created_at: revision.created_at, reopening: revision.reopening ?? null };
+    return { plan_id: plan.plan_id, revision: revision.revision, hash: revision.hash, title: revision.title, category: revision.category, status: revision.status, imported: Boolean(revision.imported), path: plan.path, pending_review: revision.revision === plan.current_revision && revision.status === 'staged', execution_authorized: !revision.imported && revision.revision === plan.current_revision && revision.status === 'approved' && revision.category === 'tasks', origin: revision.origin, created_at: revision.created_at, reopening: revision.reopening ?? null };
   }
 
   _cas(plan, revision, hash) {
@@ -402,13 +402,19 @@ export class PlanStore {
     });
   }
 
-  async decide({ plan_id, revision, hash, decision, owner_session_id }) {
+  async decide({ plan_id, revision, hash, decision, expected_category, owner_session_id, recipient_session_id, actor = 'owner', notify = true }) {
     this._writeAllowed();
     if (!['approve', 'reject'].includes(decision)) fail('INVALID_INPUT', 'Invalid decision');
+    if (!['owner', 'autonomous'].includes(actor)) fail('INVALID_INPUT', 'Invalid decision actor');
+    if (typeof notify !== 'boolean') fail('INVALID_INPUT', 'notify must be boolean');
+    if (expected_category !== undefined && !CATEGORIES.includes(expected_category)) fail('INVALID_INPUT', 'Invalid expected category');
     requireText(owner_session_id, 'owner_session_id');
+    if (recipient_session_id !== undefined) requireText(recipient_session_id, 'recipient_session_id');
     return this._transaction(state => {
       const [plan, artifact] = this._get(state, plan_id, revision);
       this._cas(plan, revision, hash);
+      // Organization can change a proposal's destination without changing its text.
+      if (expected_category !== undefined && artifact.category !== expected_category) fail('STALE_REVIEW', 'Destination changed; reload before reviewing');
       const previous = artifact.decisions.find(d => d.decision === decision && d.owner_session_id === owner_session_id);
       if (previous) return { ...previous.result, execution_authorized: this._summary(plan).execution_authorized };
       if (artifact.status !== 'staged') fail('INVALID_STATE', 'Plan is not pending review');
@@ -420,10 +426,96 @@ export class PlanStore {
       } else for (const comment of activeComments(artifact)) comment.status = 'sent';
       const result = this._summary(plan);
       const comments = activeComments(artifact);
-      const notice = { notification_id: randomUUID(), session_id: artifact.origin?.session_id ?? null, plan_id, revision, hash, decision, category: artifact.category, execution_authorized: result.execution_authorized, action: decision === 'approve' ? (result.execution_authorized ? 'execute' : 'saved') : comments.length ? 'revise' : 'wait', comments: decision === 'reject' ? clone(comments) : [], created_at: now(), acknowledged_at: null };
-      if (notice.session_id) state.notifications.push(notice);
-      result.notification_id = notice.session_id ? notice.notification_id : null;
-      artifact.decisions.push({ decision, owner_session_id, revision, hash, category: artifact.category, created_at: now(), result: clone(result) });
+      // Provenance remains immutable; review routing follows the authenticated
+      // current workspace session when the host supplies it (including handoffs).
+      const notice = { notification_id: randomUUID(), session_id: recipient_session_id ?? artifact.origin?.session_id ?? null, plan_id, revision, hash, decision, category: artifact.category, execution_authorized: result.execution_authorized, action: decision === 'approve' ? (result.execution_authorized ? 'execute' : 'saved') : comments.length ? 'revise' : 'wait', comments: decision === 'reject' ? clone(comments) : [], created_at: now(), acknowledged_at: null };
+      if (notice.session_id && notify) state.notifications.push(notice);
+      result.notification_id = notice.session_id && notify ? notice.notification_id : null;
+      artifact.decisions.push({ decision, actor, owner_session_id, revision, hash, category: artifact.category, created_at: now(), result: clone(result) });
+      return result;
+    });
+  }
+
+  async move({ plan_id, expected_revision, category }) {
+    this._writeAllowed();
+    if (!CATEGORIES.includes(category)) fail('INVALID_INPUT', 'Invalid destination category');
+    return this._transaction(state => {
+      const [plan, artifact] = this._get(state, plan_id);
+      if (expected_revision !== plan.current_revision) fail('STALE_REVISION', 'expected_revision must match the current revision');
+      if (artifact.status !== 'approved') fail('INVALID_STATE', 'Only approved plans can be moved freely');
+      if (artifact.category === category) return this._summary(plan);
+      const oldPath = plan.path;
+      artifact.category = category;
+      plan.path = `${category}/${path.basename(oldPath)}`;
+      this._mirror(state, plan, oldPath, artifact.content);
+      return this._summary(plan);
+    });
+  }
+
+  /**
+   * Human-only organization: the host authenticates owner/session and command identity.
+   * Returns {...summary, organized: true, reopened: boolean, archived: boolean}.
+   * Organization never emits review notifications or resumes execution/goals.
+   */
+  async organize({ plan_id, expected_revision, hash, category, owner_session_id, origin }) {
+    this._writeAllowed();
+    integer(plan_id, 'plan_id'); integer(expected_revision, 'expected_revision');
+    requireText(hash, 'hash'); requireText(owner_session_id, 'owner_session_id');
+    requireText(origin?.session_id, 'origin.session_id'); requireText(origin?.call_id, 'origin.call_id');
+    if (origin.request_id !== undefined) requireText(origin.request_id, 'origin.request_id');
+    if (![...CATEGORIES, 'closed'].includes(category)) fail('INVALID_INPUT', 'Invalid destination category');
+    const key = JSON.stringify(['organize', owner_session_id, origin.request_id ?? origin.call_id]);
+    // A request id survives transport retries with a new call id. Preserve all
+    // other provenance in the fingerprint, including additional host metadata.
+    const fingerprintOrigin = clone(origin);
+    if (origin.request_id !== undefined) delete fingerprintOrigin.call_id;
+    const fingerprint = hashOf(JSON.stringify({ plan_id, expected_revision, hash, category, owner_session_id, origin: fingerprintOrigin }));
+    return this._transaction(state => {
+      if (state.idempotency[key]) {
+        if (state.idempotency[key].fingerprint !== fingerprint) fail('IDEMPOTENCY_CONFLICT', 'Organization request reused with different input');
+        return state.idempotency[key].result;
+      }
+      const [plan, source] = this._get(state, plan_id);
+      if (expected_revision !== plan.current_revision) fail('STALE_REVISION', 'expected_revision must match the current revision');
+      this._cas(plan, expected_revision, hash);
+      if (!['approved', 'staged', 'rejected', 'closed'].includes(source.status)) fail('INVALID_STATE', 'Plan cannot be organized from this state');
+      const oldPath = plan.path;
+      const audit = { plan_id, source_revision: source.revision, source_hash: source.hash,
+        source_status: source.status, source_category: source.category, category,
+        owner_session_id, origin: clone(origin), organized_at: now() };
+      let reopened = false, archived = false;
+      if (category === 'closed') {
+        if (source.status !== 'closed') {
+          source.status = 'closed';
+          source.closure = { outcome: 'cancelled', reason: 'Archived by authenticated owner organization',
+            evidence: null, closed_at: audit.organized_at, owner_session_id, origin: clone(origin) };
+          plan.path = `closed/${path.basename(oldPath)}`;
+          this._mirror(state, plan, oldPath, source.content);
+          archived = true;
+        }
+      } else if (source.status === 'closed' || (source.imported && category === 'tasks')) {
+        // Reuse identity and exact content, never the old approval or feedback.
+        const revision = ++plan.current_revision;
+        const reopening = { intent: 'owner-review', reason: 'Reopened by authenticated owner organization',
+          source_revision: source.revision, source_hash: source.hash, source_status: source.status,
+          source_origin: clone(source.origin), requested_by_session_id: owner_session_id,
+          origin: clone(origin), requested_at: audit.organized_at };
+        plan.revisions.push({ revision, title: source.title, content: source.content, hash: source.hash,
+          category, status: 'staged', created_at: audit.organized_at, origin: clone(origin),
+          reopening, comments: [], decisions: [] });
+        plan.path = `staging/${plan.filename.replace(/\.md$/i, '')}.r${revision}.md`;
+        this._mirror(state, plan, oldPath, source.content);
+        reopened = true;
+      } else {
+        source.category = category;
+        if (source.status === 'approved') {
+          plan.path = `${category}/${path.basename(oldPath)}`;
+          this._mirror(state, plan, oldPath, source.content);
+        }
+      }
+      const result = { ...this._summary(plan), organized: true, reopened, archived };
+      (plan.organization_requests ??= []).push({ ...audit, result: clone(result) });
+      state.idempotency[key] = { fingerprint, result };
       return result;
     });
   }
@@ -444,6 +536,7 @@ export class PlanStore {
         if (owner_cancel_authorized !== true) fail('OWNER_REQUIRED', 'Cancellation requires authenticated owner instruction');
       } else {
         if (artifact.status !== 'approved') fail('INVALID_STATE', 'Only approved plans can be closed without cancellation');
+        if (artifact.imported) fail('INVALID_STATE', 'Imported plans require a fresh reviewed revision before closure');
         if (outcome === 'completed' && (artifact.category !== 'tasks' || !evidence)) fail('INVALID_INPUT', 'Completion requires approved tasks and evidence');
         if (outcome === 'decided' && (artifact.category !== 'para-o-dono' || !evidence)) fail('INVALID_INPUT', 'Decision closure requires para-o-dono and answer evidence');
       }
@@ -461,8 +554,13 @@ export class PlanStore {
     return this._transaction(state => state.notifications.filter(n => n.session_id === sessionId && !n.acknowledged_at).map(notice => {
       const plan = state.plans[notice.plan_id];
       const revision = plan?.revisions.at(-1);
-      const is_current = revision?.revision === notice.revision && revision?.hash === notice.hash && revision.status !== 'closed';
-      return { ...notice, is_current, action: is_current ? notice.action : 'superseded', execution_authorized: is_current && notice.execution_authorized && revision.status === 'approved' && revision.category === 'tasks' };
+      // Organization preserves revision/hash, but a notice must not carry old
+      // execution authority into a save-only destination (or the reverse).
+      const is_current = revision?.revision === notice.revision && revision?.hash === notice.hash
+        && revision.category === notice.category && revision.status !== 'closed';
+      const execution_authorized = Boolean(is_current && notice.execution_authorized && !revision.imported
+        && revision.status === 'approved' && revision.category === 'tasks');
+      return { ...notice, is_current, action: is_current && (notice.action !== 'execute' || execution_authorized) ? notice.action : 'superseded', execution_authorized };
     }));
   }
 

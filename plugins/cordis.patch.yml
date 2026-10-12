@@ -28,5 +28,6 @@
       name: /home/alex/git/my/dsh-customs/plugins/managed-plans/index.mjs
       config:
         wakeAgent: true
+        autonomousByDefault: false
     - id: alex-managed-plans-tui
       name: /home/alex/git/my/dsh-customs/plugins/managed-plans/tui.mjs

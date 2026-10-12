@@ -48,6 +48,14 @@ try {
   assert.notEqual(secondComment.comment_id, comment.comment_id);
   const approved = await store.decide({ plan_id: second.plan_id, revision: 2, hash: second.hash, decision: 'approve', owner_session_id: 'test-owner' });
   assert.equal(approved.execution_authorized, true);
+  const movedToBacklog = await store.move({ plan_id: second.plan_id, expected_revision: 2, category: 'backlog' });
+  assert.equal(movedToBacklog.category, 'backlog');
+  assert.equal(movedToBacklog.execution_authorized, false);
+  assert.ok(existsSync(join(workspace, '.plan', movedToBacklog.path)));
+  const movedBackToTasks = await store.move({ plan_id: second.plan_id, expected_revision: 2, category: 'tasks' });
+  assert.equal(movedBackToTasks.execution_authorized, true);
+  const stillStaged = await store.stage({ title: 'Still staged', plan: source, category: 'tasks', origin: origin('still-staged') });
+  await assert.rejects(store.move({ plan_id: stillStaged.plan_id, expected_revision: 1, category: 'backlog' }), { code: 'INVALID_STATE' });
   const read = await store.read(second.plan_id);
   const readView = view('plan_read', {}, read);
   assert.equal(readView.card, 'generic');
@@ -185,6 +193,35 @@ try {
   console.log(`Test workspace: ${workspace}`);
 } finally { store.dispose(); }
 
+// Imported mirrors look approved but have no approval record. Guard closure in
+// the store itself, not only at the tool boundary, then require a fresh review.
+const importedWorkspace = mkdtempSync(join(scratch, 'task10-imported-refinements-'));
+for (const [id, category] of [[1, 'tasks'], [2, 'para-o-dono']]) {
+  fs.mkdirSync(join(importedWorkspace, '.plan', category), { recursive: true });
+  fs.writeFileSync(join(importedWorkspace, '.plan', category, `${id}-imported.md`), source);
+}
+const importedStore = new PlanStore(importedWorkspace);
+try {
+  await importedStore.initialize();
+  for (const [id, category, outcome] of [[1, 'tasks', 'completed'], [2, 'para-o-dono', 'decided']]) {
+    const imported = await importedStore.read(id);
+    assert.equal(imported.status, 'approved');
+    assert.equal(imported.execution_authorized, false);
+    const closeArgs = { plan_id: id, expected_revision: 1, outcome, reason: 'Imported mirror is not owner approval', evidence: 'Must require fresh approval' };
+    await assert.rejects(importedStore.close(closeArgs), { code: 'INVALID_STATE' });
+    assert.deepEqual(historical(await importedStore.read(id)), historical(imported));
+    const staged = await importedStore.stage({ plan_id: id, expected_revision: 1, title: imported.title,
+      plan: imported.content, category, origin: origin(`fresh-import-${id}`) });
+    await assert.rejects(importedStore.close({ ...closeArgs, expected_revision: 2 }), { code: 'INVALID_STATE' });
+    await importedStore.decide({ plan_id: id, revision: 2, hash: staged.hash, decision: 'approve', owner_session_id: 'test-owner' });
+    const closed = await importedStore.close({ ...closeArgs, expected_revision: 2 });
+    assert.equal(closed.status, 'closed');
+    assert.deepEqual(await importedStore.close({ ...closeArgs, expected_revision: 2 }), closed);
+  }
+  console.log('PASS: atomic store closure rejects implicit imported approval for tasks and owner decisions; fresh staging+approval enables closure.');
+  console.log(`Imported test workspace: ${importedWorkspace}`);
+} finally { importedStore.dispose(); }
+
 // Exercise genuine native tool/command registries and the actual plugin/store
 // boundary. Only session/mode/policy adapters are small local test fixtures.
 const { Context } = await import(resolveHost('@deepseek-ai/cordis'));
@@ -193,7 +230,8 @@ const { CommandRuntime } = await import(resolveHost('@deepseek-ai/dsh-commands')
 const nativeWorkspace = mkdtempSync(join(scratch, 'task10-native-refinements-'));
 const deniedWorkspace = mkdtempSync(join(scratch, 'task10-native-readonly-'));
 const ctx = new Context();
-ctx.provide('systemPrompt', { tools() {} });
+const promptSections = [];
+ctx.provide('systemPrompt', { tools() {}, section(value) { promptSections.push(value); }, getSectionOrder() { return 0; } });
 const tools = new ToolRuntime(ctx);
 const commands = new CommandRuntime(ctx);
 let flushes = 0, calls = 0, sends = 0;
@@ -205,15 +243,24 @@ const child = { status: 'running', session: { id: 'native-child', header: { orig
 live.set(agent.session.id, agent); live.set(child.session.id, child);
 const deniedAgent = { ...agent, session: { ...agent.session, id: 'native-denied', header: { origin: 'cli', cwd: deniedWorkspace }, events: [] } };
 let policy = { mode: 'workspace-write', workspaceRoot: nativeWorkspace };
-ctx.provide('planMode', { commit(target, active) { modeEvents.push({ session_id: target.session.id, active }); } });
+// Record and fail any legacy native-mode call, including errors swallowed by the command boundary.
+const nativeModeCall = (...args) => { modeEvents.push(args); throw new Error('Managed artifacts must never use native Plan mode'); };
+ctx.provide('planMode', { commit: nativeModeCall, set: nativeModeCall });
 ctx.provide('sessionProjections', { register() {}, stateOf() { return { ids: [] }; } });
 ctx.provide('sessionPersistence', { async flush() { flushes++; } });
 ctx.provide('agents', { get(id) { return live.get(id); } });
 ctx.provide('sandboxPolicy', { resolve() { return policy; } });
 const plugin = new ManagedPlans(ctx, { wakeAgent: false });
+assert.equal(promptSections.length, 1);
+assert.match(promptSections[0].text(), /do not enter native Plan mode/i);
+assert.ok(!/native (?:Plan )?mode (?:is )?active/i.test(promptSections[0].text()));
 const signal = new AbortController().signal;
 async function tool(name, args, success = true, target = agent, callId = `native-call-${++calls}`) {
+  const beforePolicy = structuredClone(policy);
   const result = await tools.execute({ name, arguments: args, signal, agent: target, callId });
+  assert.deepEqual(modeEvents, []);
+  assert.deepEqual(policy, beforePolicy, 'artifact tools must not change sandbox permissions');
+  assert.ok(!target.session.events.some(event => event.type === 'plan/mode'));
   assert.equal(result.isError, !success, JSON.stringify(result));
   if (success) {
     assert.equal(typeof result.value, 'string');
@@ -224,9 +271,27 @@ async function tool(name, args, success = true, target = agent, callId = `native
   return result;
 }
 async function ui(payload, success = true, target = agent) {
+  const beforePolicy = structuredClone(policy);
   const execution = await commands.execute(target, '/plan ui ' + JSON.stringify(payload), [], signal);
+  assert.deepEqual(modeEvents, []);
+  assert.deepEqual(policy, beforePolicy, 'owner review must not change sandbox permissions');
+  assert.ok(!target.session.events.some(event => event.type === 'plan/mode'));
   assert.equal(execution.result.kind, success ? 'success' : 'error', JSON.stringify(execution));
   return success ? { ...execution, data: JSON.parse(execution.result.text).data } : execution;
+}
+async function command(raw, success = true, target = agent) {
+  const beforePolicy = structuredClone(policy);
+  const execution = await commands.execute(target, raw, [], signal);
+  assert.equal(execution.result.kind, success ? 'success' : 'error', JSON.stringify(execution));
+  assert.deepEqual(modeEvents, []);
+  assert.deepEqual(policy, beforePolicy);
+  assert.ok(!target.session.events.some(event => event.type === 'plan/mode'));
+  return execution;
+}
+async function preference(expected) {
+  // Re-read the project file, independent of the live plugin and session.
+  const config = await import('../../plugins/managed-plans/config.mjs');
+  assert.equal(await config.readPlanConfig(nativeWorkspace), expected);
 }
 try {
   policy = { mode: 'read-only', workspaceRoot: deniedWorkspace };
@@ -235,6 +300,10 @@ try {
   assert.ok(!existsSync(join(deniedWorkspace, '.plan')), 'denied writes must not bootstrap .plan');
   assert.deepEqual(JSON.parse((await tool('plan_list', {}, true, deniedAgent)).value), []);
   assert.ok(!existsSync(join(deniedWorkspace, '.plan')), 'empty readonly browsing must not bootstrap .plan');
+  await command('/plan auto on', false, deniedAgent);
+  await command('/plan auto off', false, deniedAgent);
+  assert.equal(JSON.parse((await command('/plan auto status', true, deniedAgent)).result.text).autonomous_approval, false);
+  assert.ok(!existsSync(join(deniedWorkspace, '.plan')), 'readonly auto status must not bootstrap .plan');
   policy = { mode: 'workspace-write', workspaceRoot: deniedWorkspace };
   await tool('plan_stage', { title: 'Outside writable root', plan: source, category: 'tasks' }, false);
   policy = { mode: 'workspace-write', workspaceRoot: nativeWorkspace };
@@ -250,6 +319,94 @@ try {
   assert.equal(tools.get('plan_delete_comment'), undefined);
   const approved = (await ui({ action: 'decide', plan_id: first.plan_id, revision: 1, hash: first.hash, decision: 'approve' })).data;
   assert.equal(approved.execution_authorized, true);
+  assert.ok(!/never self-approve/i.test(tools.get('plan_stage').description));
+  assert.match(tools.get('plan_stage').description, /autonomous|auto.*approv/i);
+  assert.equal(tools.get('exit_plan_mode'), undefined, 'custom artifacts must not register a native Plan-mode alias');
+  await preference(null);
+  fs.mkdirSync(join(nativeWorkspace, '.agents'), { recursive: true });
+  const unrelatedConfig = { theme: 'preserve-me', dshCustoms: { unrelated: { keep: true }, managedPlans: { other: 'keep' } } };
+  fs.writeFileSync(join(nativeWorkspace, '.agents', 'config.json'), JSON.stringify(unrelatedConfig));
+  for (const value of ['on', 'off', 'status']) await command(`/plan auto ${value}`, false, child);
+  const autoOn = await command('/plan auto on');
+  assert.equal(autoOn.result.kind, 'success');
+  assert.equal(JSON.parse(autoOn.result.text).autonomous_approval, true);
+  await preference(true);
+  const persistedConfig = JSON.parse(readFileSync(join(nativeWorkspace, '.agents', 'config.json'), 'utf8'));
+  assert.deepEqual(persistedConfig, { ...unrelatedConfig, dshCustoms: { ...unrelatedConfig.dshCustoms,
+    managedPlans: { ...unrelatedConfig.dshCustoms.managedPlans, autoApprove: true } } });
+  const peer = { ...agent, session: { ...agent.session, id: 'native-peer', events: [] } };
+  live.set(peer.session.id, peer);
+  const peerStatus = JSON.parse((await command('/plan auto status', true, peer)).result.text);
+  assert.equal(peerStatus.autonomous_approval, true);
+  assert.equal(peerStatus.source, 'project-config');
+  assert.equal(peerStatus.scope, 'workspace');
+  assert.equal(JSON.parse((await command('/plan auto status')).result.text).autonomous_approval, true);
+  const autoResult = await tool('plan_stage', { title: 'Autonomous proposal', plan: source, category: 'tasks' });
+  const autoPlan = JSON.parse(autoResult.value);
+  assert.notEqual(autoResult.concludesTurn, true);
+  assert.equal(autoPlan.waiting_for_owner, false);
+  assert.equal(autoPlan.execution_authorized, true);
+  assert.equal(autoPlan.notification_id, null);
+  const autoReopen = await tool('plan_reopen', { plan_id: autoPlan.plan_id, expected_revision: 1, reason: 'Auto approval must not apply to reopening.' });
+  const autoReopened = JSON.parse(autoReopen.value);
+  assert.equal(autoReopen.concludesTurn, true);
+  assert.equal(autoReopened.status, 'staged');
+  assert.equal(autoReopened.waiting_for_owner, true);
+  assert.equal(autoReopened.execution_authorized, false);
+  await ui({ action: 'decide', plan_id: autoPlan.plan_id, revision: 2, hash: autoReopened.hash, decision: 'approve' });
+  assert.equal((await tool('plan_move', { plan_id: autoPlan.plan_id, expected_revision: 2, category: 'backlog' })).isError, false);
+  const autoOff = await command('/plan auto off');
+  assert.equal(JSON.parse(autoOff.result.text).autonomous_approval, false);
+  await preference(false);
+  policy = { mode: 'read-only', workspaceRoot: nativeWorkspace };
+  await command('/plan auto on', false);
+  assert.equal(JSON.parse((await command('/plan auto status')).result.text).autonomous_approval, false);
+  await preference(false);
+  policy = { mode: 'workspace-write', workspaceRoot: deniedWorkspace };
+  await command('/plan auto on', false);
+  policy = { mode: 'workspace-write', workspaceRoot: nativeWorkspace };
+  const beforeNewSends = sends;
+  const queued = JSON.parse((await command('/plan new Artifact-only planning request')).result.text).data;
+  assert.deepEqual(queued, { planning: true, queued: true });
+  assert.equal(sends, beforeNewSends + 1);
+  let browserOpens = 0;
+  const unregisterBrowser = plugin.registerBrowserOpener(() => { browserOpens++; });
+  await command('/plan');
+  unregisterBrowser();
+  assert.equal(browserOpens, 1);
+  assert.equal(sends, beforeNewSends + 1, 'browser opening must not queue planning');
+  // A separate Context avoids duplicate registrations and proves disk reload.
+  const restartCtx = new Context();
+  restartCtx.provide('systemPrompt', { tools() {}, section() {}, getSectionOrder() { return 0; } });
+  const restartTools = new ToolRuntime(restartCtx);
+  const restartCommands = new CommandRuntime(restartCtx);
+  // Deliberately no planMode service: the custom artifact plugin has zero dependency on it.
+  restartCtx.provide('sessionProjections', { register() {}, stateOf() { return { ids: [] }; } });
+  restartCtx.provide('sessionPersistence', { async flush() { flushes++; } });
+  restartCtx.provide('agents', { get(id) { return live.get(id); } });
+  restartCtx.provide('sandboxPolicy', { resolve() { return policy; } });
+  const restartedPlugin = new ManagedPlans(restartCtx, { wakeAgent: false, autonomousByDefault: true });
+  try {
+    assert.equal(restartTools.get('exit_plan_mode'), undefined);
+    const resumed = await restartCommands.execute(agent, '/plan auto status', [], signal);
+    assert.equal(resumed.result.kind, 'success');
+    const resumedStatus = JSON.parse(resumed.result.text);
+    assert.equal(resumedStatus.autonomous_approval, false, 'project off overrides even a new plugin default on');
+    assert.equal(resumedStatus.source, 'project-config');
+    const resumedStage = await restartTools.execute({ name: 'plan_stage', arguments: { title: 'Reloaded project preference', plan: source, category: 'tasks' }, signal, agent, callId: 'restart-stage' });
+    assert.equal(resumedStage.isError, false, JSON.stringify(resumedStage));
+    assert.equal(resumedStage.concludesTurn, true);
+    assert.equal(JSON.parse(resumedStage.value).waiting_for_owner, true);
+    assert.equal(JSON.parse(resumedStage.value).execution_authorized, false);
+    const shared = await restartCommands.execute(peer, '/plan auto status', [], signal);
+    assert.equal(JSON.parse(shared.result.text).autonomous_approval, false, 'another session shares workspace choice');
+    const defaultStatus = await restartCommands.execute(deniedAgent, '/plan auto status', [], signal);
+    assert.equal(defaultStatus.result.kind, 'success');
+    assert.equal(JSON.parse(defaultStatus.result.text).autonomous_approval, true);
+    assert.equal(JSON.parse(defaultStatus.result.text).source, 'plugin-default');
+    assert.ok(!existsSync(join(deniedWorkspace, '.agents')));
+    assert.deepEqual(modeEvents, []);
+  } finally { for (const writer of restartedPlugin.writers.values()) writer.dispose(); }
   const oldSource = JSON.parse((await tool('plan_read', { plan_id: first.plan_id })).value);
   const proposalArgs = { plan_id: first.plan_id, expected_revision: 1, reason: 'Propose a safe new review.' };
   await tool('plan_reopen', { ...proposalArgs, expected_revision: undefined }, false);
@@ -264,7 +421,7 @@ try {
   assert.equal(proposal.revision, 2);
   assert.equal(proposal.reopening.source_revision, 1);
   assert.equal(proposal.origin.session_id, 'native-owner', 'delegated tool binding must use the root owner');
-  assert.deepEqual(modeEvents.at(-1), { session_id: child.session.id, active: true });
+  assert.deepEqual(modeEvents, []);
   assert.ok(flushes > beforeReopenFlushes);
   assert.equal(sends, beforeReopenSends);
   assert.ok(managedPlanCallView('plan_reopen', proposalArgs).content[0].text.includes('never authorizes execution'));
@@ -288,7 +445,7 @@ try {
   const closedBeforeO = JSON.parse((await tool('plan_read', { plan_id: first.plan_id })).value);
   const humanArgs = { action: 'reopen', plan_id: first.plan_id, expected_revision: 2, hash: closedBeforeO.hash,
     reason: 'Owner browser reopen without waking the model.', request_id: 'stable-human-O' };
-  const modeCount = modeEvents.length, flushCount = flushes, sendCount = sends;
+  const flushCount = flushes, sendCount = sends;
   const humanReopen = await ui(humanArgs);
   assert.equal(humanReopen.data.revision, 3);
   assert.equal(humanReopen.data.waiting_for_owner, true);
@@ -296,7 +453,7 @@ try {
   assert.equal(humanReopen.data.reopening.origin.call_id, humanReopen.commandId);
   assert.equal(humanReopen.data.reopening.origin.request_id, humanArgs.request_id);
   assert.equal(humanReopen.data.reopening.intent, 'owner-review');
-  assert.deepEqual(modeEvents.slice(modeCount), [{ session_id: agent.session.id, active: true }]);
+  assert.deepEqual(modeEvents, []);
   assert.ok(flushes > flushCount);
   assert.equal(sends, sendCount, 'human O must never queue a message or wake an agent');
   const humanRetry = await ui(humanArgs);
@@ -325,22 +482,57 @@ try {
   const sourceA = JSON.parse((await tool('plan_read', { plan_id: first.plan_id })).value);
   const sessionB = { ...agent, session: { ...agent.session, id: 'native-owner-B', events: [] } };
   live.set(sessionB.session.id, sessionB);
-  const beforeHandoffModes = modeEvents.length, beforeHandoffSends = sends;
+  const reviewHandoff = JSON.parse((await tool('plan_stage', { title: 'A stages, B reviews', plan: source, category: 'tasks' })).value);
+  const beforeANotices = await plugin.withStore(agent, false, s => s.pendingNotifications(agent.session.id));
+  await ui({ action: 'decide', plan_id: reviewHandoff.plan_id, revision: 1, hash: reviewHandoff.hash, decision: 'approve', recipient_session_id: agent.session.id }, false, sessionB);
+  await ui({ action: 'decide', plan_id: reviewHandoff.plan_id, revision: 1, hash: reviewHandoff.hash, decision: 'approve' }, true, sessionB);
+  assert.equal(JSON.parse((await tool('plan_read', { plan_id: reviewHandoff.plan_id })).value).origin.session_id, agent.session.id);
+  assert.deepEqual(await plugin.withStore(agent, false, s => s.pendingNotifications(agent.session.id)), beforeANotices);
+  const reviewNoticeB = (await plugin.withStore(sessionB, false, s => s.pendingNotifications(sessionB.session.id))).find(notice => notice.plan_id === reviewHandoff.plan_id);
+  assert.equal(reviewNoticeB.action, 'execute');
+  assert.equal(reviewNoticeB.execution_authorized, true);
+  await tool('plan_close', { plan_id: reviewHandoff.plan_id, expected_revision: 1, outcome: 'completed', reason: 'Review routed to B', evidence: 'Origin A retained; notice goes to reviewer B' }, true, sessionB);
+  // Approval belongs to the workspace revision; B can close A's work directly.
+  const direct = JSON.parse((await tool('plan_stage', { title: 'A approved, B completes', plan: source, category: 'tasks' })).value);
+  await ui({ action: 'decide', plan_id: direct.plan_id, revision: 1, hash: direct.hash, decision: 'approve' });
+  const directClose = { plan_id: direct.plan_id, expected_revision: 1, outcome: 'completed', reason: 'B completes approved workspace task', evidence: 'Direct handoff verified' };
+  await tool('plan_close', { ...directClose, expected_revision: 2 }, false, sessionB);
+  await tool('plan_close', { ...directClose, evidence: undefined }, false, sessionB);
+  await tool('plan_close', { ...directClose, evidence: ' ' }, false, sessionB);
+  policy = { mode: 'workspace-write', workspaceRoot: deniedWorkspace };
+  await tool('plan_close', directClose, false, deniedAgent);
+  policy = { mode: 'workspace-write', workspaceRoot: nativeWorkspace };
+  const directClosed = JSON.parse((await tool('plan_close', directClose, true, sessionB)).value);
+  assert.equal(directClosed.origin.session_id, agent.session.id);
+  assert.equal(directClosed.revision, 1);
+  assert.deepEqual(JSON.parse((await tool('plan_close', directClose, true, sessionB)).value), directClosed);
+  assert.equal(JSON.parse((await tool('plan_read', { plan_id: direct.plan_id })).value).origin.session_id, agent.session.id);
+  const childTask = JSON.parse((await tool('plan_stage', { title: 'Child direct closure', plan: source, category: 'tasks' })).value);
+  await ui({ action: 'decide', plan_id: childTask.plan_id, revision: 1, hash: childTask.hash, decision: 'approve' });
+  const childClosed = JSON.parse((await tool('plan_close', { ...directClose, plan_id: childTask.plan_id }, true, child)).value);
+  assert.equal(childClosed.status, 'closed');
+  assert.equal(childClosed.origin.session_id, agent.session.id);
+  for (const [category, decision] of [['tasks', null], ['tasks', 'reject'], ['backlog', 'approve']]) {
+    const blocked = JSON.parse((await tool('plan_stage', { title: `Blocked ${category} ${decision}`, plan: source, category })).value);
+    if (decision) await ui({ action: 'decide', plan_id: blocked.plan_id, revision: 1, hash: blocked.hash, decision });
+    await tool('plan_close', { ...directClose, plan_id: blocked.plan_id }, false, sessionB);
+  }
+  const beforeHandoffSends = sends;
   const handoff = (await ui({ action: 'reopen', plan_id: first.plan_id, expected_revision: 4, hash: sourceA.hash,
     reason: 'Owner session B reopens historical work.', request_id: 'handoff-B' }, true, sessionB)).data;
   assert.equal(handoff.origin.session_id, sessionB.session.id);
   assert.equal(handoff.reopening.source_origin.session_id, agent.session.id);
-  assert.deepEqual(modeEvents.slice(beforeHandoffModes), [{ session_id: sessionB.session.id, active: true }]);
+  assert.deepEqual(modeEvents, []);
   assert.equal(sends, beforeHandoffSends);
   assert.deepEqual(historical(JSON.parse((await tool('plan_read', { plan_id: first.plan_id, revision: 4 })).value)), historical(sourceA));
   await tool('plan_close', { ...closeArgs, expected_revision: 5 }, false, sessionB);
   const handoffApproved = (await ui({ action: 'decide', plan_id: first.plan_id, revision: 5, hash: handoff.hash, decision: 'approve' }, true, sessionB)).data;
   assert.equal(handoffApproved.execution_authorized, true);
-  const noticeB = await plugin.withStore(sessionB, false, s => s.pendingNotifications(sessionB.session.id));
+  const noticeB = (await plugin.withStore(sessionB, false, s => s.pendingNotifications(sessionB.session.id))).filter(notice => notice.is_current);
   assert.equal(noticeB.length, 1);
   assert.equal(noticeB[0].action, 'execute');
   assert.equal(noticeB[0].revision, 5);
-  assert.ok((await plugin.withStore(agent, false, s => s.pendingNotifications(agent.session.id))).every(notice => !notice.is_current));
+  assert.ok((await plugin.withStore(agent, false, s => s.pendingNotifications(agent.session.id))).filter(notice => notice.plan_id === first.plan_id).every(notice => !notice.is_current));
   await tool('plan_close', { ...closeArgs, expected_revision: 5, reason: 'Session B fresh approval', evidence: 'Correct approval recipient verified' }, true, sessionB);
   const closedB = JSON.parse((await tool('plan_read', { plan_id: first.plan_id })).value);
   const closedProposal = JSON.parse((await tool('plan_reopen', { plan_id: first.plan_id, expected_revision: 5, reason: 'Model proposes reopening closed B work.' }, true, sessionB)).value);
@@ -349,6 +541,19 @@ try {
   assert.equal(closedProposal.reopening.source_status, 'closed');
   assert.equal(closedProposal.origin.session_id, sessionB.session.id);
   assert.deepEqual(historical(JSON.parse((await tool('plan_read', { plan_id: first.plan_id, revision: 5 })).value)), historical(closedB));
-  console.log('PASS: native tool+human command registries, stringOutput JSON/presentation, managed mode+concludeTurn, readonly/root authority and actor guards, delegated binding, quiet human O, stable retries and fresh-approval closure guard; zero model calls.');
+  // Exercise delivery too: approved/revise/wait/save-only inbox notices cannot
+  // touch native mode or elevate permissions, even when the recipient is idle.
+  peer.status = 'idle';
+  for (const [category, decision, comment] of [['tasks', 'approve', false], ['tasks', 'reject', true], ['tasks', 'reject', false], ['backlog', 'approve', false]]) {
+    const delivery = JSON.parse((await tool('plan_stage', { title: `Delivery ${category} ${decision} ${comment}`, plan: source, category }, true, peer)).value);
+    if (comment) await ui({ action: 'comment', plan_id: delivery.plan_id, revision: 1, hash: delivery.hash, line_start: 3, line_end: 3, text: 'Revise this artifact, without native mode.' }, true, peer);
+    const beforeDeliverySends = sends;
+    await ui({ action: 'decide', plan_id: delivery.plan_id, revision: 1, hash: delivery.hash, decision }, true, peer);
+    assert.ok(sends > beforeDeliverySends, 'idle recipient receives artifact-only instruction');
+    assert.deepEqual(modeEvents, []);
+  }
+  assert.deepEqual(modeEvents, []);
+  for (const target of live.values()) assert.ok(!target.session.events.some(event => event.type === 'plan/mode'));
+  console.log('PASS: native registries, artifact-only review+concludeTurn, zero native mode/permission changes, project config preservation/shared preference/reload/default, readonly/root authority, cross-session closure+retry and review routing, delegated binding, quiet human O, staged auto reopen and fresh-approval guards; zero model calls.');
   console.log(`Native test workspace: ${nativeWorkspace}`);
 } finally { for (const writer of plugin.writers.values()) writer.dispose(); }

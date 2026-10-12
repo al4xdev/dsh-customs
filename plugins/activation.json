@@ -40,7 +40,7 @@
       "id": "alex-managed-plans",
       "module": "managed-plans/index.mjs",
       "profiles": ["dsh-tui"],
-      "config": { "wakeAgent": true }
+      "config": { "wakeAgent": true, "autonomousByDefault": false }
     },
     {
       "id": "alex-managed-plans-tui",

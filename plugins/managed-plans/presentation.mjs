@@ -1,10 +1,10 @@
 // UI-only, replay-safe views. Keep output.render on stringOutput: its JSON text
 // is the model contract, not a display format. Native generic cards accept text
 // ContentBlocks (Markdown source), not a separate "markdown" block/card type.
-const categories = { tasks: 'Tasks', backlog: 'Backlog', 'para-o-dono': 'Owner decisions' };
+const categories = { tasks: 'Tasks', backlog: 'Backlog', blocked: 'Blocked', 'para-o-dono': 'Owner decisions' };
 const statuses = { staged: 'Staged', rejected: 'Rejected', approved: 'Approved', closed: 'Closed' };
-const approval = { staged: 'Awaiting owner review', rejected: 'Rejected by owner', approved: 'Approved by owner', closed: 'Closed; no execution authorization' };
-const actions = { plan_stage: 'Stage plan for owner review', plan_reopen: 'Propose reopening for owner review', exit_plan_mode: 'Submit plan for owner review (compatibility)', plan_read: 'Read plan', plan_close: 'Close plan', plan_list: 'List managed plans' };
+const approval = { staged: 'Awaiting owner review', rejected: 'Rejected by owner', approved: 'Approved', closed: 'Closed; no execution authorization' };
+const actions = { plan_stage: 'Create/revise project plan artifact', plan_reopen: 'Propose reopening for owner review', plan_read: 'Read plan', plan_close: 'Close plan', plan_move: 'Move approved plan', plan_list: 'List project plans' };
 const block = text => ({ type: 'text', text });
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -50,7 +50,7 @@ function reviewBlocks(plan) {
   if (!plan.decisions.length) content.push(block('No owner decision recorded for this revision.\n\n'));
   for (const decision of plan.decisions) {
     if (!record(decision) || !['approve', 'reject'].includes(decision.decision)) return undefined;
-    content.push(block(`${decision.decision === 'approve' ? 'Approved' : 'Rejected'} by owner · revision ${escape(decision.revision)} · Hash: ${literal(decision.hash)} · Owner session: ${literal(decision.owner_session_id)} · ${escape(decision.created_at)}\n\n`));
+    content.push(block(`${decision.decision === 'approve' ? 'Approved' : 'Rejected'} by ${decision.actor === 'autonomous' ? 'autonomous mode' : 'owner'} · revision ${escape(decision.revision)} · Hash: ${literal(decision.hash)} · Owner session: ${literal(decision.owner_session_id)} · ${escape(decision.created_at)}\n\n`));
   }
   const comments = plan.comments.filter(comment => comment?.status !== 'deleted');
   if (!comments.length) content.push(block('No review comments.'));
@@ -86,7 +86,7 @@ export function managedPlanCallView(name, args) {
     const id = integer(args?.plan_id) ? ` · Plan ${args.plan_id}` : '';
     const revision = integer(args?.revision) ? ` · revision ${args.revision}` : integer(args?.expected_revision) ? ` · expected revision ${args.expected_revision}` : '';
     const view = { card: 'generic', title: `${actions[name] ?? 'Managed plan'}${id}${revision}`, kind: ['plan_list', 'plan_read'].includes(name) ? 'read' : 'edit' };
-    if (['plan_stage', 'exit_plan_mode'].includes(name)) view.content = [block(`Category: ${categories[args?.category ?? 'tasks'] ?? 'Unknown'} · Owner review required. Submission does not authorize execution.`)];
+    if (name === 'plan_stage') view.content = [block(`Category: ${categories[args?.category ?? 'tasks'] ?? 'Unknown'} · Owner review is required unless project autoApprove is enabled. Creates an artifact, not native Plan mode.`)];
     if (name === 'plan_reopen') view.content = [block('Exact-copy staging only. Previous approvals and closure do not transfer; new owner review is required. Reopening never authorizes execution.')];
     return view;
   } catch { return undefined; }
@@ -104,17 +104,18 @@ export function managedPlanResultView(name, args, result) {
     if (!isSummary(data)) return undefined;
     if (name === 'plan_read') return readView(data);
     const content = [block(header(data))];
-    if (['plan_stage', 'plan_reopen', 'exit_plan_mode'].includes(name)) {
+    if (['plan_stage', 'plan_reopen'].includes(name)) {
       if (typeof data.waiting_for_owner !== 'boolean' || typeof data.next_action !== 'string') return undefined;
       content.push(block(`\n\nWaiting for owner: ${data.waiting_for_owner ? 'Yes' : 'No'}\n\n${data.next_action}`));
       if (typeof data.initial_cwd === 'string') content.push(block(`\n\nInitial workspace: ${literal(data.initial_cwd)}`));
-      return { card: 'generic', title: `${identity(data)} · Staged for owner review · Execution not authorized`, content };
+      return { card: 'generic', title: data.waiting_for_owner ? `${identity(data)} · Staged for owner review · Execution not authorized` : `${identity(data)} · Approved by project autoApprove`, content };
     }
     if (name === 'plan_close') {
       if (typeof args?.reason !== 'string' || typeof args?.evidence !== 'string') return undefined;
       content.push(block(`\n\nOutcome: ${escape(args.outcome)}\n\nRecorded reason:\n\n`), block(args.reason), block('\n\nRecorded evidence:\n\n'), block(args.evidence));
       return { card: 'generic', title: `${identity(data)} · Closed · Execution not authorized`, content };
     }
+    if (name === 'plan_move') return { card: 'generic', title: `${identity(data)} · Moved to ${categories[data.category]}`, content };
     return undefined;
   } catch { return undefined; }
 }

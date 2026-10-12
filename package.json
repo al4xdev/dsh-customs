@@ -15,7 +15,8 @@
     "test:list": "node --test plugins/list/list.test.mjs",
     "test:apply-patch": "node --test plugins/apply-patch/apply-patch.test.mjs",
     "workshop:doctor": "node tools/workshop/bootstrap.mjs --doctor",
-    "test:workshop": "node --test tools/workshop/*.test.mjs"
+    "test:workshop": "node --test tools/workshop/*.test.mjs",
+    "test:managed-plans": "node --test plugins/managed-plans/*.test.mjs && node tools/task10-profile/refinements-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

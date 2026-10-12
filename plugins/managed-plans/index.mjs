@@ -2,8 +2,9 @@ import { realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { defineTool, stringOutput, assertActive, resolveHost } from '../common.mjs';
 import { PlanStore } from './store.mjs';
-import { ManagedPlanMode } from './mode.mjs';
+import { readPlanConfig, writePlanConfig } from './config.mjs';
 import { managedPlanPresentation } from './presentation.mjs';
+import { captureApprovalGoal, resumeApprovalGoal } from './goal-resume.mjs';
 const { Service } = await import(resolveHost('@deepseek-ai/cordis'));
 const { createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
@@ -12,23 +13,22 @@ export const name = 'alex-managed-plans';
 export const inject = ['tools', 'systemPrompt', 'sessionProjections', 'commands', 'agents', 'sessionPersistence', 'sandboxPolicy'];
 const text = (description, required = false) => ({ type: 'string', description, ...(required ? { required: true } : {}) });
 const number = (description, required = false) => ({ type: 'integer', description, ...(required ? { required: true } : {}) });
-const optional = ({ required: _required, ...spec }) => spec;
-const categories = { type: 'string', enum: ['tasks', 'backlog', 'para-o-dono'], required: true, description: 'Proposed destination; only owner approval of tasks permits execution.' };
+const categories = { type: 'string', enum: ['tasks', 'backlog', 'blocked', 'para-o-dono'], required: true, description: 'Proposed destination; only owner approval of tasks permits execution.' };
 const json = value => JSON.stringify(value);
 function heading(plan) { return /^#{1,6}\s+(.+)$/m.exec(plan)?.[1] ?? 'Proposed plan'; }
 function hasOwn(object, key) { return Object.prototype.hasOwnProperty.call(object, key); }
 function rejectActorFlags(value) {
-  for (const key of ['actor', 'owner_session_id', 'owner_cancel_authorized', 'origin']) {
+  for (const key of ['actor', 'owner_session_id', 'recipient_session_id', 'owner_cancel_authorized', 'origin']) {
     if (hasOwn(value, key)) throw new Error(`${key} is host-derived authority, not an input field.`);
   }
 }
 function within(target, root) { const part = relative(root, target); return part === '' || (part !== '..' && !part.startsWith(`..${sep}`) && !isAbsolute(part)); }
 
 export class ManagedPlans extends Service {
-  constructor(ctx, { wakeAgent = true } = {}) {
+  constructor(ctx, { wakeAgent = true, autonomousByDefault = false } = {}) {
     super(ctx, 'managedPlans');
-    this.mode = ctx.planMode;
     this.wakeAgent = wakeAgent;
+    this.autonomousByDefault = autonomousByDefault;
     this.bindings = new WeakMap();
     this.writers = new Map();
     this.delivering = new WeakSet();
@@ -42,6 +42,8 @@ export class ManagedPlans extends Service {
         const ids = event.data.inserted.filter(m => m.source?.kind === 'managed-plan' && typeof m.source.notification_id === 'string').map(m => m.source.notification_id);
         return ids.length ? { ids: [...new Set([...state.ids, ...ids])] } : state;
       } });
+    ctx.systemPrompt.section({ name: 'managed-plans:artifacts', order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY'),
+      text: () => 'Managed .plan tools create and review project artifacts; they do not enter native Plan mode or change permissions. Use plan_stage to create/revise an artifact, not exit_plan_mode. Its result states whether this exact revision is approved or awaits review. Project autoApprove may approve a newly staged revision automatically; only approved tasks authorize execution. Reopening is an exact-copy proposal and does not inherit approval. Plans belong to the workspace, not the creating session: another session in that workspace may finish approved work with the exact revision and evidence. Never edit .plan mirrors or registry directly.' });
     this.registerTools();
     ctx.commands.register({ definitionId: 'alex-managed-plans', name: 'plan', description: 'Browse managed plans, start planning, or review an exact revision',
       input: { hint: '[new <request>]', attachments: false }, handler: invocation => this.command(invocation) });
@@ -77,15 +79,15 @@ export class ManagedPlans extends Service {
     this.bindings.set(agent.session, value);
     return value;
   }
-  async permitWrite(agent, binding) {
+  async permitWrite(agent, binding, target = binding.root) {
     const policy = this.ctx.sandboxPolicy.resolve({ session: agent.session });
     if (policy.mode === 'danger-full-access') return;
-    if (policy.mode !== 'workspace-write') throw new Error(`${sandboxDenialMarker(policy.mode)} Managed plan mutation needs a writable .plan directory.`);
+    if (policy.mode !== 'workspace-write') throw new Error(`${sandboxDenialMarker(policy.mode)} Managed project mutation needs a writable directory.`);
     for (const root of writableRoots(policy)) {
       const canonical = await realpath(root).catch(() => null);
-      if (canonical && within(binding.root, canonical)) return;
+      if (canonical && within(target, canonical)) return;
     }
-    throw new Error(`${sandboxDenialMarker(policy.mode)} Anchored .plan is outside this session's writable roots.`);
+    throw new Error(`${sandboxDenialMarker(policy.mode)} Anchored project file is outside this session's writable roots.`);
   }
   async withStore(agent, write, operation) {
     const binding = await this.binding(agent);
@@ -107,15 +109,22 @@ export class ManagedPlans extends Service {
     if (typeof args.plan !== 'string' || !/^#{1,6}\s+\S/.test(args.plan.trimStart())) throw new Error('Plan must start with a Markdown heading.');
     if (Buffer.byteLength(args.plan) > 256 * 1024) throw new Error('Plan exceeds the 256 KiB artifact limit.');
     const result = await this.withStore(exec.agent, true, async (store, binding) => {
+      const autonomous = await readPlanConfig(binding.canonical_cwd) ?? this.autonomousByDefault;
       const staged = await store.stage({ title: args.title ?? heading(args.plan), plan: args.plan, category: args.category ?? 'tasks',
         ...(args.plan_id === undefined ? {} : { plan_id: args.plan_id, expected_revision: args.expected_revision }),
         origin: { session_id: binding.owner_session_id, call_id: exec.callId } });
-      this.mode.commit(exec.agent, true);
+      const result = autonomous
+        ? await store.decide({ plan_id: staged.plan_id, revision: staged.revision, hash: staged.hash,
+          decision: 'approve', owner_session_id: binding.owner_session_id, actor: 'autonomous', notify: false })
+        : staged;
       await this.ctx.sessionPersistence.flush();
-      return { ...staged, initial_cwd: binding.initial_cwd, waiting_for_owner: true, execution_authorized: false,
-        next_action: 'Stop this turn. The owner reviews the exact revision in /plan; do not implement or move files.' };
+      return autonomous
+        ? { ...result, initial_cwd: binding.initial_cwd, waiting_for_owner: false,
+          next_action: result.execution_authorized ? 'Project autoApprove approved this exact tasks revision. You may implement it now.' : 'Project autoApprove saved this plan. It does not authorize implementation.' }
+        : { ...result, initial_cwd: binding.initial_cwd, waiting_for_owner: true, execution_authorized: false,
+          next_action: 'Stop this turn. The owner reviews the exact revision in /plan; do not implement or move files.' };
     });
-    exec.concludeTurn();
+    if (result.waiting_for_owner) exec.concludeTurn();
     return json(result);
   }
   async reopen(args, exec) {
@@ -126,7 +135,6 @@ export class ManagedPlans extends Service {
       // edits, owner decisions and cancellation authority are deliberately absent.
       const staged = await store.reopen({ plan_id: args.plan_id, expected_revision: args.expected_revision, reason: args.reason,
         origin: { session_id: binding.owner_session_id, call_id: exec.callId } });
-      this.mode.commit(exec.agent, true);
       await this.ctx.sessionPersistence.flush();
       return { ...staged, initial_cwd: binding.initial_cwd, waiting_for_owner: true, execution_authorized: false,
         next_action: 'Stop this turn. Reopening is only a proposal; wait for owner review. After feedback, revise with plan_stage using the same id. Never implement without new approval.' };
@@ -138,36 +146,40 @@ export class ManagedPlans extends Service {
     const stageParameters = { title: text('Artifact title.', true), plan: text('Complete Markdown beginning with a heading.', true), category: categories,
       plan_id: number('Existing id for a revision; omit for harness allocation.'), expected_revision: number('Required when revising an existing id.') };
     const register = (name, description, parameters, execute) => this.ctx.tools.register(defineTool({ name, description, parameters, output: stringOutput, ...managedPlanPresentation(name), execute }));
-    register('plan_stage', 'Stage a numbered Markdown artifact for owner review. Never self-approve; submission concludes the current turn. Harness manages filenames and moves.', stageParameters, (args, exec) => this.stage(args, exec));
+    register('plan_stage', 'Create or revise a numbered project plan artifact, without entering Plan mode. Normally awaits review and concludes the turn; project autoApprove approves the exact new revision automatically and approved tasks may continue. The plugin manages filenames and moves.', stageParameters, (args, exec) => this.stage(args, exec));
     register('plan_reopen', 'Propose reopening the current approved, rejected or closed plan: copy exact content/title/category into a fresh staged revision of the same id. Already staged is a no-op. Never approves, implements or edits history; concludes the turn awaiting owner review. After feedback use plan_stage to revise.',
       { plan_id: number('Existing plan id.', true), expected_revision: number('Required exact current source revision.', true), reason: text('Why reopening is proposed; recorded with its source revision.', true) },
       (args, exec) => this.reopen(args, exec));
-    register('exit_plan_mode', 'Compatibility adapter: stage a Markdown plan for owner review, not an automatic mode exit or execution grant.',
-      { plan: stageParameters.plan, title: text('Optional artifact title.'), category: optional(categories), plan_id: stageParameters.plan_id, expected_revision: stageParameters.expected_revision },
-      (args, exec) => this.stage(args, exec));
     register('plan_list', 'List the plans belonging to the immutable initial session folder; does not create files.',
-      { category: text('Optional tasks, backlog, para-o-dono, staging or closed.'), status: text('Optional staged, rejected, approved or closed.') },
+      { category: text('Optional tasks, backlog, blocked, para-o-dono, staging or closed.'), status: text('Optional staged, rejected, approved or closed.') },
       async (args, exec) => { assertActive(exec); return json(await this.withStore(exec.agent, false, s => s.list(args))); });
     register('plan_read', 'Read one artifact/revision and its review feedback. Source lines are 1-based; reads are bounded by default.',
       { plan_id: number('Harness-assigned plan id.', true), revision: number('Optional historical revision.'), offset: number('First source line; default 1.'), limit: number('Maximum source lines; default 2000.') },
       async (args, exec) => { assertActive(exec); return json(await this.withStore(exec.agent, false, s => s.read(args.plan_id, { revision: args.revision, offset: args.offset ?? 1, limit: args.limit ?? 2000 }))); });
-    register('plan_close', 'Close an approved task/owner decision with evidence. Harness moves it to closed; no arbitrary paths or model self-cancellation.',
+    register('plan_close', 'Close an approved project task/owner decision with exact revision and evidence, from any session in this workspace. No arbitrary paths or model self-cancellation.',
       { plan_id: number('Plan id.', true), expected_revision: number('Exact current revision.', true), outcome: { type: 'string', enum: ['completed', 'decided'], required: true }, reason: text('Why it is complete/decided.', true), evidence: text('Concrete completed result or recorded owner answer.', true) },
       async (args, exec) => {
         assertActive(exec);
         rejectActorFlags(args);
-        return json(await this.withStore(exec.agent, true, async (s, binding) => {
-          const current = await s.read(args.plan_id);
-          if (current.origin?.session_id !== binding.owner_session_id || !current.execution_authorized && args.outcome === 'completed') throw new Error('Only the originating owner session can close its authorized managed work.');
-          return s.close({ plan_id: args.plan_id, expected_revision: args.expected_revision, outcome: args.outcome, reason: args.reason, evidence: args.evidence });
-        }));
+        // Authorization belongs to the exact workspace revision, not its creator
+        // session. Store.close checks state/category/evidence atomically with CAS.
+        return json(await this.withStore(exec.agent, true, s => s.close({
+          plan_id: args.plan_id, expected_revision: args.expected_revision,
+          outcome: args.outcome, reason: args.reason, evidence: args.evidence,
+        })));
+      });
+    register('plan_move', 'Move an approved plan freely between tasks, backlog, blocked and para-o-dono. This only changes organization; it never approves staged content.',
+      { plan_id: number('Plan id.', true), expected_revision: number('Exact current revision.', true), category: categories },
+      async (args, exec) => {
+        assertActive(exec);
+        rejectActorFlags(args);
+        return json(await this.withStore(exec.agent, true, s => s.move(args)));
       });
   }
   async newPlan(agent, request) {
     if (typeof request !== 'string' || !request.trim()) throw new Error('Describe the new plan after /plan new.');
     if (request.length > 16384) throw new Error('Planning request is too long.');
-    this.mode.set(agent, true);
-    const message = createUserMessage({ content: [{ type: 'text', text: `Plan this request without implementing it. Submit using plan_stage for owner review.\n\n${request}` }], source: { kind: 'user' } });
+    const message = createUserMessage({ content: [{ type: 'text', text: `Create a project plan artifact for this request using plan_stage. This does not enter native Plan mode. Follow the artifact's review/autoApprove result before implementation.\n\n${request}` }], source: { kind: 'user' } });
     agent.send(message, 'next-turn', this.wakeAgent);
     await this.ctx.sessionPersistence.flush();
     return { planning: true, queued: true };
@@ -181,13 +193,29 @@ export class ManagedPlans extends Service {
         return { kind: 'success', text: json({ ok: true, data: await this.withStore(agent, false, s => s.list()) }) };
       }
       if (/^new(?:\s|$)/.test(raw)) return { kind: 'success', text: json({ ok: true, data: await this.newPlan(agent, raw.slice(3).trim()) }) };
-      if (!raw.startsWith('ui ')) throw new Error('Use /plan to browse or /plan new <request> to plan. Mode off is not approval.');
+      if (/^auto(?:\s|$)/.test(raw)) {
+        const value = raw.slice(4).trim();
+        const binding = await this.binding(agent);
+        if (agent.session.id !== binding.owner_session_id) throw new Error('Only the authenticated root owner session can change autonomous plan approval.');
+        if (!['on', 'off', 'status'].includes(value)) throw new Error('Use /plan auto on, /plan auto off, or /plan auto status.');
+        if (value !== 'status') {
+          await this.permitWrite(agent, binding, join(binding.canonical_cwd, '.agents', 'config.json'));
+          await writePlanConfig(binding.canonical_cwd, value === 'on');
+        }
+        const configured = await readPlanConfig(binding.canonical_cwd);
+        return { kind: 'success', text: json({ autonomous_approval: configured ?? this.autonomousByDefault,
+          source: configured === null ? 'plugin-default' : 'project-config', scope: 'workspace',
+          config_path: join(binding.canonical_cwd, '.agents', 'config.json'),
+          applies_to: 'new plan_stage revisions only; reopening still awaits review',
+          native_plan_mode: false, changes_permissions: false }) };
+      }
+      if (!raw.startsWith('ui ')) throw new Error('Use /plan to browse, /plan new <request> to plan, or /plan auto on|off|status.');
       const payload = JSON.parse(raw.slice(3));
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid plan UI action.');
       // This is an authenticated human CommandRuntime boundary, not a model tool.
       // Derive session/root from the invocation. A delegated model session or an
       // actor-shaped payload can never stand in for the authenticated root human.
-      if (['comment', 'delete_comment', 'reopen', 'decide', 'cancel'].includes(payload.action)) {
+      if (['comment', 'delete_comment', 'reopen', 'organize', 'decide', 'cancel'].includes(payload.action)) {
         rejectActorFlags(payload);
         const binding = await this.binding(agent);
         if (agent.session.id !== binding.owner_session_id) throw new Error('Only the authenticated root owner session can review or reopen managed plans.');
@@ -212,16 +240,39 @@ export class ManagedPlans extends Service {
           hash: payload.hash, reason: payload.reason, owner_session_id: binding.owner_session_id,
           origin: { session_id: binding.owner_session_id, call_id: commandId,
             ...(hasOwn(payload, 'request_id') ? { request_id: payload.request_id } : {}) } }));
-        this.mode.commit(agent, true);
-        // O is a quiet owner review operation: no inbox notice, delivery or wake.
+        // Explicit reopen remains a quiet owner review operation, separate from O.
         data = { ...data, waiting_for_owner: true, execution_authorized: false, notice: data.reopened ? 'Reopened as a fresh staged revision; new owner approval is required.' : 'Already staged; opened the current revision without creating another.' };
       }
+      else if (payload.action === 'organize') {
+        if (typeof commandId !== 'string' || !commandId.trim()) throw new Error('Organizing requires an authenticated command invocation id.');
+        if (hasOwn(payload, 'request_id') && (typeof payload.request_id !== 'string' || !payload.request_id.trim() || payload.request_id.length > 256)) throw new Error('request_id must be nonempty text up to 256 characters.');
+        data = await this.withStore(agent, true, (s, binding) => s.organize({
+          plan_id: payload.plan_id, expected_revision: payload.expected_revision, hash: payload.hash, category: payload.category,
+          owner_session_id: binding.owner_session_id, origin: { session_id: binding.owner_session_id, call_id: commandId,
+            ...(hasOwn(payload, 'request_id') ? { request_id: payload.request_id } : {}) },
+        }));
+        data = { ...data, notice: data.reopened ? `Moved toward ${data.category} as r${data.revision}; new approval required.`
+          : payload.category === 'closed' ? (data.archived ? 'Archived in Closed; not marked completed.' : 'Already in Closed.')
+          : `Destination set to ${data.category}. No goal resumed.` };
+      }
       else if (payload.action === 'decide') {
-        data = await this.withStore(agent, true, (s, binding) => s.decide({ plan_id: payload.plan_id, revision: payload.revision, hash: payload.hash, decision: payload.decision, owner_session_id: binding.owner_session_id }));
-        const current = await this.withStore(agent, false, s => s.read(payload.plan_id));
-        const recipient = current.origin?.session_id ? this.ctx.agents.get(current.origin.session_id) : undefined;
-        if (recipient) await this.deliver(recipient);
-        data = { ...data, notice: data.execution_authorized ? 'Approved tasks; execution instruction is queued for the origin session.' : payload.decision === 'reject' ? 'Rejected; saved comments request revision, no comments means wait.' : 'Saved only; no implementation authorized.' };
+        if (typeof commandId !== 'string' || !commandId.trim()) throw new Error('Review requires an authenticated command invocation id.');
+        // Capture before awaits: approval resumes this session's current stopped
+        // goal, never an older goal from the artifact's origin or a later edit.
+        const captured = payload.decision === 'approve' ? captureApprovalGoal(this.ctx, agent) : null;
+        const before = await this.withStore(agent, false, s => s.read(payload.plan_id));
+        data = await this.withStore(agent, true, (s, binding) => s.decide({ plan_id: payload.plan_id, revision: payload.revision, hash: payload.hash, decision: payload.decision, expected_category: payload.category,
+          owner_session_id: binding.owner_session_id, recipient_session_id: binding.owner_session_id }));
+        const mayResume = data.execution_authorized && before.status === 'staged' && before.revision === payload.revision;
+        const delivered = await this.deliver(agent, { wakeAgent: mayResume && captured?.candidate ? false : this.wakeAgent, allowRunning: mayResume && Boolean(captured?.candidate), onlyPlan: data });
+        // Inbox must be durable before resume emits goal/changed to the driver.
+        await this.ctx.sessionPersistence.flush();
+        const goalResume = !mayResume ? { status: 'not-needed', message: 'No new tasks approval; goal unchanged.' }
+          : !delivered || signal.aborted ? { status: 'skipped', message: 'Approval saved; delivery pending or command cancelled. Goal unchanged.' }
+          : captured.candidate ? resumeApprovalGoal(this.ctx, agent, captured.candidate) : captured.result;
+        data = { ...data, goal_resume: goalResume, notice: (data.execution_authorized ? 'Approved tasks; execution instruction is queued for this reviewing session.'
+          : payload.decision === 'reject' ? 'Rejected; saved comments request revision, no comments means wait.' : 'Saved only; no implementation authorized.')
+          + (mayResume ? ` ${goalResume.message}` : '') };
       } else if (payload.action === 'cancel') data = await this.withStore(agent, true, s => s.close({ plan_id: payload.plan_id, expected_revision: payload.expected_revision,
         outcome: 'cancelled', reason: payload.reason, owner_cancel_authorized: true }));
       else throw new Error('Unknown plan UI action.');
@@ -229,41 +280,45 @@ export class ManagedPlans extends Service {
       return { kind: 'success', text: json({ ok: true, data }) };
     } catch (error) { return { kind: 'error', text: `${error.code ?? 'PLAN_ERROR'}: ${error.message}` }; }
   }
-  async deliver(agent) {
-    if (!agent?.session || this.delivering.has(agent.session) || agent.status === 'running') return;
+  async deliver(agent, { wakeAgent = this.wakeAgent, allowRunning = false, onlyPlan } = {}) {
+    if (!agent?.session || this.delivering.has(agent.session) || (!allowRunning && agent.status === 'running')) return false;
     this.delivering.add(agent.session);
+    let delivered = false;
     try {
       const id = agent.session.id;
       const notices = await this.withStore(agent, false, s => s.pendingNotifications(id));
-      if (!notices.length) return;
+      if (!notices.length) return false;
       await this.withStore(agent, true, async store => {
         // Re-read inside the writer transaction boundary; queued notices can be
         // superseded by revision/closure while their originating session is offline.
         for (const notice of await store.pendingNotifications(id)) {
-          if (!notice.is_current || notice.action === 'superseded') { await store.ackNotification(notice.notification_id); continue; }
+          if (onlyPlan && (notice.plan_id !== onlyPlan.plan_id || notice.revision !== onlyPlan.revision)) continue;
+          if (!notice.is_current || notice.action === 'superseded' || (notice.action === 'execute' && !notice.execution_authorized)) {
+            await store.ackNotification(notice.notification_id); continue;
+          }
           const seen = this.ctx.sessionProjections.stateOf(agent.session, 'managedPlanDelivery')?.ids.includes(notice.notification_id);
           const wake = notice.action === 'execute' || notice.action === 'revise';
           if (!seen) {
-            if (notice.action === 'execute') this.mode.commit(agent, false);
-            else if (notice.action === 'revise' || notice.action === 'wait') this.mode.commit(agent, true);
             const instruction = notice.action === 'execute' ? 'Owner approved this exact tasks revision. Use plan_read to recheck it before implementing; no other revision is approved.'
-              : notice.action === 'revise' ? 'Owner rejected this revision. Use its saved comments to propose a new revision with the same plan_id; remain in plan mode. Do not implement.'
+              : notice.action === 'revise' ? 'Owner rejected this revision. Use its saved comments to propose a new revision with the same plan_id. Do not implement this rejected artifact.'
               : notice.action === 'wait' ? 'Owner rejected without comments. Wait for owner instructions; do not invent a revision or implement.'
-              : 'Owner approved save-only backlog/para-o-dono. No implementation is authorized.';
+              : 'Owner approved save-only backlog/blocked/para-o-dono. No implementation is authorized.';
             const message = createUserMessage({ content: [{ type: 'text', text: `${instruction}\n${json(notice)}` }],
               source: { kind: 'managed-plan', form: 'notice', summary: `Plan ${notice.plan_id} r${notice.revision}: ${notice.action}`, notification_id: notice.notification_id } });
-            agent.send(message, wake ? 'next-turn' : 'next-step', wake && this.wakeAgent);
+            agent.send(message, wake ? 'next-turn' : 'next-step', wake && wakeAgent);
           }
           await this.ctx.sessionPersistence.flush();
           await store.ackNotification(notice.notification_id);
-          if (wake && this.wakeAgent) break; // Never flip mode for another notice while this task starts.
+          delivered = true;
+          if (wake) break; // Do not queue another task while this one starts.
         }
       });
+      return delivered;
     } finally { this.delivering.delete(agent.session); }
   }
 }
 export function apply(ctx, config = {}) {
   if (hasOwn(config, 'wakeAgent') && typeof config.wakeAgent !== 'boolean') throw new Error('wakeAgent must be boolean.');
-  new ManagedPlanMode(ctx);
+  if (hasOwn(config, 'autonomousByDefault') && typeof config.autonomousByDefault !== 'boolean') throw new Error('autonomousByDefault must be boolean.');
   new ManagedPlans(ctx, config);
 }

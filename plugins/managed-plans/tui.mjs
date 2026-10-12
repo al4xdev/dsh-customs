@@ -1,6 +1,11 @@
 export const name = 'alex-managed-plans-tui'
 export const inject = ['tuiScenes', 'managedPlans']
 export const sceneId = 'alex-plan-artifacts'
+const destinations = [
+  { value: 'tasks', label: 'Tasks' }, { value: 'backlog', label: 'Backlog' },
+  { value: 'blocked', label: 'Blocked' }, { value: 'para-o-dono', label: 'Owner decisions' },
+  { value: 'closed', label: 'Closed (archive, not completion)' },
+]
 
 // No React/renderer imports: the scene belongs to the host reconciler.
 export function PlanArtifactsScene({ React, ui, channel, close }) {
@@ -30,7 +35,13 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
   const lock = React.useRef(false)
   const alive = React.useRef(true)
   const drafts = React.useRef(new Map())
-  const reopenRequests = React.useRef(new Map())
+  const organizeRequests = React.useRef(new Map())
+  const [organization, setOrganizationState] = React.useState(null)
+  const organizationRef = React.useRef(null)
+  function setOrganization(value) {
+    organizationRef.current = value
+    setOrganizationState(value)
+  }
   const preview = React.useRef(null)
   const [, updateDrafts] = React.useState(0)
   const selected = plans[index - 1]
@@ -84,7 +95,7 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
     const data = await request({ action: 'list' })
     if (!Array.isArray(data)) throw new Error('Invalid plan list.')
     if (!alive.current) return
-    const group = item => item.pending_review ? 0 : ['staged', 'rejected'].includes(item.status) ? 1 : item.status === 'closed' ? 5 : ({ tasks: 2, backlog: 3, 'para-o-dono': 4 }[item.category] ?? 5)
+    const group = item => item.pending_review ? 0 : ['staged', 'rejected'].includes(item.status) ? 1 : item.status === 'closed' ? 6 : ({ tasks: 2, blocked: 3, backlog: 4, 'para-o-dono': 5 }[item.category] ?? 6)
     const sorted = [...data].sort((a, b) => group(a) - group(b) || Number(b.plan_id) - Number(a.plan_id))
     setPlans(sorted)
     const found = sorted.findIndex(item => item.plan_id === preferred)
@@ -183,24 +194,31 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
     setNotice('')
   }
 
-  async function reopen(value) {
-    if (drafts.current.size) { setError('Save or discard unsaved text before reopening a plan.'); return }
-    if (stale) { setError('Reload with r before reopening this revision.'); return }
+  function startOrganize(value) {
+    if (drafts.current.size) { setError('Save or discard unsaved text before moving a plan.'); return }
+    if (stale) { setError('Reload with r before moving this revision.'); return }
     if (value.current_revision !== undefined && value.revision !== value.current_revision) {
-      setNotice('Open the current revision before reopening the plan.')
+      setNotice('Open the current revision before moving the plan.')
       return
     }
+    setError('')
+    setOrganization({ value, index: value.status === 'closed' ? 4 : Math.max(0, destinations.findIndex(item => item.value === value.category)) })
+  }
+
+  async function saveOrganization() {
+    const { value, index: choice } = organizationRef.current
+    const category = destinations[choice].value
     await run(async () => {
-      const key = draftKey(value)
-      if (!reopenRequests.current.has(key)) reopenRequests.current.set(key, globalThis.crypto.randomUUID())
-      const reopened = value.status === 'staged' ? value : await request({
-        action: 'reopen', plan_id: value.plan_id, expected_revision: value.revision, hash: value.hash,
-        reason: 'Reopened by owner from the plan browser.', request_id: reopenRequests.current.get(key),
-      })
-      await readPlan(reopened)
-      reopenRequests.current.delete(key)
-      setNotice(value.status === 'staged' ? 'This revision is already awaiting owner review.' :
-        `Reopened as r${reopened.revision}. New approval required; execution is not authorized.`)
+      const key = `${draftKey(value)}:${category}`
+      if (!organizeRequests.current.has(key)) organizeRequests.current.set(key, globalThis.crypto.randomUUID())
+      const moved = await request({ action: 'organize', plan_id: value.plan_id, expected_revision: value.revision,
+        hash: value.hash, category, request_id: organizeRequests.current.get(key) })
+      if (!alive.current) return
+      setOrganization(null)
+      if (screen === 'list') await loadList(moved.plan_id)
+      else await readPlan(moved)
+      organizeRequests.current.delete(key)
+      setNotice(moved.notice || (moved.reopened ? 'New revision awaiting approval.' : `Destination set to ${category}.`))
     })
   }
 
@@ -218,6 +236,14 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
           setNotice('Draft comment deleted. Nothing sent to the agent; audit history retained.')
         })
       }
+      return
+    }
+    if (organizationRef.current) {
+      const value = organizationRef.current
+      if (key.escape) { setOrganization(null); return }
+      if (key.upArrow || input === 'k') setOrganization({ ...value, index: Math.max(0, value.index - 1) })
+      else if (key.downArrow || input === 'j') setOrganization({ ...value, index: Math.min(destinations.length - 1, value.index + 1) })
+      else if (key.return) void saveOrganization()
       return
     }
     if (screen === 'compose') {
@@ -268,7 +294,7 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
       return
     }
     if (input.toLowerCase() === 'o' && (screen === 'list' ? selected : artifact)) {
-      void reopen(screen === 'list' ? selected : artifact)
+      startOrganize(screen === 'list' ? selected : artifact)
       return
     }
     if (screen === 'list') {
@@ -282,10 +308,13 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
         if (drafts.current.size) { setError('Save or discard unsaved text before deciding.'); return }
         const decision = input === 'y' ? 'approve' : 'reject'
         void run(async () => {
-          await request({ action: 'decide', ...identity(selected), decision })
+          const outcome = await request({ action: 'decide', ...identity(selected), category: selected.category, decision })
           if (!alive.current) return
-          setNotice(decision === 'reject' ? 'Rejection recorded. Saved comments sent; without comments, the agent waits.' : selected.category === 'tasks' ? 'Revision approved for execution.' : 'Plan saved. Execution not authorized.')
           await loadList(selected.plan_id)
+          if (!alive.current) return
+          setNotice(decision === 'approve' && selected.category === 'tasks' && outcome.goal_resume
+            ? `Approved. ${outcome.goal_resume.message}`
+            : outcome.notice || (decision === 'reject' ? 'Rejection recorded. Saved comments sent; without comments, the agent waits.' : selected.category === 'tasks' ? 'Revision approved for execution.' : 'Plan saved. Execution not authorized.'))
         })
       }
       return
@@ -328,7 +357,22 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
   }
   let body
   let help
-  if (screen === 'list') {
+  if (organization) {
+    const { value, index: choice } = organization
+    const category = destinations[choice].value
+    const hint = category === 'closed' ? 'Archive only; this does not mark work completed.'
+      : value.status === 'closed' || (value.imported && category === 'tasks') ? 'A fresh revision will require approval; history stays intact.'
+      : value.status === 'staged' || value.status === 'rejected' ? 'Changes the proposed destination; no approval is granted.'
+      : 'Changes organization only; no goal is resumed.'
+    body = h(Box, { flexDirection: 'column', flexGrow: 1, overflow: 'hidden' },
+      fixed(text(`Move plan #${value.plan_id} r${value.revision}`, { bold: true }),
+        text(`Current: ${value.status} → ${value.category}`, { color: 'subtle', wrap: 'truncate-end' })),
+      ...destinations.map((item, position) => h(Box, { key: item.value, flexShrink: 0,
+        onClick: () => { if (!lock.current) setOrganization({ ...organizationRef.current, index: position }) } },
+        text(`${choice === position ? '›' : ' '} ${item.label}`, { bold: choice === position, wrap: 'truncate-end' }))),
+      fixed(text(hint, { color: 'warning', wrap: 'truncate-end' })))
+    help = '↑↓ destination · Enter move · Esc cancel'
+  } else if (screen === 'list') {
     const capacity = Math.max(1, rows - 8)
     const start = Math.max(0, index - Math.floor(capacity / 2))
     const entries = [{ new: true }, ...plans]
@@ -339,9 +383,9 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
         return h(Box, { key: position, flexShrink: 0, onClick: () => { if (!lock.current) setIndex(position) } },
           text(`${position === index ? '›' : ' '} ${label}`, { bold: position === index, wrap: 'truncate-end' }))
       }),
-      selected ? fixed(text(`${selected.path ?? ''} · ${selected.pending_review ? selected.category === 'tasks' ? 'y approves this revision and starts execution; n requests revision.' : 'y saves only, without execution; n requests revision.' : 'No pending decision.'}`, { color: 'subtle', wrap: 'truncate-end' })) : null,
+      selected ? fixed(text(`${selected.path ?? ''} · ${selected.pending_review ? selected.category === 'tasks' ? 'y approves and resumes a paused/blocked session goal; n requests revision.' : 'y saves only, without execution; n requests revision.' : 'No pending decision.'}`, { color: 'subtle', wrap: 'truncate-end' })) : null,
     )
-    help = '↑↓ select · Enter open · y/n review · O reopen · r reload · Esc close'
+    help = '↑↓ · Enter open · O move · y approve/resume · n reject · r · Esc'
   } else if (screen === 'compose') {
     body = h(Box, { flexDirection: 'column', flexGrow: 1, overflow: 'hidden' },
       fixed(text(composer.kind === 'new' ? 'New plan · request' : `${composer.comment_id ? 'Edit' : 'Add'} comment · #${composer.plan_id} r${composer.revision} · L${composer.line_start}–${composer.line_end}`, { bold: true }),
@@ -367,10 +411,10 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
         wide || focus !== 'history' ? document : null,
         wide || focus === 'history' ? revisions : null),
     )
-    help = focus === 'history' ? '↑↓ select revision · Enter open · → / Esc document' : 'Click / ↑↓ select · Wheel scroll · c comment/edit · d delete · O reopen · ← revisions · Esc list'
+    help = focus === 'history' ? '↑↓ select revision · Enter open · → / Esc document' : 'O move · c comment · d delete · ← history · Wheel scroll · Esc list'
   }
   return h(Box, { flexDirection: 'column', height: rows, overflow: 'hidden' },
-    fixed(text('Plans · .plan · read-only Markdown', { bold: true })), body, feedback,
+    fixed(text('Plans · .plan artifacts · not native Plan mode', { bold: true })), body, feedback,
     fixed(text(help, { color: 'subtle', wrap: 'truncate-end' })))
 }
 
