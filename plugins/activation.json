@@ -14,6 +14,7 @@
   "managedIdPrefix": "alex-",
   "profiles": ["web", "headless", "tui", "dsh-tui"],
   "plugins": [
+    { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
     { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs" },
     { "id": "alex-apply-patch", "module": "apply-patch/index.mjs" },
     { "id": "alex-workspace-context", "module": "workspace-context/index.mjs" },
