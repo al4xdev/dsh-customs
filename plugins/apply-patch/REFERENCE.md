@@ -29,6 +29,20 @@ Limits: shell, MCP and other non-DSH writers are not intercepted and their reads
 
 A capable UI renders these tools like native `write`/`edit`: `presentCall` turns the patch argument into a proposed diff card, `presentResult` shows a diff card for a fully `applied` receipt, and `output.presentationMeta` persists the confirmed diff set plus the receipt text so replay rebuilds the card without the live tool value. Only operations the receipt marks `changed`/`partial` become diff entries; Delete and a bodyless Move (the grammar carries no file body) appear in the card title instead. A `partial_failure` result never renders as an applied diff: it becomes a generic card titled `Patch incomplete` with a compact per-file summary and the recovery manifest path, and a thrown/`isError` result keeps the raw error. `apply_patch_undo` presents a compact undo summary instead of the receipt JSON. The model-facing content is always the untouched receipt; the hooks are total and never throw, so a malformed value degrades to the raw card.
 
+## Regression checks
+
+Run `npm run test:apply-patch` from the repository root. The dedicated `node:test`
+suite checks existing parser/matching contracts (literal indentation, exact and
+unique context, anchors, end-of-file, append-only insertion and final newlines),
+read coverage (partial/truncated reads, versions and session isolation), and UI
+presentation for valid success, partial and undo receipts. It requires no extra
+dependencies, credentials or model calls and does not modify files.
+
+These are contract tests for the parser, observation state and presentation, not
+filesystem integration tests: they do not exercise actual publication, sandbox
+enforcement, trash, undo execution or concurrent external writers. No production
+behavior was changed to introduce this LTS regression routine.
+
 ## Concurrency, failures and undo
 
 Calls hold an in-process per-target lock across preflight and publication, so overlapping `apply_patch`/`apply_patch_undo` calls in this runtime serialize and the loser fails at preflight. Text writes use the provider's per-target version check, but removal uses native path-based filesystem operations outside that provider lock. Patch/undo removals pass the expected version into trash and recheck it at entry and immediately before rename or copy-source removal; they do not adopt a newer source version. This is not atomic compare-and-remove: native tools, other runtimes and external writers can still race in the remaining check-to-removal window. Trash additionally snapshots/revalidates ancestor identity, type and realpath, including each EXDEV removal parent, rejecting detected parent-to-symlink swaps. This remains path-based rather than pinned-directory-handle containment: a precisely timed hostile swap after the last check is still outside the guarantees.

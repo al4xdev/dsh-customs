@@ -14,12 +14,12 @@ That matters in both directions. An earlier version matched regexes against the 
 - **Directory exploration (`ls`, `tree`, `find`):** denied, pointing at the native `list` (or `glob`) tool.
 - **Content search (`grep`, `egrep`, `fgrep`, `rg`):** denied, pointing at the native `grep` tool.
 - **Destructive operations:** denied, recommending the native `trash` tool. Detected anywhere in the command — on later lines, behind `&&`, inside `$(...)`/backticks, inside `sh -c`, and behind `sudo`/`xargs`/variable assignments. Covered: `rm`, `unlink`, `rmdir`, `shred`, `truncate`, `dd of=`, `find -delete`, `find -exec <removal>`, `git clean` with `-f`/`-d`/`-x`, and `git reset --hard`. When the command also silences failures (`>/dev/null`, `|| true`), the reason says so, because that masks a partial removal.
-- **Oversized compound commands:** denied when a single call carries more than `compoundLimit` separate operations (default 6). A twelve-step script is not faster, it is opaque: the transcript shows one wall of text instead of a sequence of decisions, and there is no discrete point to revert to. A here-doc read by a shell counts as its operations, so `bash <<EOF` cannot smuggle a script past the limit; a here-doc holding data — `git commit -F - <<MSG` — does not.
+- **Oversized compound commands:** denied when a single call carries more than `compoundLimit` separate operations (default 6). A twelve-step script is not faster, it is opaque: the transcript shows one wall of text instead of a sequence of decisions, and there is no discrete point to revert to. A here-doc read by a shell adds a heuristic count of its nonempty lines; this is not a guarantee of recognizing every operation or destructive command inside its body. A here-doc holding data — `git commit -F - <<MSG` — does not contribute that shell-body count.
 - **Everything else (`npm`, `git`, `python`, compilers, test runners, `docker`, …):** passes without friction.
 
 `mv` is deliberately not blocked: the global guidance is to move the target or rename it `.bak` instead of deleting it, so `mv` is the recommended non-destructive path.
 
-Destructive and compound denials share the single-use permit: `shell_reconsider({ necessary: true })` grants exactly one retry of the identical command. Read/list/grep denials take no permit — the native tool is simply the right answer.
+Destructive and compound denials share the single-use permit: `shell_reconsider({ necessary: true })` grants exactly one retry with the identical **full bash arguments** (including description, workdir and other supplied fields), not just matching command text. The next bash attempt consumes the grant even if its arguments do not match. Read/list/grep denials take no permit — the native tool is simply the right answer.
 
 ## Limits
 
