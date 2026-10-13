@@ -11,12 +11,14 @@ function creationTime(header) {
     const value = Date.parse(header.createdAt);
     if (Number.isFinite(value)) return value;
   }
-  return 0;
+  return undefined;
 }
 
 function compareListedSessions(left, right) {
-  const byCreation = creationTime(right.header) - creationTime(left.header);
-  if (byCreation !== 0) return byCreation;
+  const leftTime = creationTime(left.header), rightTime = creationTime(right.header);
+  if (leftTime === undefined && rightTime !== undefined) return 1;
+  if (rightTime === undefined && leftTime !== undefined) return -1;
+  if (leftTime !== undefined && rightTime !== undefined && leftTime !== rightTime) return rightTime - leftTime;
   const leftId = String(left.header.id), rightId = String(right.header.id);
   return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
@@ -61,7 +63,7 @@ export function createController(ctx, options = {}) {
     const { signal } = exec;
     signal?.throwIfAborted();
     const base = { operation: args.operation, observedAt: new Date().toISOString(), untrustedData: true };
-    if (args.operation === 'help') return { ...base, operations: OPERATIONS, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, defaultRows: DEFAULT_LIST_LIMIT, defaultInspectEvents: DEFAULT_INSPECT_LIMIT, maxEvents: MAX_ROWS }, list: { order: 'createdAt-desc,id-asc', revisionScope: 'filtered membership and order only', pagination: 'For all sessions, continue with nextCursor until null; a byte budget can return fewer rows than limit.' }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'State alive requires registry/bridge proof. A mounted foreign TUI without a bridge remains unknown; waiting/ended are not inferred.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors. List cursor_stale requires changed filtered membership/order, not an event append or transient status change.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
+    if (args.operation === 'help') return { ...base, operations: OPERATIONS, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, defaultRows: DEFAULT_LIST_LIMIT, defaultInspectEvents: DEFAULT_INSPECT_LIMIT, maxEvents: MAX_ROWS }, list: { order: 'createdAt-desc,id-asc', revisionScope: 'filtered membership and order only', pagination: 'For all sessions, continue with nextCursor until null using unchanged project/state/writer filters; a byte budget can return fewer rows than limit.', writer: 'Use writer:held for open terminal sessions; writerOwnership is independent of alive/send capability. Missing observations are unknown; not-observed never proves a free lease.' }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'State alive requires registry/bridge proof. A mounted foreign TUI without a bridge remains unknown; waiting/ended are not inferred.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors. List cursor_stale requires changed filtered membership/order, not an event append or transient status change.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
     if (args.operation === 'resume') return resumeSession(args, exec, base);
     if (args.operation === 'list') {
       const snapshots = await ctx.sessionPersistence.list({ signal });
@@ -86,7 +88,12 @@ export function createController(ctx, options = {}) {
       });
       // Filter on the public source fact before presentation redaction/truncation.
       // Birth time is immutable; status, writer evidence and appended events are not.
-      all = all.filter(row => (!args.project || headers.get(row.header.id)?.cwd === args.project) && (!args.state || row.state === args.state) && (!args.writer || row.writerOwnership.state === args.writer)).sort(compareListedSessions);
+      all = all.filter(row => (!args.project || headers.get(row.header.id)?.cwd === args.project) && (!args.state || row.state === args.state));
+      if (args.writer === 'held') {
+        const unknown = all.filter(row => row.writerOwnership.state === 'unknown').length;
+        if (unknown > 0) live.warnings.push(`Writer ownership unknown for ${unknown} candidates; an empty held result is inconclusive.`);
+      }
+      all = all.filter(row => !args.writer || row.writerOwnership.state === args.writer).sort(compareListedSessions);
       const revision = codec.revision(all.map(row => row.header.id));
       // Keep cursors small even for the maximum permitted project path length.
       const cursorId = `list:${codec.revision([args.project ?? '', args.state ?? '', args.writer ?? ''])}`;

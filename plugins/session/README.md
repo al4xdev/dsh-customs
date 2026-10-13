@@ -54,7 +54,7 @@ alone, and report the separate `writerOwnership` evidence:
 - `not-observed`: this observation found no writer. It does not prove a free
   lease or authorize resume; native atomic writer acquisition remains decisive.
 - `unknown`: no valid observation, unsupported platform/provider, missing
-  artifact, or unavailable observer. Missing observations are never relabeled
+  result, unsafe/changing metadata, or unavailable observer. Missing observations are never relabeled
   `not-observed`.
 
 The host may supply `writerObserver(snapshots, signal)` returning a `Map` of
@@ -65,6 +65,8 @@ process mutation. Held evidence disables advertised resume and refuses cold
 resume before approval/preflight/worker startup; send still requires a verified
 registry/bridge destination and its normal approval. Missing/not-observed
 evidence never bypasses provenance or the worker's native atomic lease guard.
+If `writer: "held"` returns no rows but warns of unknown observations, that is
+inconclusive, not evidence that every terminal session is closed.
 
 `state: "alive"` requires local registry/validated bridge proof. An existing TUI
 without a bridge can be mounted or writer-held while its agent state remains
