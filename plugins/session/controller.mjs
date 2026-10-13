@@ -1,41 +1,100 @@
 import { randomUUID } from 'node:crypto';
-import { parseRequest, cursorCodec, boundedPage, previewEvent, publicHeader, redact, OPERATIONS, DEFAULT_BYTES, MAX_BYTES } from './contracts.mjs';
+import { parseRequest, cursorCodec, boundedPage, previewEvent, publicHeader, redact, OPERATIONS, DEFAULT_BYTES, MAX_BYTES, DEFAULT_LIST_LIMIT, DEFAULT_INSPECT_LIMIT, MAX_ROWS, WRITER_STATES } from './contracts.mjs';
 import { discoverTargets, DEFAULT_ROOT } from './discovery.mjs';
 import { persistedEventCount } from './tail.mjs';
 
 const absentBridge = { discoverBridges: async () => ({ bridges: [], errors: ['unavailable'] }) };
+
+function creationTime(header) {
+  if (typeof header.createdAt === 'number' && Number.isFinite(header.createdAt)) return header.createdAt;
+  if (typeof header.createdAt === 'string') {
+    const value = Date.parse(header.createdAt);
+    if (Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function compareListedSessions(left, right) {
+  const byCreation = creationTime(right.header) - creationTime(left.header);
+  if (byCreation !== 0) return byCreation;
+  const leftId = String(left.header.id), rightId = String(right.header.id);
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+}
+
 export function createController(ctx, options = {}) {
   const codec = cursorCodec();
   const bridge = options.bridge ?? absentBridge;
   const resume = options.resume;
   const discover = signal => discoverTargets(ctx, bridge, { root: options.root ?? DEFAULT_ROOT, ledgerPath: options.ledgerPath, signal });
   const revisionOf = (id, revision) => codec.revision([id, revision]);
-  const capabilities = target => ({ read: true, send: Boolean(target?.agent || target?.record), resume: resume && !(target?.agent || target?.record) ? 'verified-checkpoint-preflight-required' : false, sendBoundary: 'next-turn', approval: 'allowed-once-only' });
+  const capabilities = (target, ownership) => ({ read: true, send: Boolean(target?.agent || target?.record), resume: resume && !(target?.agent || target?.record) && ownership?.state !== 'held' ? 'verified-checkpoint-preflight-required' : false, sendBoundary: 'next-turn', approval: 'allowed-once-only' });
+
+  async function observeWriters(snapshots, signal) {
+    const unknown = (source, reason) => new Map(snapshots.map(snapshot => [snapshot.header.id, { state: 'unknown', source, reason }]));
+    if (typeof options.writerObserver !== 'function') return unknown('not-configured', 'No read-only writer observer configured.');
+    try {
+      const observations = await options.writerObserver(snapshots, signal);
+      signal?.throwIfAborted();
+      return observations instanceof Map ? observations : unknown('observer-unavailable', 'Writer observer did not return a valid observation map.');
+    } catch {
+      signal?.throwIfAborted();
+      return unknown('observer-unavailable', 'Read-only writer observation unavailable.');
+    }
+  }
+
+  function writerOwnership(id, observations) {
+    const observed = observations.get(id);
+    if (!observed || !WRITER_STATES.includes(observed.state)) return { state: 'unknown', source: 'observer-unavailable', reason: 'No valid writer observation for this session.' };
+    // The observer contributes public evidence, never paths, transcript, locks
+    // to acquire, or control authority. Missing evidence is not a free writer.
+    return {
+      state: observed.state,
+      ...(Number.isSafeInteger(observed.pid) && observed.pid > 0 ? { pid: observed.pid } : {}),
+      ...(typeof observed.observedAt === 'string' ? { observedAt: redact(observed.observedAt).slice(0, 64) } : {}),
+      ...(typeof observed.source === 'string' ? { source: redact(observed.source).slice(0, 80) } : {}),
+      ...(typeof observed.reason === 'string' ? { reason: redact(observed.reason).slice(0, 128) } : {}),
+    };
+  }
 
   async function execute(raw, exec) {
     const args = parseRequest(raw);
     const { signal } = exec;
     signal?.throwIfAborted();
     const base = { operation: args.operation, observedAt: new Date().toISOString(), untrustedData: true };
-    if (args.operation === 'help') return { ...base, operations: OPERATIONS, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, maxEvents: 100 }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
+    if (args.operation === 'help') return { ...base, operations: OPERATIONS, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, defaultRows: DEFAULT_LIST_LIMIT, defaultInspectEvents: DEFAULT_INSPECT_LIMIT, maxEvents: MAX_ROWS }, list: { order: 'createdAt-desc,id-asc', revisionScope: 'filtered membership and order only', pagination: 'For all sessions, continue with nextCursor until null; a byte budget can return fewer rows than limit.' }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'State alive requires registry/bridge proof. A mounted foreign TUI without a bridge remains unknown; waiting/ended are not inferred.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors. List cursor_stale requires changed filtered membership/order, not an event append or transient status change.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
     if (args.operation === 'resume') return resumeSession(args, exec, base);
     if (args.operation === 'list') {
       const snapshots = await ctx.sessionPersistence.list({ signal });
       const live = await discover(signal);
+      const writers = await observeWriters(snapshots, signal);
+      const headers = new Map(snapshots.map(snapshot => [snapshot.header.id, snapshot.header]));
       const rows = new Map(snapshots.map(snapshot => [snapshot.header.id, { header: publicHeader(snapshot.header), revision: revisionOf(snapshot.header.id, snapshot.revision), ...(snapshot.eventCount === undefined ? {} : { eventCount: snapshot.eventCount }) }]));
-      for (const [id, target] of live.targets) if (!rows.has(id)) rows.set(id, { header: publicHeader(target.header ?? { id }) });
+      for (const [id, target] of live.targets) {
+        // Ledger hints do not carry cwd. Fill only from proven persistence or
+        // registry/bridge headers, never from the owner's process working directory.
+        const stored = headers.get(id);
+        const observed = target.header ?? { id };
+        const merged = { ...publicHeader(stored ?? { id }), ...publicHeader(observed) };
+        live.targets.set(id, { ...target, header: merged });
+        if (!headers.has(id)) headers.set(id, observed);
+        if (!rows.has(id)) rows.set(id, { header: merged });
+      }
       let all = [...rows.values()].map(row => {
         const target = live.targets.get(row.header.id);
-        return { ...row, state: target?.state ?? 'unknown', source: target?.source ?? 'persistence', evidence: target?.evidence ?? ['stored log is not live or ended lifecycle proof'], capabilities: capabilities(target), ...(target?.status ? { status: target.status } : {}) };
+        const ownership = writerOwnership(row.header.id, writers);
+        return { ...row, state: target?.state ?? 'unknown', source: target?.source ?? 'persistence', evidence: target?.evidence ?? ['stored log is not live or ended lifecycle proof'], capabilities: capabilities(target, ownership), writerOwnership: ownership, ...(target?.status ? { status: target.status } : {}) };
       });
-      all = all.filter(row => (!args.project || row.header.cwd === args.project) && (!args.state || row.state === args.state)).sort((a, b) => String(a.header.id).localeCompare(String(b.header.id)));
-      const revision = codec.revision(all);
-      const cursorId = `list:${args.project ?? ''}:${args.state ?? ''}`;
+      // Filter on the public source fact before presentation redaction/truncation.
+      // Birth time is immutable; status, writer evidence and appended events are not.
+      all = all.filter(row => (!args.project || headers.get(row.header.id)?.cwd === args.project) && (!args.state || row.state === args.state) && (!args.writer || row.writerOwnership.state === args.writer)).sort(compareListedSessions);
+      const revision = codec.revision(all.map(row => row.header.id));
+      // Keep cursors small even for the maximum permitted project path length.
+      const cursorId = `list:${codec.revision([args.project ?? '', args.state ?? '', args.writer ?? ''])}`;
       const cursor = args.cursor ? codec.decode(args.cursor, cursorId) : { offset: 0 };
       if (cursor.revision && cursor.revision !== revision) return { ...base, source: 'persistence+live-discovery', code: 'cursor_stale', restartRequired: true, revision };
       const offset = cursor.offset;
       const selected = all.slice(offset, offset + args.limit);
-      return boundedPage({ ...base, source: 'persistence+live-discovery', revision, warnings: live.warnings, total: all.length, hasMore: offset + selected.length < all.length }, selected, 'sessions', args.maxBytes, used => offset + used < all.length ? codec.encode({ id: cursorId, offset: offset + used, revision }) : null);
+      return boundedPage({ ...base, source: 'persistence+live-discovery', revision, ordering: 'createdAt-desc,id-asc', warnings: live.warnings, total: all.length, hasMore: offset + selected.length < all.length }, selected, 'sessions', args.maxBytes, used => offset + used < all.length ? codec.encode({ id: cursorId, offset: offset + used, revision }) : null);
     }
     if (args.operation === 'send') return send(args, exec, base);
     const snapshot = await ctx.sessionPersistence.stat(args.sessionId, { signal });
@@ -79,7 +138,8 @@ export function createController(ctx, options = {}) {
       if (queryCut) warnings.push(`Query watermark ${queryCut.asOfSeq} (source ${queryCut.source}); persisted tail independently verified at ${inspectedEventCount} events.`);
     }
     const selected = events.slice(0, args.limit).map(previewEvent);
-    const result = boundedPage({ ...base, sessionId: args.sessionId, header: publicHeader(snapshot.header), source: 'persistence-read-handle', revision, revisionStable: stable, state: target?.state ?? 'unknown', evidence: target?.evidence ?? ['stored log only; operational state unknown'], capabilities: capabilities(target), warnings, ...(projection ? { projection } : {}), hasMore: events.length > args.limit }, selected, 'events', args.maxBytes, used => codec.encode({ id: args.sessionId, offset: offset + used }));
+    const ownership = args.operation === 'inspect' ? writerOwnership(args.sessionId, await observeWriters([snapshot], signal)) : undefined;
+    const result = boundedPage({ ...base, sessionId: args.sessionId, header: publicHeader(snapshot.header), source: 'persistence-read-handle', revision, revisionStable: stable, state: target?.state ?? 'unknown', evidence: target?.evidence ?? ['stored log only; operational state unknown'], capabilities: capabilities(target, ownership), warnings, ...(ownership ? { writerOwnership: ownership } : {}), ...(projection ? { projection } : {}), hasMore: events.length > args.limit }, selected, 'events', args.maxBytes, used => codec.encode({ id: args.sessionId, offset: offset + used }));
     result.nextOffset = offset + result.events.length;
     // Reserve this small field in the page budget too.
     if (Buffer.byteLength(JSON.stringify(result)) > args.maxBytes) delete result.nextOffset;
@@ -92,6 +152,15 @@ export function createController(ctx, options = {}) {
     if (!resume?.preflightResume || !resume?.executeResume) return unavailable('Original context and safe worker are unavailable. No writer acquired or fallback attempted.');
     const live = (await discover(signal)).targets.get(args.sessionId);
     if (live?.agent || live?.record) return unavailable('Destination is live: use send, never a second worker.');
+    if (typeof options.writerObserver === 'function') {
+      const snapshot = await ctx.sessionPersistence.stat(args.sessionId, { signal });
+      if (snapshot) {
+        const ownership = writerOwnership(args.sessionId, await observeWriters([snapshot], signal));
+        if (ownership.state === 'held') return { ...unavailable('Read-only observation reports an existing writer; no approval or worker started.'), writerOwnership: ownership };
+      }
+    }
+    // A missing/unobserved writer is not a free lease. Provenance preflight and
+    // the worker's native atomic writer acquisition still decide admission.
     const request = { sessionId: args.sessionId, text: args.text, root: options.root ?? DEFAULT_ROOT, signal };
     const prepared = await resume.preflightResume(ctx, request);
     signal?.throwIfAborted();

@@ -4,8 +4,12 @@ export const OPERATIONS = ['help', 'list', 'inspect', 'read', 'send', 'resume'];
 export const DEFAULT_BYTES = 8192;
 export const MAX_BYTES = 32768;
 export const MAX_TEXT = 16384;
+export const DEFAULT_LIST_LIMIT = 32;
+export const DEFAULT_INSPECT_LIMIT = 12;
+export const MAX_ROWS = 100;
+export const WRITER_STATES = ['held', 'not-observed', 'unknown'];
 const keys = {
-  help: [], list: ['project', 'state', 'cursor', 'limit', 'maxBytes'],
+  help: [], list: ['project', 'state', 'writer', 'cursor', 'limit', 'maxBytes'],
   inspect: ['sessionId', 'limit', 'maxBytes'],
   read: ['sessionId', 'cursor', 'revision', 'limit', 'maxBytes'],
   send: ['sessionId', 'text'], resume: ['sessionId', 'text'],
@@ -21,9 +25,10 @@ export function parseRequest(input) {
   if (['send', 'resume'].includes(operation) && (typeof input.text !== 'string' || !input.text.trim() || Buffer.byteLength(input.text) > MAX_TEXT)) throw new Error('text must be nonempty and at most 16 KiB');
   for (const key of ['project', 'cursor', 'revision']) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > 2048)) throw new Error(`invalid ${key}`);
   if (input.state !== undefined && !['alive', 'ended', 'waiting', 'unknown'].includes(input.state)) throw new Error('invalid state');
-  const limit = input.limit ?? (operation === 'inspect' ? 12 : 32);
+  if (input.writer !== undefined && !WRITER_STATES.includes(input.writer)) throw new Error('invalid writer');
+  const limit = input.limit ?? (operation === 'inspect' ? DEFAULT_INSPECT_LIMIT : DEFAULT_LIST_LIMIT);
   const maxBytes = input.maxBytes ?? DEFAULT_BYTES;
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_ROWS) throw new Error(`limit must be 1..${MAX_ROWS}`);
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1024 || maxBytes > MAX_BYTES) throw new Error('maxBytes must be 1024..32768');
   return { ...input, limit, maxBytes };
 }
@@ -59,7 +64,9 @@ export function boundedPage(base, rows, field, maxBytes, makeCursor) {
         const row = rows[index];
         const compact = field === 'events'
           ? { seq: row.seq, time: row.time, type: row.type, contentTruncated: true, omitted: 'preview exceeds byte budget' }
-          : { header: { id: row.header.id }, state: row.state, source: row.source, contentTruncated: true, omitted: 'metadata exceeds byte budget' };
+          : { header: { id: row.header.id }, state: row.state, source: row.source,
+            ...(row.writerOwnership ? { writerOwnership: Object.fromEntries(['state', 'pid', 'observedAt', 'source'].filter(key => row.writerOwnership[key] !== undefined).map(key => [key, row.writerOwnership[key]])) } : {}),
+            contentTruncated: true, omitted: 'metadata exceeds byte budget' };
         value[field].push(compact);
         value.nextCursor = makeCursor(1);
         if (Buffer.byteLength(JSON.stringify(value)) <= maxBytes) break;
