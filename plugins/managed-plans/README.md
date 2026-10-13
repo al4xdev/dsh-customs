@@ -118,6 +118,44 @@ Waiting for review is already represented by `waiting_for_owner` and the turn
 boundary. This plugin does not manufacture goal `paused`/`blocked` transitions
 when creating a plan. Plan approval and native goal/permission states stay distinct.
 
+## Long-running goal context
+
+When native `agents`, optional `goals` and runtime-context
+(`systemPrompt.context`) capabilities are present, prompt assembly includes one
+short snapshot after five hours of observed active execution:
+
+> Continuous autonomous execution: 5h 20m. Open tasks in this project (not closed): 7.
+
+A monotonic process-local counter charges only entered execution steps while the
+exact live runtime root is running with an active, armed goal. It covers model
+calls and tools, not goal age; idle/pre-step gaps between automatic rounds are
+excluded without resetting the sequence. Prompt assembly occurs before the next
+step starts, so it can display time already settled by previous steps.
+
+Human messages/replies, requested approvals and questions reset the sequence;
+foreground human waits never accrue time, including overlapping requests and
+native service-only questions. A timed pending question ends foreground waiting,
+so subsequent independent work can start a new sequence. Pause, block, completion,
+disarm, goal replacement, execution errors/aborts and disposal also reset it.
+Same-goal edits preserve the counter. Ownership uses runtime roots, not historical
+session lineage: an independently resumed fork is eligible, an owned child is not.
+
+This is **observed execution time, not provider GPU/CPU compute or proof of useful
+progress**: provider/network waits and stuck tools inside an executing step can
+still count until cancelled/failed. Approval audit brackets are treated
+conservatively as interruptions even if a request is rejected immediately.
+Restart, hot reload or loss of optional capabilities starts observation afresh;
+historical/offline time is never inferred or reconstructed. No scheduled timer,
+inbox message, goal mutation, wakeup or execution authority is introduced.
+The snapshot is refreshed on each assembly, not accumulated in conversation
+history. Ineligible goals and foreground waits omit it.
+
+The count uses a fresh read-only catalog of the session's anchored project and
+includes every artifact not closed (tasks, backlog, blocked, owner decisions and
+staging), regardless of approval status. Missing capabilities, suppressed runtime
+context or failed reads omit the notice without breaking tools or prompt assembly.
+Restart/reload the runtime to pick up this source change.
+
 ## Backup for the personal LTS
 
 With all runtimes using the workspace stopped, copy the **entire `.plan` tree**,

@@ -5,6 +5,7 @@ import { PlanStore } from './store.mjs';
 import { readPlanConfig, writePlanConfig } from './config.mjs';
 import { managedPlanPresentation } from './presentation.mjs';
 import { captureApprovalGoal, resumeApprovalGoal } from './goal-resume.mjs';
+import { registerLongGoalContext } from './long-running-context.mjs';
 const { Service } = await import(resolveHost('@deepseek-ai/cordis'));
 const { createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
@@ -45,6 +46,7 @@ export class ManagedPlans extends Service {
     ctx.systemPrompt.section({ name: 'managed-plans:artifacts', order: ctx.systemPrompt.getSectionOrder('PLAN_POLICY'),
       text: () => 'Managed .plan tools create and review project artifacts; they do not enter native Plan mode or change permissions. Use plan_stage to create/revise an artifact, not exit_plan_mode. Its result states whether this exact revision is approved or awaits review. Project autoApprove may approve a newly staged revision automatically; only approved tasks authorize execution. Reopening is an exact-copy proposal and does not inherit approval. Plans belong to the workspace, not the creating session: another session in that workspace may finish approved work with the exact revision and evidence. Never edit .plan mirrors or registry directly.' });
     this.registerTools();
+    registerLongGoalContext(ctx, agent => this.withStore(agent, false, store => store.list()));
     ctx.commands.register({ definitionId: 'alex-managed-plans', name: 'plan', description: 'Browse managed plans, start planning, or review an exact revision',
       input: { hint: '[new <request>]', attachments: false }, handler: invocation => this.command(invocation) });
     ctx.on('agent/created', async ({ agent }) => { await this.deliver(agent); });
