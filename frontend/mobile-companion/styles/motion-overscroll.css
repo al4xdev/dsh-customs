@@ -1,0 +1,12 @@
+/* Only verified transcript/list columns receive the fallback. The real
+   scrollport, sticky composer and navigation surface keep their own geometry. */
+.mobile-companion .mobile-elastic-content {
+  translate: 0 var(--motion-edge-y, 0px);
+  will-change: translate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-companion .mobile-elastic-content {
+    translate: none !important;
+    will-change: auto;
+  }
+}

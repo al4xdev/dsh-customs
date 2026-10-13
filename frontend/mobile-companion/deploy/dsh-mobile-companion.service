@@ -1,0 +1,16 @@
+[Unit]
+Description=DSH mobile companion frontend
+Wants=dsh-companion.service
+After=dsh-companion.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/alex/git/my/dsh-customs/frontend/mobile-companion
+ExecStart=/usr/bin/node server/start.mjs --port 3082
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

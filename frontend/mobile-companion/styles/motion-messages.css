@@ -1,0 +1,20 @@
+/* The flight is a text-only, owned presentation surface. The native message,
+   layout, keyboard, scroll position and accessible transcript remain authoritative.
+   Keep this selector unscoped: the fixed ghost is portaled directly to document.body. */
+.mobile-message-flight {
+  position: fixed;
+  z-index: 80;
+  box-sizing: border-box;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+  transform-origin: center;
+  contain: layout paint style;
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-message-flight { display: none; }
+}

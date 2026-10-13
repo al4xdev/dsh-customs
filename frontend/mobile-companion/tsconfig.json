@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "ESNext.Disposable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "useUnknownInCatchVariables": true,
+    "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "types": ["react", "react-dom"],
+    "paths": {
+      "@deepseek-ai/*/client": ["../../../../../.local/share/dsh-cli/node_modules/@deepseek-ai/*/lib/types/client/index.d.ts"],
+      "@deepseek-ai/*/types": ["../../../../../.local/share/dsh-cli/node_modules/@deepseek-ai/*/lib/types/types.d.ts"],
+      "@deepseek-ai/*/invariant": ["../../../../../.local/share/dsh-cli/node_modules/@deepseek-ai/*/lib/types/invariant.d.ts"],
+      "@deepseek-ai/*/surface": ["../../../../../.local/share/dsh-cli/node_modules/@deepseek-ai/*/lib/types/surface.d.ts"],
+      "@deepseek-ai/*": ["../../../../../.local/share/dsh-cli/node_modules/@deepseek-ai/*"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "vendor", "generated", ".dumps"]
+}

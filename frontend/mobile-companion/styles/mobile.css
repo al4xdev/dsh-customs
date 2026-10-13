@@ -1,0 +1,161 @@
+/* Upstream theme presenter remains the color authority in both light and dark modes. */
+.mobile-companion {
+  --mobile-paper: var(--dsw-alias-bg-base, #fff);
+  --mobile-ink: var(--dsw-alias-label-primary, #202329);
+  --mobile-muted: var(--dsw-alias-label-tertiary, #6c727b);
+  --mobile-rule: var(--dsw-alias-border-l2, #e0e4e9);
+  --mobile-accent: var(--dsw-alias-state-business-primary, #4267b0);
+  --mobile-hover: var(--dsw-alias-interactive-bg-hover, #eef2f7);
+  --dsh-content-font-size: 16px;
+  --dsh-content-font-size-secondary: 14px;
+  --dsh-chat-user-width: 748px;
+  --dsh-chat-content-width: min(748px, 100%);
+  --dsh-composer-side-clearance: 0px;
+  --dsh-composer-card-max-width: min(748px, 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  height: min(100dvh, var(--mobile-viewport-height, 100dvh));
+  min-width: 0;
+  overflow: hidden;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  background: var(--mobile-paper);
+  color: var(--mobile-ink);
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  isolation: isolate;
+}
+.mobile-companion *, .mobile-companion *::before, .mobile-companion *::after { box-sizing: border-box; }
+.mobile-companion button {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+.mobile-companion :is(input, textarea, [data-composer-input]) { font-size: 16px; }
+.mobile-companion button:focus-visible,
+.mobile-companion a:focus-visible,
+.mobile-companion [data-composer-input]:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--mobile-accent));
+  outline-offset: 3px;
+}
+.mobile-header {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 10px;
+  min-height: 78px;
+  padding: 12px 16px 8px;
+}
+.mobile-heading { flex: 1; min-width: 0; }
+.mobile-eyebrow {
+  color: var(--mobile-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: .1em;
+}
+.mobile-heading h1 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 27px;
+  letter-spacing: -.035em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-icon-button, .mobile-new, .mobile-action {
+  border: 1px solid var(--mobile-rule);
+  border-radius: 14px;
+  color: var(--mobile-ink);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.mobile-icon-button { flex: none; padding: 0; font-size: 24px; }
+.mobile-new { display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; font-size: 14px; font-weight: 500; }
+.mobile-new > span:first-child { font-size: 20px; }
+.mobile-companion button:disabled { opacity: .5; cursor: default; }
+.mobile-connection {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  min-height: 44px;
+  flex: none;
+  border-bottom: 1px solid var(--mobile-rule);
+  color: var(--mobile-muted);
+  font-size: 12px;
+}
+.mobile-connection-dot { width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; }
+.mobile-connection[data-connected="true"] .mobile-connection-dot { background: currentColor; }
+.mobile-connection button, .mobile-list-caption button {
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--mobile-ink);
+  font: inherit;
+  cursor: pointer;
+}
+.mobile-list { overflow-y: auto; overscroll-behavior-y: contain; flex: 1; min-height: 0; padding: 12px 16px 24px; }
+.mobile-list-caption { display: flex; align-items: center; gap: 12px; color: var(--mobile-muted); font-size: 12px; }
+.mobile-list-caption p { margin: 0; }
+.mobile-list ul { list-style: none; padding: 0; margin: 6px 0 0; }
+.mobile-list li + li { border-top: 1px solid var(--mobile-rule); }
+.mobile-companion .mobile-chat-row {
+  width: 100%;
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  background: transparent;
+  color: var(--mobile-ink);
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* The open-chat arrow is the only signature mark: a quiet connection to the working session. */
+.mobile-chat-mark { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--mobile-rule); border-radius: 11px; flex: none; font-size: 21px; }
+.mobile-chat-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 500; line-height: 23px; overflow-wrap: anywhere; }
+.mobile-chat-date { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--mobile-muted); }
+.mobile-chat { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.mobile-conversation { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.mobile-conversation [data-conversation-content] { flex: 1; min-width: 0; min-height: 0; }
+/* Native icon actions remain native; only their hit area is adapted for thumbs. */
+.mobile-companion .mobile-conversation button { min-height: 44px; min-width: 44px; }
+.mobile-conversation [data-composer-input] { min-height: 44px; line-height: 24px; }
+.mobile-conversation [data-composer-seat] { padding-bottom: 6px; }
+/* Blank transcripts have no expanding view. Auto margin uses their free space
+   without changing the native sticky footer or long-transcript scroll layout. */
+.mobile-conversation [data-conversation-content][data-content-phase="active"] > [data-conversation-scroll] > [data-composer-seat] { margin-top: auto; }
+.mobile-conversation [data-slot="conversation.composer.bar"] button { flex-shrink: 0; }
+.mobile-empty { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 14px; padding: 36px 20px; max-width: 520px; margin-inline: auto; width: 100%; }
+.mobile-empty h2 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -.03em; }
+.mobile-empty p { margin: 0; font-size: 15px; line-height: 24px; color: var(--mobile-muted); overflow-wrap: anywhere; }
+.mobile-action { padding: 8px 16px; font-size: 14px; }
+.mobile-notice { display: flex; align-items: center; gap: 12px; flex: none; padding: 8px 16px; border-bottom: 1px solid var(--mobile-rule); background: var(--mobile-hover); font-size: 13px; }
+.mobile-notice p { margin: 0; flex: 1; overflow-wrap: anywhere; }
+.mobile-notice button { font: inherit; color: inherit; background: transparent; border: 1px solid var(--mobile-rule); border-radius: 10px; padding: 8px; }
+@media (hover: hover) {
+  .mobile-chat-row:hover, .mobile-icon-button:hover, .mobile-new:hover,
+  .mobile-action:hover, .mobile-connection button:hover, .mobile-list-caption button:hover { background: var(--mobile-hover); }
+}
+@media (min-width: 760px) {
+  .mobile-header, .mobile-connection, .mobile-list { padding-inline: max(24px, calc((100vw - 748px) / 2)); }
+}
+@media (max-width: 359px) {
+  .mobile-header { gap: 7px; padding-inline: 12px; }
+  .mobile-heading h1 { font-size: 18px; }
+  .mobile-list, .mobile-connection { padding-inline: 12px; }
+  .mobile-chat-row { gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-companion *, .mobile-companion *::before, .mobile-companion *::after { scroll-behavior: auto !important; }
+}

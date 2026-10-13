@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "Companion",
+  "short_name": "Companion",
+  "description": "Conversas mobile com o profile companion do DSH",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#141414",
+  "theme_color": "#141414",
+  "icons": [{ "src": "/mobile-assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

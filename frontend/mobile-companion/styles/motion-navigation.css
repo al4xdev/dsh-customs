@@ -1,0 +1,51 @@
+/* One quiet, hand-following card is the signature. The header never slides;
+   route motion belongs to the existing list/chat surface, not its providers. */
+.mobile-motion-root {
+  --motion-nav-x: 0px;
+  --motion-press-ease: cubic-bezier(.2, .8, .2, 1);
+}
+.mobile-motion-root .mobile-motion-surface {
+  transform: translate3d(var(--motion-nav-x, 0px), 0, 0);
+  backface-visibility: hidden;
+}
+.mobile-motion-root .mobile-motion-surface.is-nav-gesturing {
+  will-change: transform;
+  border-radius: 12px;
+}
+.mobile-motion-root .mobile-motion-surface.is-nav-gesturing[data-nav-direction="back"] {
+  box-shadow: -1px 0 0 var(--mobile-rule), -12px 0 28px rgb(0 0 0 / .08);
+}
+.mobile-motion-root .mobile-motion-surface.is-nav-gesturing[data-nav-direction="forward"] {
+  box-shadow: 1px 0 0 var(--mobile-rule), 12px 0 28px rgb(0 0 0 / .08);
+}
+/* Keep real iOS momentum/bounce. No JS vertical transform, scrollTop mutation,
+   ancestor touch-action:pan-y, or document-level touchmove suppression. */
+.mobile-motion-root .mobile-list,
+.mobile-motion-root [data-conversation-scroll] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+.mobile-motion-root :is(.mobile-icon-button, .mobile-new, .mobile-action, .mobile-chat-row) {
+  transition: background-color 140ms ease, opacity 140ms ease, transform 160ms var(--motion-press-ease);
+  transform-origin: center;
+}
+.mobile-motion-root :is(.mobile-icon-button, .mobile-new, .mobile-action):active:not(:disabled) {
+  transform: scale(.96);
+  background-color: var(--mobile-hover);
+}
+.mobile-motion-root .mobile-chat-row:active:not(:disabled) {
+  transform: scale(.987);
+  background-color: var(--mobile-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-motion-root .mobile-motion-surface,
+  .mobile-motion-root :is(.mobile-icon-button, .mobile-new, .mobile-action, .mobile-chat-row) {
+    transform: none !important;
+    transition: none !important;
+  }
+  .mobile-motion-root .mobile-motion-surface.is-nav-gesturing {
+    border-radius: 0;
+    box-shadow: none;
+    will-change: auto;
+  }
+}
