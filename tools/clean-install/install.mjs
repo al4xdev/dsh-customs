@@ -83,8 +83,11 @@ export async function installFresh({ home = process.env.HOME, repo = repoDefault
   const sources = join(paths.build, 'sources'), artifacts = join(paths.install, 'artifacts');
   for (const path of [toolchain, seed, sources, artifacts]) await mkdir(path, { mode: 0o700 });
   const config = join(paths.build, 'empty-npmrc');
+  const globalConfig = join(paths.build, 'empty-global-npmrc');
+  // npm rejects loading one path twice under different configuration scopes.
   await writeFile(config, '', { flag: 'wx', mode: 0o600 });
-  const env = { HOME: home, DSH_HOME: paths.dshHome, DSH_INSTALL_ROOT: paths.install, XDG_DATA_HOME: join(home, '.local/share'), XDG_CONFIG_HOME: join(paths.build, 'config'), XDG_CACHE_HOME: join(paths.build, 'cache'), PATH: process.env.PATH, NODE_ENV: 'development', DSH_TELEMETRY_DISABLED: '1', GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', npm_config_userconfig: config, npm_config_globalconfig: config, npm_config_cache: join(paths.build, 'npm-cache'), npm_config_nodedir: '/usr/local' };
+  await writeFile(globalConfig, '', { flag: 'wx', mode: 0o600 });
+  const env = { HOME: home, DSH_HOME: paths.dshHome, DSH_INSTALL_ROOT: paths.install, XDG_DATA_HOME: join(home, '.local/share'), XDG_CONFIG_HOME: join(paths.build, 'config'), XDG_CACHE_HOME: join(paths.build, 'cache'), PATH: process.env.PATH, NODE_ENV: 'development', DSH_TELEMETRY_DISABLED: '1', GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', npm_config_userconfig: config, npm_config_globalconfig: globalConfig, npm_config_cache: join(paths.build, 'npm-cache'), npm_config_nodedir: '/usr/local' };
   const commands = [];
   const spawn = io.spawn ?? spawnSync;
   function run(command, args, cwd) {

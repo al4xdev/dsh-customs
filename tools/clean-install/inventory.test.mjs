@@ -94,6 +94,19 @@ test('source-build splits remain visible without inventing an installed-runtime 
   assert.match(comparison.qualification, /not activation/);
 });
 
+test('exports metadata fallback refuses a nearer unconfined SDK instead of hiding it', async () => {
+  const input = await fixture({ restrictedPi: true });
+  const outside = join(input.root, 'outside-peer');
+  await file(join(outside, 'package.json'), JSON.stringify({ name: packageNames.pi, version: '0.2.0-rc.2', exports: { '.': { import: './private.js' } }, secret: 'OUTSIDE_PEER_SECRET_CANARY' }));
+  const nested = join(input.roots.adapter, 'node_modules', packageNames.pi);
+  await mkdir(dirname(nested), { recursive: true }); await symlink(outside, nested);
+  const result = inventory(input);
+  assert.equal(result.graph.adapter.pi, null);
+  assert.equal(result.identity.pi.sharedRuntime, false);
+  assert(result.blockers.some(item => item.item === 'peer:adapter:pi' && item.reason === 'invalid-or-unconfined'));
+  assert(!JSON.stringify(result).includes('OUTSIDE_PEER_SECRET_CANARY'));
+});
+
 test('split physical SDK is an explicit blocker even when package versions match', async () => {
   const result = inventory(await fixture({ duplicatePi: true }));
   assert.equal(result.identity.pi.shared, false);
