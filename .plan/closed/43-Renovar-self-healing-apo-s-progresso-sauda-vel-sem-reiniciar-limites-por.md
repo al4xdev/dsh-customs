@@ -1,0 +1,32 @@
+# Renovar self-healing após progresso saudável sem reiniciar limites por mensagens artificiais
+
+## Goal/pedido/evidência real
+Mesmo goal4132625b revisão5 ativo. Usuário reportou novo erroCodex emoutrasessão e pediu investigação; task_84 emalex-tavern localizada via cachepúblico. Task39 fechado31native54pure/TS6/6negativetypechecks; política atual é3porchain original atéturn/endcompleted. Processo719668 comprovadoflockinode; antiguidade NÃO significaausênciadasmelhorias:22audits+6notices reais e recoveredackestãopresentes.
+
+Turn21: duasfalhasstep1 comcycles1/2; sucessoLLM+toolsteps1/2; falhastep3 cycle3; sucessoLLM+toolsteps3/4/5; genericPIAIstep6 suspende7088. Cincoassistant/message nãointerrompidos finishkindtool-calls +nativeStepEnds, toolresultserro0. Novosturns humanos22/23 também herdamchain3/suspended. Isso é bug de adequaçãoLTS e de checkpointretomável, não categoria nova comprovada. Logs metadata safe runtime-task84-progress-02/lock-metadata/friendly-receiptfinal; status/backendcode ausentes. Não ampliar regexdiccionário/assumirSERVER.
+
+## Correção scoped plugin39
+Novo task43 permite alterar plugins/agent-self-heal/index.mjs,logic.mjs,types.d.ts,README/tests necessários, sem SDK38/Gcs42/credencial/perfilbilling/goalsruntime privado. Source39baseline+recibos preservar comoarquivoimutável antesedit. maxCyclesdefault3/config0..10 permanece: agora POR EPISÓDIO CONSECUTIVO de falhas, não por todo turno longo. Originalturn/step identifica cadaepisódio; mudançasdesérie/contentGeneration, própriaobservação/audit, pluginreload/configincrease e fakehealthy customevent não renovamcycle nemestendemcaporiginal.
+
+### Progresso saudável comprovado
+Usar eventos públicos reais de sessão/kernel. Projetar reset exclusivamente por nativeStepEnd completo com assistant/message assentado, noninterrupted e finish terminal saudável/actionable (tool-calls válido pode ser saudável), e resultados/stepoutcome sem cancel/error/uncertain settlement. Verificarseq monotônico, causal ordering/agentidentity, nativepublicfacts em projectionfold. Falhaassistant/attempt, mensagens user artificiais, text parcial/thought-only/MAXTOKENS incompleto, tool failure/cancel/incompletestep não são progresso. Descobrir exatoscontratos antesimplementar; nãoinventareventos nemsupor ferramenta remoteexactlyonce. Não executar/replay CLIENT comocomponentedo reset.
+
+Concluir o episódio comestado/audit recovered/healthy-step emseq causal (append ack deferred afterpublication, coalesced, drain ondispose) e limparchainactivebudget somente apósesseprogresso. Retenção lastRecovered/history e seenfailedseq para dedupe contínua; schema/stateVersion migração/replay compatível comv1estadonativeauditfullsnapshots. Nunca perdê-los quando novaobservação muda série. Próximafalha depois deprogresso abrechainnova cycle1; erros seguidos semprogresso continuammax3. Rootnormalretryoficial permanece prioridade e tambémseuslimites/counterresetstep públicos; limitarquandoambosredundantes semnovomotor.
+
+### Retomada humana/checkpoint
+Suspensão preservaobjetivo/audit e NÃOarrastaumchainesgotado para sempre sobre nova rodada legitimamenteretomada. Novo gesto humano explicitamente admitido no runtime via surface/inbox boundary pode abrirnovoepisódio usando publicprovenance de user real e seq causalvalidado; não apenas source.kindstring de arbitrariedade/parentgoal/SDK/tool/erro. Secontratopúblico não distingue gesto de retomar de append user-message, preferir comando interno explícito de reset com permissão humana/actor/causalidade e testes em vezsupor todosuserrole-human. Registrar manual-resumed/reset comorazãocontrolada e preservaroldledger. Não resumirGoal/rearmgarantirphase automaticamente/nãoinventarUsercancel. Agent/Goalcancel/dispose/humanpause semprevence. Não incluir autoreschedule/loopinfinito emunknown persistente.
+
+## Gates/ownership
+Sourceownerc103implement/migração/puretests; mainfazbackup/CAS/minimalwiring (max3profile permanece), e4nativefixtures+read-onlyreview. Task42nativeGcs/buildjobs existentes continuamsemduplicarwork; fonteSDK38/Gcs42 frozen preservada.
+
+- Preservar todos54pure+31native+friendly4 tipos públicos, seischecks negativos, sanitizersecrets/COT/body/rawmessage nenhuma regressão.
+- Native reproduzturn21:2errosstep1 ->healthytoolstep1 ->healthy2 ->errstep3 recebecycle1 emNOVOepisódio ->healthy3/4/5 ->errstep6 recebecycle1 econtinua; manteroldaudit/observações/historicaltoolresults, CLIENT dispatchcadaefeito somenteuma vez. Sessões independentes/cap3repetidossemprogressoreload/reforgeSurfaceSeries/configraiseproof ainda bounded4calls unknownmax3.
+- AntesnativeStepEnddecommit/failedpartialassistant/toolresultfailure/incomplete step/callerabort/reentrantappend/foreignscope nãoreset. Callerabort entrehealthyfold/ack nãoautoriza replay; ackfalha diagnosticfixedsafe; atualizações concorrentesdurablemonotonic.
+- Migração real replayestadov1Task39:chainoriginal3suspended+seen+lastRecovered e safeoldfullsnapshots nãoapagada/nãoreset por reload; saudávelstep posteriorouhumanretomada comprovada abreapenasumepisódio novo. Humanresumecommands sem autoriahumana/nãocommitted/no seqref rejeitados; Goal auto rounds nãoresetam porfingirhumano.
+- NativeGoalDriver handledsuccessactivationarmed, exaustactive/disarmednocomplete; manualresumepermiteboundedrepairnovamente respeitandoowner/humanpause; noimpersonatinggoalSource/system/model/tool/human, nofakepermission.
+- TypeScript6 realtypedconsumer+sourceMap/EventMap/stateSchema versão antiga compatível +regressão31codexnative40/SDK98alreadyfrozen. Fonte/showdiff/runtimehash receipts e documentação diferençaepisódio/step/turn.
+
+## Deploy/limites
+Novo backupdurável exclusivo source39v1 sete arquivos+receipts antesedit; arquivo/profilese houveralteraçãoCAS backuprecuperável refusalonlateredit. Não reiniciarTTY/processos outros, não modificar sessãoreal task_84/locks/logs paraensinarfixture. LiveCodex não necessário: unknownfullgenericmensage+machinecodes fakeHTTP/SSE actualSDK.Rootclasses éadequado gate; ocorrência real não expôsbackendfacts; não afirmar código/status original. Sourceplugin pode hotreload viaWatcher, masconfirmarloadedversion só porobserváveis, não presumir startupAge.
+
+Não prometer universalrepair antesprepare/consumer/settlementthrowseam, nempaidoptin/model/accountrotation. max3continuaboundedporfalhasconsecutivas, não paraapunir progresso legítimo. Fechar43sócomgatesverdes; globalgoalcontinuaenquantoTask42replayClaude/cota/documentaçãoLTSpendentes.
