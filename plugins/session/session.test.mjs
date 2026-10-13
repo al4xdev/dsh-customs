@@ -16,20 +16,21 @@ function fixture(options = {}) {
     sessionPersistence: {
       list: async () => [{ header, revision: 'r1', eventCount: events.length }],
       stat: async id => id === header.id ? { header, revision: 'r1', eventCount: events.length } : undefined,
-      open: async (id, access) => { calls.opened.push(access); return { read: async (offset, length) => { calls.reads.push([offset, length]); if (options.failRead) throw new Error('read fail'); return { events: events.slice(offset, offset + length) }; }, close: async () => { calls.closed++; } }; },
+      open: async (id, access) => { assert.equal(id, header.id); calls.opened.push(access); return { read: async (offset, length) => { calls.reads.push([offset, length]); if (options.failRead) throw new Error('read fail'); return { events: events.slice(offset, offset + length) }; }, close: async () => { calls.closed++; } }; },
     },
     sessionQuery: { observeSession: async () => ({ source: 'live', cursor: 69, get events() { throw new Error('must not materialize full query log'); }, [Symbol.dispose]() { calls.queryDisposed = true; } }) },
     sessionProjections: { cachedSnapshot: () => ({ asOfSeq: 4, values: { inbox: { 'next-turn': [], 'next-step': [] } } }) },
     approval: { request: async req => { calls.approvals.push(req); if (options.onApproval) options.onApproval(); return options.outcome ?? 'allowed-once'; } },
   };
   const bridge = options.bridge ?? { discoverBridges: async () => ({ bridges: [] }) };
-  const controller = createController(ctx, { bridge, resume: options.resume, ledgerPath: '/nonexistent-session-fixture-ledger' });
+  const controller = createController(ctx, { bridge, resume: options.resume, writerObserver: options.writerObserver, ledgerPath: options.ledgerPath ?? '/nonexistent-session-fixture-ledger' });
   const exec = { agent: { session: { header: { agentPreset: 'companion' } } }, callId: 'call-1', signal: new AbortController().signal };
   return { controller, calls, exec, ctx, agent };
 }
 
 test('strict operation contracts reject model confirmation, traversal and out-of-bounds', () => {
-  for (const args of [{ operation: 'send', sessionId: '../secret', text: 'x' }, { operation: 'send', sessionId: 'target-1', text: 'x', confirmed: true }, { operation: 'read', sessionId: 'target-1', maxBytes: 32769 }, { operation: 'list', limit: 101 }, { operation: 'help', text: 'inject' }]) assert.throws(() => parseRequest(args));
+  for (const args of [{ operation: 'send', sessionId: '../secret', text: 'x' }, { operation: 'send', sessionId: 'target-1', text: 'x', confirmed: true }, { operation: 'read', sessionId: 'target-1', maxBytes: 32769 }, { operation: 'list', limit: 101 }, { operation: 'list', writer: 'free' }, { operation: 'inspect', sessionId: header.id, writer: 'held' }, { operation: 'help', text: 'inject' }]) assert.throws(() => parseRequest(args));
+  for (const writer of ['held', 'not-observed', 'unknown']) assert.equal(parseRequest({ operation: 'list', writer }).writer, writer);
 });
 test('cursors are authenticated, target-bound and runtime-local', () => {
   const codec = cursorCodec(); const token = codec.encode({ id: 'target-1', offset: 3 });
@@ -111,6 +112,7 @@ function resumableFixture(options = {}) {
   const calls = { preflight: 0, launches: 0 };
   const resume = {
     preflightResume: async (_ctx, request) => {
+      assert.ok(_ctx.sessionPersistence);
       calls.preflight++;
       if (options.unavailable) return { ok: false, reason: 'No signed origin checkpoint' };
       return { ok: true, fingerprint: options.drift && calls.preflight > 1 ? 'changed' : 'original-config', exactLiteral: request.text, descriptor: { sessionId: request.sessionId, cwd: '/synthetic', profile: { name: 'original-headless' }, preset: 'ordinary', model: { provider: 'fixture', model: 'literal' }, policies: { approval: 'ask', sandbox: 'read-only' } }, reason: 'CURRENT configuration, not immutable original; no goals armed', plan: {} };
@@ -191,6 +193,163 @@ test('list output is bounded and stale generation invalidates pagination; persis
   f.ctx.sessionPersistence.list = async () => [];
   assert.equal((await f.controller.execute({ operation: 'list', cursor: first.nextCursor }, f.exec)).code, 'cursor_stale');
 });
+
+test('64-row default pagination survives event, status and writer-evidence churn and includes a high-ID terminal', async () => {
+  for (const source of ['local', 'bridge']) {
+    const terminal = { ...header, id: 'zzz-visible-terminal', createdAt: 1000 };
+    const snapshots = [...Array.from({ length: 64 }, (_, index) => ({ header: { ...header, id: `session-${String(index).padStart(3, '0')}`, createdAt: index }, revision: 'r1' })), { header: terminal, revision: 'r1' }];
+    const remote = { sessionId: terminal.id, agentIdentity: 'instance-1', cwd: header.cwd, status: 'running' };
+    const bridge = { discoverBridges: async () => ({ bridges: [{ bridgeId: 'fixture-bridge' }] }), queryBridge: async () => ({ ok: true, agents: [remote] }) };
+    let observation = 0;
+    const f = fixture({ noLive: source === 'bridge', ...(source === 'bridge' ? { bridge } : {}), writerObserver: async rows => new Map(rows.map(row => [row.header.id, { state: 'held', pid: 1234 + observation, observedAt: new Date(observation++).toISOString(), source: 'synthetic-writer-observer' }])) });
+    f.agent.id = terminal.id; f.agent.session.header = terminal;
+    f.ctx.sessionPersistence.list = async () => snapshots;
+    let page = await f.controller.execute({ operation: 'list' }, f.exec);
+    assert.equal(page.total, 65); assert.equal(page.sessions[0].header.id, terminal.id);
+    assert.equal(page.sessions[0].state, 'alive'); assert.equal(page.ordering, 'createdAt-desc,id-asc');
+    assert.ok(page.sessions.length < 32); assert.equal(page.truncated, true);
+    const generation = page.revision, firstRowRevision = page.sessions[0].revision;
+    const seen = [];
+    while (true) {
+      assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 8192);
+      assert.equal(page.revision, generation);
+      seen.push(...page.sessions.map(row => row.header.id));
+      if (page.nextCursor === null) break;
+      for (const row of snapshots) { row.revision = `appended-${seen.length}`; row.eventCount = seen.length; }
+      f.agent.status = f.agent.status === 'running' ? 'idle' : 'running'; remote.status = f.agent.status;
+      page = await f.controller.execute({ operation: 'list', cursor: page.nextCursor }, f.exec);
+      assert.equal(page.code, undefined);
+    }
+    assert.equal(seen.length, 65); assert.equal(new Set(seen).size, 65);
+    assert.deepEqual(seen, [terminal.id, ...snapshots.slice(0, 64).reverse().map(row => row.header.id)]);
+    const refreshed = await f.controller.execute({ operation: 'list' }, f.exec);
+    assert.equal(refreshed.revision, generation); assert.notEqual(refreshed.sessions[0].revision, firstRowRevision);
+    assert.equal(f.calls.opened.length, 0); assert.equal(f.calls.approvals.length, 0);
+  }
+});
+
+test('1 KiB pages advance through 64 oversized rows, preserve held evidence and support a maximum-length project filter', async () => {
+  const project = `/${'p'.repeat(2047)}`;
+  const snapshots = Array.from({ length: 64 }, (_, index) => ({ header: { ...header, id: `large-${String(index).padStart(3, '0')}`, createdAt: index, cwd: project, agentPreset: 'a'.repeat(512), origin: 'o'.repeat(512) }, revision: 'r1' }));
+  const ownership = { state: 'held', pid: 1234, observedAt: '2026-10-13T00:00:00.000Z', source: 'synthetic-writer-observer' };
+  const f = fixture({ noLive: true, writerObserver: async rows => new Map(rows.map(row => [row.header.id, ownership])) });
+  f.ctx.sessionPersistence.list = async () => snapshots;
+  const args = { operation: 'list', project, writer: 'held', state: 'unknown', limit: 100, maxBytes: 1024 };
+  let cursor; const seen = [];
+  do {
+    const page = await f.controller.execute({ ...args, ...(cursor ? { cursor } : {}) }, f.exec);
+    assert.equal(page.code, undefined); assert.equal(page.total, 64);
+    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 1024); assert.ok(page.sessions.length > 0);
+    for (const row of page.sessions) {
+      assert.equal(row.contentTruncated, true); assert.equal(row.writerOwnership.state, 'held');
+      assert.equal(row.writerOwnership.pid, 1234); assert.equal(row.writerOwnership.observedAt, ownership.observedAt);
+      seen.push(row.header.id);
+    }
+    cursor = page.nextCursor;
+    if (cursor) assert.ok(cursor.length <= 2048);
+  } while (cursor);
+  assert.deepEqual(seen, snapshots.slice().reverse().map(row => row.header.id));
+});
+
+test('list cursor filters bind project/state/writer while limit changes and observation timestamps preserve continuation', async () => {
+  const snapshots = [
+    { header: { ...header, id: 'held-a', cwd: '/a', createdAt: 3 }, revision: 'r1' },
+    { header: { ...header, id: 'held-a2', cwd: '/a', createdAt: 2 }, revision: 'r1' },
+    { header: { ...header, id: 'held-b', cwd: '/b', createdAt: 1 }, revision: 'r1' },
+    { header: { ...header, id: 'not-observed-a', cwd: '/a', createdAt: 0 }, revision: 'r1' },
+  ];
+  const observations = new Map(snapshots.map(row => [row.header.id, { state: row.header.id.startsWith('held') ? 'held' : 'not-observed', observedAt: 'first', source: 'synthetic' }]));
+  const f = fixture({ noLive: true, writerObserver: async () => observations });
+  f.ctx.sessionPersistence.list = async () => snapshots;
+  const args = { operation: 'list', project: '/a', state: 'unknown', writer: 'held', limit: 1 };
+  const first = await f.controller.execute(args, f.exec);
+  assert.equal(first.total, 2); assert.ok(first.nextCursor);
+  for (const change of [{ project: '/b' }, { state: 'alive' }, { writer: 'not-observed' }, { writer: undefined }]) {
+    await assert.rejects(f.controller.execute({ ...args, ...change, cursor: first.nextCursor }, f.exec), /cursor target mismatch/);
+  }
+  for (const observation of observations.values()) observation.observedAt = 'changed';
+  const next = await f.controller.execute({ ...args, cursor: first.nextCursor, limit: 100, maxBytes: 2048 }, f.exec);
+  assert.equal(next.revision, first.revision); assert.equal(next.nextCursor, null);
+  assert.deepEqual(next.sessions.map(row => row.header.id), ['held-a2']);
+  observations.set('held-a2', { state: 'not-observed', source: 'synthetic' });
+  assert.equal((await f.controller.execute({ ...args, cursor: first.nextCursor }, f.exec)).code, 'cursor_stale');
+});
+
+test('creation ordering has deterministic ID ties, includes every preset and stales only if the ordered membership changes', async () => {
+  const snapshots = [
+    { header: { ...header, id: 'b', createdAt: 1, agentPreset: 'companion' }, revision: 'r1' },
+    { header: { ...header, id: 'a', createdAt: 1 }, revision: 'r1' },
+    { header: { ...header, id: 'zzz-high-id', createdAt: 3 }, revision: 'r1' },
+    { header: { ...header, id: 'iso-newest', createdAt: '2026-10-13T00:00:00.000Z' }, revision: 'r1' },
+    { header: { ...header, id: 'missing-b', createdAt: undefined }, revision: 'r1' },
+    { header: { ...header, id: 'missing-a', createdAt: undefined }, revision: 'r1' },
+    { header: { ...header, id: 'epoch-zero', createdAt: 0 }, revision: 'r1' },
+    { header: { ...header, id: 'before-epoch', createdAt: -1 }, revision: 'r1' },
+  ];
+  const f = fixture({ noLive: true }); f.ctx.sessionPersistence.list = async () => snapshots;
+  const all = await f.controller.execute({ operation: 'list' }, f.exec);
+  assert.deepEqual(all.sessions.map(row => row.header.id), ['iso-newest', 'zzz-high-id', 'a', 'b', 'epoch-zero', 'before-epoch', 'missing-a', 'missing-b']);
+  const first = await f.controller.execute({ operation: 'list', limit: 1 }, f.exec);
+  snapshots[0].header.createdAt = 4;
+  assert.equal((await f.controller.execute({ operation: 'list', cursor: first.nextCursor }, f.exec)).code, 'cursor_stale');
+});
+
+test('persisted headers keep ledger sessions in their proven project without pretending ledger-only cwd or alive status', async () => {
+  await mkdir('.dumps/session-tests', { recursive: true });
+  const directory = await mkdtemp(join(process.cwd(), '.dumps/session-tests/ledger-project-'));
+  const ledgerPath = join(directory, 'ledger.json');
+  await writeFile(ledgerPath, JSON.stringify({ version: 1, owners: [{ pid: process.pid, sessionIds: [header.id, 'ledger-only-session'] }] }));
+  const f = fixture({ noLive: true, ledgerPath });
+  const filtered = await f.controller.execute({ operation: 'list', project: header.cwd }, f.exec);
+  assert.equal(filtered.total, 1); assert.equal(filtered.sessions[0].header.id, header.id);
+  assert.equal(filtered.sessions[0].source, 'tui-mount-ledger'); assert.equal(filtered.sessions[0].state, 'unknown');
+  const all = await f.controller.execute({ operation: 'list' }, f.exec);
+  assert.equal(all.total, 2); assert.equal(all.sessions.find(row => row.header.id === 'ledger-only-session').header.cwd, undefined);
+  const alive = await f.controller.execute({ operation: 'list', state: 'alive' }, f.exec);
+  assert.equal(alive.total, 0);
+});
+
+test('missing, failing and malformed writer observers stay explicitly unknown and never leak observer exceptions', async () => {
+  for (const writerObserver of [undefined, async () => new Map(), async () => [], async () => { throw new Error('private-observer-diagnostic'); }]) {
+    const f = fixture({ noLive: true, writerObserver });
+    const listed = await f.controller.execute({ operation: 'list' }, f.exec);
+    const inspected = await f.controller.execute({ operation: 'inspect', sessionId: header.id, limit: 1, maxBytes: 2048 }, f.exec);
+    for (const ownership of [listed.sessions[0].writerOwnership, inspected.writerOwnership]) {
+      assert.equal(ownership.state, 'unknown'); assert.ok(ownership.reason);
+    }
+    assert.ok(!JSON.stringify(listed).includes('private-observer-diagnostic'));
+    assert.ok(!JSON.stringify(inspected).includes('private-observer-diagnostic'));
+    const held = await f.controller.execute({ operation: 'list', writer: 'held' }, f.exec);
+    assert.equal(held.total, 0); assert.ok(held.warnings.some(warning => warning.includes('empty held result is inconclusive')));
+    assert.deepEqual(f.calls.opened, ['read']); assert.equal(f.calls.closed, 1);
+  }
+});
+
+test('held writer evidence disables cold resume before approval/preflight/worker without granting live or send capability', async () => {
+  const ownership = { state: 'held', pid: 1234, observedAt: '2026-10-13T00:00:00.000Z', source: 'synthetic-writer-observer' };
+  const f = resumableFixture({ writerObserver: async rows => new Map(rows.map(row => [row.header.id, ownership])) });
+  const listed = await f.controller.execute({ operation: 'list', writer: 'held' }, f.exec);
+  assert.equal(listed.sessions[0].state, 'unknown'); assert.equal(listed.sessions[0].capabilities.send, false);
+  assert.equal(listed.sessions[0].capabilities.resume, false);
+  const inspected = await f.controller.execute({ operation: 'inspect', sessionId: header.id, limit: 1 }, f.exec);
+  assert.equal(inspected.writerOwnership.pid, 1234); assert.equal(inspected.capabilities.resume, false);
+  const result = await f.controller.execute({ operation: 'resume', sessionId: header.id, text: 'continue' }, f.exec);
+  assert.equal(result.code, 'resume_unavailable'); assert.equal(result.effect, 'none'); assert.equal(result.writerOwnership.state, 'held');
+  assert.equal(f.resumeCalls.preflight, 0); assert.equal(f.resumeCalls.launches, 0); assert.equal(f.calls.approvals.length, 0);
+  assert.deepEqual(f.calls.opened, ['read']);
+});
+
+test('not-observed writer evidence never bypasses native provenance preflight and observer cancellation remains cancellation', async () => {
+  const f = resumableFixture({ unavailable: true, writerObserver: async rows => new Map(rows.map(row => [row.header.id, { state: 'not-observed', source: 'synthetic' }])) });
+  const result = await f.controller.execute({ operation: 'resume', sessionId: header.id, text: 'continue' }, f.exec);
+  assert.equal(result.effect, 'none'); assert.equal(f.resumeCalls.preflight, 1);
+  assert.equal(f.resumeCalls.launches, 0); assert.equal(f.calls.approvals.length, 0);
+  const abort = new AbortController();
+  const cancelled = fixture({ writerObserver: async () => { abort.abort(); throw new Error('cancelled observer'); } });
+  cancelled.exec.signal = abort.signal;
+  await assert.rejects(cancelled.controller.execute({ operation: 'list' }, cancelled.exec), { name: 'AbortError' });
+});
+
 test('bridge status handshake, exact identity revalidation and ACK; ambiguous send never retries', async () => {
   const record = { bridgeId: 'bridge-1', pid: 123, startTime: 'start' }; const remote = { sessionId: header.id, agentIdentity: 'instance-1', status: 'idle', cwd: header.cwd };
   let sends = 0;
