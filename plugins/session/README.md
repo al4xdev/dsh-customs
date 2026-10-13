@@ -1,15 +1,15 @@
 # Mobile session companion
 
 A dedicated DSH `companion` profile with one model-facing tool, `session`.
-The Android frontend is the community [DSH Mobile](https://github.com/sorsama/deepseek-harness-mobile); this plugin does not bundle or install an APK.
+The current mobile web frontend lives in `frontend/mobile-companion`; this plugin does not bundle or install an Android APK.
 
 ## Operations
 
 | Operation | Effect |
 | --- | --- |
 | `help` | Effective capabilities and output limits |
-| `list` | Paged stored sessions plus live registry/bridge evidence |
-| `inspect` | Actual recent persisted events, live status and available projections |
+| `list` | Paged stored sessions plus separate registry/bridge and read-only writer evidence |
+| `inspect` | Actual recent persisted events, live status, writer evidence and available projections |
 | `read` | Bounded event previews after an opaque cursor; revision-based unchanged polling |
 | `send` | Exact literal text admitted to the next-turn inbox, only after native one-shot approval |
 | `resume` | Confirmed cold continuation of a signed, compatible headless-origin checkpoint in that same profile; otherwise `resume_unavailable` |
@@ -28,6 +28,57 @@ internally decode a complete log to return a slice; output bounds are not a
 promise of bounded backend work. `inspect` uses public query watermarks plus
 read-only physical-prefix probes to find a real tail without relying on synthetic
 interrupted-turn closers. Cursors expire on plugin-instance restart.
+
+### Complete session discovery
+
+`list` defaults to **32 rows and 8 KiB**, not 32 complete session descriptions.
+The byte budget can return fewer rows. Keep the same `project`, `state`, and
+`writer` filters and follow `nextCursor` **until `null`** to enumerate every
+match. `total` describes all matching sessions, not the current page. Never
+present the first page as the complete list.
+
+Ordering is immutable `createdAt` descending, then session ID ascending; it is
+not a claim about latest activity. Sessions without a creation timestamp sort
+last. A list revision identifies only the filtered membership and order. Event
+appends, transient agent status, writer-observation timestamps and changed row
+previews do not invalidate an otherwise identical continuation. A changed
+matching set/order returns `cursor_stale`; restart the enumeration. Each row's
+own persistence revision can still change between pages.
+
+For open terminal sessions use `writer: "held"`, rather than `state: "alive"`
+alone, and report the separate `writerOwnership` evidence:
+
+- `held`: a read-only observer found writer ownership; PID/time/source are
+  included when available. This does **not** prove an agent is running, making
+  progress, or sendable. An idle agent can still own its session writer.
+- `not-observed`: this observation found no writer. It does not prove a free
+  lease or authorize resume; native atomic writer acquisition remains decisive.
+- `unknown`: no valid observation, unsupported platform/provider, missing
+  artifact, or unavailable observer. Missing observations are never relabeled
+  `not-observed`.
+
+The host may supply `writerObserver(snapshots, signal)` returning a `Map` of
+session IDs to public `{ state, pid?, observedAt?, source?, reason? }` evidence.
+Without it, list/inspect explicitly return unknown writer evidence. The callback
+must remain read-only: no trial writer open, lock acquisition, takeover, or
+process mutation. Held evidence disables advertised resume and refuses cold
+resume before approval/preflight/worker startup; send still requires a verified
+registry/bridge destination and its normal approval. Missing/not-observed
+evidence never bypasses provenance or the worker's native atomic lease guard.
+
+`state: "alive"` requires local registry/validated bridge proof. An existing TUI
+without a bridge can be mounted or writer-held while its agent state remains
+`unknown`; `waiting`/`ended` are not inferred from silence or persisted events.
+Exact project filters use proven header `cwd`, before display redaction and
+truncation. A ledger-only entry without such a header cannot be assigned a
+project from its owner's process cwd.
+
+Profiles are not separate stores merely because their names differ. This
+machine's companion uses the shared `~/.dsh/sessions` JSONL root with Zstandard;
+the ordinary TUI bundle defaults to `$DSH_HOME/sessions` (or `~/.dsh/sessions`),
+unless `DSH_TUI_SESSION_ROOT` overrides it. The bridge root under
+`session-companion` is **not** the persistence root. Compare effective public
+root/encoding and launch overrides before diagnosing missing sessions.
 
 ## Safety and transport
 
