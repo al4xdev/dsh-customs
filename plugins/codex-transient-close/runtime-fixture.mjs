@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { parentPort, workerData } from 'node:worker_threads';
 import { resolveHost } from '../common.mjs';
 import * as plugin from './index.mjs';
+import { longCodexRetryConfig } from '../../tools/pi-ai-fork/long-retry-policy.mjs';
 
 const host = async id => import(resolveHost(`@deepseek-ai/${id}`));
 const { Context } = await host('cordis');
@@ -18,8 +19,8 @@ const retryPlugin = await host('dsh-llm-retry');
 globalThis.fetch = () => { throw new Error('Network forbidden in offline runtime fixture'); };
 globalThis.WebSocket = class { constructor() { throw new Error('WebSocket forbidden in offline runtime fixture'); } };
 
-const failure = (message = 'WebSocket closed 1012 service restart', code = 'PI_AI_ERROR') => ({
-  type: 'finish', reason: { kind: 'error', failure: { code, message } },
+const failure = (message = 'WebSocket closed 1012 service restart', code = 'PI_AI_ERROR', extra = {}) => ({
+  type: 'finish', reason: { kind: 'error', failure: { code, message, ...extra } },
 });
 function* toolChunks(complete) {
   yield { type: 'block-start', index: 0, blockType: 'tool-call' };
@@ -32,13 +33,34 @@ async function scenario(settings) {
   const calls = [], dispatches = [], atFailure = [], atBackoff = [], errors = [];
   const logs = new Map();
   const starts = [];
+  const timers = [], timerHandles = new Map();
+  const nativeSetTimeout = globalThis.setTimeout, nativeClearTimeout = globalThis.clearTimeout;
+  let scheduledDelay, holdWait = false;
   let pluginFiber, retryFiber, retryDisposal;
   try {
     for (const service of [llm.default, Sessions, Projections, Agents, SystemPrompt, Tools]) await ctx.plugin(service);
     await ctx.plugin(Loop, { agents: [], maxParallelToolCalls: 1 });
-    // Keep the official default maxRetries=5; shrink only the test clock delays.
-    const policy = llm.resolveRetryPolicy({ mode: 'normal', backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }, 'fixture');
-    assert.equal(policy.maxRetries, 5);
+    // Default cases keep five retries and a short test clock. Long-policy cases
+    // retain the real policy/event delays; only this isolated Worker's timers
+    // accelerate waits, except the pending long wait used to prove cancellation.
+    const policy = llm.resolveRetryPolicy(settings.longPolicy ? longCodexRetryConfig : { mode: 'normal', backoff: { initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }, 'fixture');
+    assert.equal(policy.maxRetries, settings.longPolicy ? 9 : 5);
+    if (settings.longPolicy) {
+      globalThis.setTimeout = (callback, delay, ...args) => {
+        if (delay !== scheduledDelay) return nativeSetTimeout(callback, delay, ...args);
+        scheduledDelay = undefined;
+        const record = { delayMs: delay, cancelled: false, held: holdWait };
+        timers.push(record);
+        const handle = nativeSetTimeout(callback, holdWait ? delay : 1, ...args);
+        timerHandles.set(handle, record);
+        return handle;
+      };
+      globalThis.clearTimeout = handle => {
+        const record = timerHandles.get(handle);
+        if (record) record.cancelled = true;
+        return nativeClearTimeout(handle);
+      };
+    }
     const adapter = new class extends llm.LlmAdapter {
       providerRetryPolicy() { return policy; }
       listModels() { return [{ id: 'fixture-model', name: 'Fixture', contextWindow: 10000, maxTokens: 1000, input: ['text'], output: ['text'] }]; }
@@ -49,7 +71,7 @@ async function scenario(settings) {
         calls.push({ ordinal, sessionId: options.sessionId, messages: options.messages, marked: llm.isAgentLoopRequest(options) });
         if (settings.exhaust || ordinal === 0) {
           yield* toolChunks(settings.complete);
-          yield failure(settings.message, settings.code);
+          yield failure(settings.message, settings.code, settings.failureExtra);
         } else if (ordinal === 1) {
           yield* toolChunks(true);
           yield { type: 'finish', reason: { kind: 'tool-calls' } };
@@ -74,12 +96,23 @@ async function scenario(settings) {
       if (!logs.has(session.id)) logs.set(session.id, []);
       logs.get(session.id).push(event);
       if (event.type === 'llm/retry') {
+        if (settings.longPolicy) scheduledDelay = event.data.delayMs;
         atBackoff.push({ id: session.id, dispatchCount: dispatches.length, retry: event.data.retry });
         if (settings.cancel) ctx.agents.get(session.id).cancel('user');
         if (settings.disposeRetry && !retryDisposal) retryDisposal = retryFiber.dispose();
+        if (event.data.retry === settings.cancelAt || event.data.retry === settings.disposeAt) {
+          holdWait = true;
+          // Run after the official timer starts, not a pre-aborted pseudo-wait.
+          setImmediate(() => {
+            if (event.data.retry === settings.cancelAt) ctx.agents.get(session.id).cancel('user');
+            else retryDisposal = retryFiber.dispose();
+          });
+        }
       }
     });
-    retryFiber = await ctx.plugin(retryPlugin);
+    retryFiber = await ctx.plugin(settings.longPolicy ? { ...retryPlugin, apply(ctx, config) {
+      return retryPlugin.apply(ctx, config, { random: () => settings.random ?? 0.5 });
+    } } : retryPlugin);
     if (settings.enabled !== false) pluginFiber = await ctx.plugin(plugin);
     if (settings.reload) {
       await pluginFiber.dispose();
@@ -97,10 +130,12 @@ async function scenario(settings) {
       await Promise.all(agents.map(agent => agent.whenIdle()));
     }
     await retryDisposal;
-    return { calls, dispatches, atFailure, atBackoff, errors, starts,
+    return { calls, dispatches, atFailure, atBackoff, errors, starts, timers, policy,
       sessions: agents.map(agent => ({ id: agent.id, events: logs.get(agent.id) ?? [] })) };
   } finally {
     await ctx.fiber.dispose();
+    globalThis.setTimeout = nativeSetTimeout;
+    globalThis.clearTimeout = nativeClearTimeout;
   }
 }
 

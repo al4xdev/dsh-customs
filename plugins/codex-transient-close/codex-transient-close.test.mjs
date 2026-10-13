@@ -56,8 +56,8 @@ test('official normal defaults remain bounded and unchanged', () => {
   assert.ok(!policy.retryableCodes.includes('PI_AI_ERROR'));
 });
 
-test('only native close1000/1012 finishes are copied; all other facts/chunks preserved', async () => {
-  for (const message of ['WebSocket closed 1000', 'WebSocket closed 1012 service restart']) {
+test('only native close1000/1012 and exact opaque WebSocket error finishes are copied; other facts preserved', async () => {
+  for (const message of ['WebSocket closed 1000', 'WebSocket closed 1012 service restart', 'WebSocket error']) {
     const before = Object.freeze({ type: 'text-delta', index: 0, text: 'partial' });
     const original = finish(message, 'PI_AI_ERROR', { requestId: 'fixture-request', providerRetryAfterMs: 7, status: 503 });
     original.replayState = { response: { fixture: true }, blocks: [] };
@@ -89,6 +89,23 @@ test('negative matrix passes the exact original chunk unchanged', async () => {
   for (const [request, chunk] of cases) assert.equal((await wrap(request, [chunk]))[0], chunk, JSON.stringify(chunk));
 });
 
+test('opaque WebSocket error recovery stays exact, normal-loop-only and fail-closed for permanent facts', async () => {
+  const aborted = new AbortController(); aborted.abort(new Error('fixture abort'));
+  const generic = () => finish('WebSocket error');
+  const cases = [
+    [options({}, false), generic()],
+    [options({ provider: 'other' }), generic()],
+    ...['compaction', 'session-title', ''].map(purpose => [options({ purpose }), generic()]),
+    [options({ signal: aborted.signal }), generic()],
+    [options(), { type: 'finish', reason: { kind: 'aborted', failure: { code: 'PI_AI_ERROR', message: 'WebSocket error' } } }],
+    ...['AUTH', 'QUOTA_EXCEEDED', 'INVALID_CREDENTIAL', 'INVALID_REQUEST', 'TRANSPORT', 'SERVER'].map(code => [options(), finish('WebSocket error', code)]),
+    ...[400, 401, 403, 404, 413, 429].map(status => [options(), finish('WebSocket error', 'PI_AI_ERROR', { status })]),
+    ...['prefix WebSocket error', 'WebSocket error ', ' WebSocket error', 'websocket error', 'WebSocket error auth expired', 'WebSocket error: quota exceeded', 'WebSocket error policy violation', 'WebSocket error payload too large', 'exceeded request buffer limit while retrying upstream'].map(message => [options(), finish(message)]),
+    ...['\n', '\r', '\r\n'].map(ending => [options(), finish(`WebSocket error${ending}`)]),
+  ];
+  for (const [request, chunk] of cases) assert.equal((await wrap(request, [chunk]))[0], chunk, JSON.stringify(chunk));
+});
+
 test('middleware failures remain thrown and listener disposal restores original stream', async () => {
   const ctx = new Context();
   try {
@@ -104,8 +121,8 @@ test('middleware failures remain thrown and listener disposal restores original 
   } finally { await ctx.fiber.dispose(); }
 });
 
-test('without plugin the actual official loop does not retry Codex PI_AI_ERROR or execute failed tools', async () => {
-  const result = await runtime({ enabled: false, complete: true });
+for (const message of ['WebSocket closed 1012', 'WebSocket error']) test(`without plugin the official loop does not retry ${message} or execute failed tools`, async () => {
+  const result = await runtime({ enabled: false, complete: true, message });
   assert.equal(result.calls.length, 1);
   assert.equal(result.dispatches.length, 0);
   assert.equal(eventsOf(result, 'assistant/attempt').length, 1);
@@ -114,8 +131,8 @@ test('without plugin the actual official loop does not retry Codex PI_AI_ERROR o
   assert.equal(result.atFailure[0].code, 'PI_AI_ERROR');
 });
 
-for (const complete of [false, true]) test(`official retry after ${complete ? 'complete' : 'incomplete'} failed tool chunk executes only successful tool once`, async () => {
-  const result = await runtime({ complete, message: complete ? 'WebSocket closed 1000' : 'WebSocket closed 1012 service restart' });
+for (const opaque of [false, true]) for (const complete of [false, true]) test(`official retry for ${opaque ? 'opaque WebSocket error' : 'native close'} after ${complete ? 'complete' : 'incomplete'} tool chunk executes only successful tool once`, async () => {
+  const result = await runtime({ complete, message: opaque ? 'WebSocket error' : complete ? 'WebSocket closed 1000' : 'WebSocket closed 1012 service restart' });
   assert.equal(result.calls.length, 3, 'failed tool attempt, successful tool attempt, final stop');
   assert.equal(result.dispatches.length, 1);
   assert.equal(result.atFailure[0].dispatchCount, 0);
@@ -137,8 +154,10 @@ for (const complete of [false, true]) test(`official retry after ${complete ? 'c
   assert.equal(eventsOf(result, 'step/start').length, 2, 'same-step retry does not create an extra step');
 });
 
-test('official default five-retry budget exhausts after six attempts with durable audit and zero tools', async () => {
-  const result = await runtime({ exhaust: true, complete: true });
+for (const message of ['WebSocket closed 1012', 'WebSocket error']) {
+
+test(`official five-retry budget exhausts ${message} after six attempts with zero tools`, async () => {
+  const result = await runtime({ message, exhaust: true, complete: true });
   assert.equal(result.calls.length, 6);
   assert.equal(result.dispatches.length, 0);
   assert.equal(eventsOf(result, 'assistant/attempt').length, 6);
@@ -150,24 +169,24 @@ test('official default five-retry budget exhausts after six attempts with durabl
   assert.equal(eventsOf(result, 'turn/end').length, 1);
 });
 
-test('cancel during durable backoff prevents new request and retry-started', async () => {
-  const result = await runtime({ cancel: true, exhaust: true });
+test(`cancel ${message} during backoff prevents new request and retry-started`, async () => {
+  const result = await runtime({ message, cancel: true, exhaust: true });
   assert.equal(result.calls.length, 1);
   assert.equal(result.dispatches.length, 0);
   assert.equal(eventsOf(result, 'llm/retry').length, 1);
   assert.equal(eventsOf(result, 'llm/retry-started').length, 0);
 });
 
-test('official retry disposal drains its wait and prevents any retry-started or new request', async () => {
-  const result = await runtime({ disposeRetry: true, exhaust: true });
+test(`retry disposal during ${message} prevents retry-started or new request`, async () => {
+  const result = await runtime({ message, disposeRetry: true, exhaust: true });
   assert.equal(result.calls.length, 1);
   assert.equal(result.dispatches.length, 0);
   assert.equal(eventsOf(result, 'llm/retry').length, 1);
   assert.equal(eventsOf(result, 'llm/retry-started').length, 0);
 });
 
-test('official retry budget resets at the next turn instead of disabling later recovery', async () => {
-  const result = await runtime({ repeat: true, exhaust: true, complete: true });
+test(`official retry budget for ${message} resets at the next turn`, async () => {
+  const result = await runtime({ message, repeat: true, exhaust: true, complete: true });
   assert.equal(result.calls.length, 12);
   assert.equal(result.dispatches.length, 0);
   assert.equal(eventsOf(result, 'turn/start').length, 2);
@@ -175,8 +194,8 @@ test('official retry budget resets at the next turn instead of disabling later r
   assert.deepEqual(eventsOf(result, 'llm/retry').map(event => event.data.retry), [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]);
 });
 
-test('concurrent agents have independent official budgets; reload leaves one effective wrapper', async () => {
-  const result = await runtime({ concurrent: true, reload: true, exhaust: true });
+test(`concurrent ${message} agents have independent budgets; reload leaves one wrapper`, async () => {
+  const result = await runtime({ message, concurrent: true, reload: true, exhaust: true });
   assert.equal(result.calls.length, 12);
   assert.equal(result.dispatches.length, 0);
   for (let i = 0; i < 2; i++) {
@@ -185,7 +204,9 @@ test('concurrent agents have independent official budgets; reload leaves one eff
   }
 });
 
-for (const [message, code] of [['WebSocket closed 1012 quota exceeded', 'PI_AI_ERROR'], ['WebSocket closed 1012', 'AUTH'], ['other pi-ai error', 'PI_AI_ERROR']]) {
+}
+
+for (const [message, code] of [['WebSocket closed 1012 quota exceeded', 'PI_AI_ERROR'], ['WebSocket closed 1012', 'AUTH'], ['other pi-ai error', 'PI_AI_ERROR'], ['WebSocket error', 'AUTH'], ['WebSocket error', 'QUOTA_EXCEEDED'], ['WebSocket error: policy violation', 'PI_AI_ERROR'], ['exceeded request buffer limit while retrying upstream', 'PI_AI_ERROR']]) {
   test(`official loop fails fast for ${code}: ${message}`, async () => {
     const result = await runtime({ message, code, complete: true });
     assert.equal(result.calls.length, 1);

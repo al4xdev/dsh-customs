@@ -164,6 +164,32 @@ Both operations require a **new DSH process**; they do not restart or stop exist
 
 Snapshots are local under `runtime/profile-backup`. The rollback deliberately removes only the linked dependency through the official manager instead of overwriting the whole profile with an old backup. No npx package, credential, session file, TUI source, or other profile is edited.
 
+## Structured Codex failure candidate (Task38)
+
+Problem: Codex already creates `CodexApiError` with machine code and event payload, but its final catch preserves only a display string. The installed host adapter therefore sees message-only overload as `PI_AI_ERROR`. HTTP error handling also used to label every 429 as a quota/usage limit. Native retry exists already; it needs trustworthy categories, not a phrase list or another retry engine.
+
+The maintained recipe is `codex-failure-categories.mjs` plus portable source `provider-failure.ts`. It:
+
+1. verifies the exact reviewed baseline Codex source hash `206545bfd51e…` before writing anything;
+2. reserves a **fresh** output, copies historical source, adds the terminal observer/helper and public export, and compiles with the explicitly supplied cached native TypeScript compiler;
+3. creates a package-like candidate from the active SDK and replaces only compiler-produced Codex/index/helper `.js`, `.d.ts` and maps;
+4. records before/after SHA256 for all 12 possible generated targets (11 currently change; Codex `.d.ts` is unchanged) and hashes every protected non-owned SDK file;
+5. preserves package metadata, catalogs, unrelated/OAuth output bytes and active installation. It performs no install, download, credentials lookup, API call, runtime/profile edit or promotion.
+
+```fish
+node tools/pi-ai-fork/codex-failure-categories.mjs /absolute/reviewed-source-root /absolute/cached-node_modules /absolute/installed-pi-ai /absolute/fresh-output
+# Then run only offline fixtures against the exact candidate graph:
+env CODEX_FAILURE_CANDIDATE=/absolute/fresh-output/package node --test tools/pi-ai-fork/codex-failure-categories.test.mjs plugins/codex-transient-close/failure-bridge.test.mjs
+```
+
+The source digest includes **all affected source files**: Codex implementation, portable helper and additive index export. The manifest's `proposedVersion` denotes the reviewed **feature variant identity only**, not a changed/published npm package version. Thin receipt rollout intentionally keeps `package.json.version`, manifest/lock and old artifact/receipt pins unchanged. The public observer version marker and content/source digest identify the new feature. The package-like candidate is not a published source pin, npm installation or proof of a loaded real daemon.
+
+The candidate manifests/source copies are immutable evidence. Interrupted or superseded candidates are retained; use another explicit fresh output. Main promotion must compare all before hashes, back up only owned outputs, verify exact after hashes and observer module identity, and have guarded rollback. This recipe is not that promoter. Existing `prepare.mjs`/`host-install.mjs` historical pins and receipts are not repurposed.
+
+The helper maps reviewed structured auth/quota/context/request/server/rate/transport/timeout facts; permanent facts have precedence. SDK event/HTTP display text never feeds category selection. Generic 429 without explicit quota is rate limiting; a named quota/billing code is quota. Retry-After facts are finite, timer-safe and detached; the official owner policy still decides whether the hint is acceptable. Unknown facts emit no DTO. Terminal observer callbacks are isolated and portable (browser helper bundle gate); no Node AsyncLocalStorage exists inside the SDK.
+
+The root [Codex middleware](../../plugins/codex-transient-close/README.md#structured-terminal-failure-observer) owns request-local ALS and listener lifetime. `applyWithObserver(ctx, candidateSdk)` is the offline test seam. Typed SDK/source/bridge tests do not themselves prove actual agent recovery: separate native Loop tests must use real PiAiAdapter, the exact candidate Codex API and subscriber graph, and official retry scheduling. No new phrase fallback was added for the reported message-only overload; absence of a live machine code remains an honest unknown.
+
 ## Upstream references
 
 - [Compaction fails with GPT-5 models, #3342](https://github.com/earendil-works/pi/issues/3342): same class of `none` rejection, fixed in Pi's coding agent by inheriting session thinking; DSH uses its own summarizer.
