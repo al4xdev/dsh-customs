@@ -7,7 +7,7 @@ import { parseRequest, cursorCodec, previewEvent, publicHeader } from './contrac
 import { mountHints } from './discovery.mjs';
 
 const header = { id: 'target-1', version: 4, createdAt: 1, isSeeded: false, cwd: '/synthetic', agentPreset: 'ordinary' };
-const events = Array.from({ length: 70 }, (_, seq) => ({ seq, time: seq, type: 'user/message', data: { content: [{ type: 'text', text: `message ${seq} ${'á'.repeat(300)}` }] } }));
+const events = [...Array(70).keys()].map(seq => ({ seq, time: seq, type: 'user/message', data: { content: [{ type: 'text', text: `message ${seq} ${'á'.repeat(300)}` }] } }));
 function fixture(options = {}) {
   const calls = { opened: [], closed: 0, reads: [], sent: [], approvals: [] };
   const agent = { id: header.id, status: 'running', session: { header }, send: (...args) => calls.sent.push(args) };
@@ -186,7 +186,7 @@ test('TUI ledger remains unknown even with living PID, corrupt or oversized ledg
 });
 test('list output is bounded and stale generation invalidates pagination; persisted silence stays unknown', async () => {
   const f = fixture({ noLive: true });
-  f.ctx.sessionPersistence.list = async () => Array.from({ length: 20 }, (_, i) => ({ header: { ...header, id: `session-${i}` }, revision: 'r1' }));
+  f.ctx.sessionPersistence.list = async () => [...Array(20).keys()].map(i => ({ header: { ...header, id: `session-${i}` }, revision: 'r1' }));
   const first = await f.controller.execute({ operation: 'list', limit: 2, maxBytes: 2048 }, f.exec);
   assert.ok(Buffer.byteLength(JSON.stringify(first)) <= 2048); assert.equal(first.sessions[0].state, 'unknown'); assert.ok(first.nextCursor);
   const second = await f.controller.execute({ operation: 'list', limit: 2, cursor: first.nextCursor }, f.exec); assert.notEqual(second.sessions[0].header.id, first.sessions[0].header.id);
@@ -197,7 +197,7 @@ test('list output is bounded and stale generation invalidates pagination; persis
 test('64-row default pagination survives event, status and writer-evidence churn and includes a high-ID terminal', async () => {
   for (const source of ['local', 'bridge']) {
     const terminal = { ...header, id: 'zzz-visible-terminal', createdAt: 1000 };
-    const snapshots = [...Array.from({ length: 64 }, (_, index) => ({ header: { ...header, id: `session-${String(index).padStart(3, '0')}`, createdAt: index }, revision: 'r1' })), { header: terminal, revision: 'r1' }];
+    const snapshots = [...[...Array(64).keys()].map(index => ({ header: { ...header, id: `session-${String(index).padStart(3, '0')}`, createdAt: index }, revision: 'r1' })), { header: terminal, revision: 'r1' }];
     const remote = { sessionId: terminal.id, agentIdentity: 'instance-1', cwd: header.cwd, status: 'running' };
     const bridge = { discoverBridges: async () => ({ bridges: [{ bridgeId: 'fixture-bridge' }] }), queryBridge: async () => ({ ok: true, agents: [remote] }) };
     let observation = 0;
@@ -230,7 +230,7 @@ test('64-row default pagination survives event, status and writer-evidence churn
 
 test('1 KiB pages advance through 64 oversized rows, preserve held evidence and support a maximum-length project filter', async () => {
   const project = `/${'p'.repeat(2047)}`;
-  const snapshots = Array.from({ length: 64 }, (_, index) => ({ header: { ...header, id: `large-${String(index).padStart(3, '0')}`, createdAt: index, cwd: project, agentPreset: 'a'.repeat(512), origin: 'o'.repeat(512) }, revision: 'r1' }));
+  const snapshots = [...Array(64).keys()].map(index => ({ header: { ...header, id: `large-${String(index).padStart(3, '0')}`, createdAt: index, cwd: project, agentPreset: 'a'.repeat(512), origin: 'o'.repeat(512) }, revision: 'r1' }));
   const ownership = { state: 'held', pid: 1234, observedAt: '2026-10-13T00:00:00.000Z', source: 'synthetic-writer-observer' };
   const f = fixture({ noLive: true, writerObserver: async rows => new Map(rows.map(row => [row.header.id, ownership])) });
   f.ctx.sessionPersistence.list = async () => snapshots;
@@ -353,7 +353,7 @@ test('not-observed writer evidence never bypasses native provenance preflight an
 test('bridge status handshake, exact identity revalidation and ACK; ambiguous send never retries', async () => {
   const record = { bridgeId: 'bridge-1', pid: 123, startTime: 'start' }; const remote = { sessionId: header.id, agentIdentity: 'instance-1', status: 'idle', cwd: header.cwd };
   let sends = 0;
-  const bridge = { discoverBridges: async () => ({ bridges: [record] }), queryBridge: async () => ({ ok: true, agents: [remote] }), sendBridge: async (_record, request) => { sends++; return { ok: true, ack: { ...request, accepted: true, boundary: 'next-turn' } }; } };
+  const bridge = { discoverBridges: async () => ({ bridges: [record] }), queryBridge: async () => ({ ok: true, agents: [remote] }), sendBridge: async (bridgeRecord, request) => { assert.equal(bridgeRecord, record); sends++; return { ok: true, ack: { ...request, accepted: true, boundary: 'next-turn' } }; } };
   const f = fixture({ noLive: true, bridge }); const result = await f.controller.execute({ operation: 'send', sessionId: header.id, text: 'bridge literal' }, f.exec);
   assert.equal(result.effect, 'enqueued'); assert.equal(sends, 1);
   bridge.sendBridge = async () => { sends++; throw new Error('lost ACK'); };
