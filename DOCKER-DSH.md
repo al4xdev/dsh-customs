@@ -1,6 +1,6 @@
 # Instalação DSH limpa em Docker
 
-O primeiro build limpo foi concluído e passou nos básicos offline. O pin Antigravity está sendo atualizado após uma alteração concorrente do fork durante a comparação. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
+Build limpo concluído e básicos offline aprovados. Imagem `alex-dsh-clean:20261013-current`, construída do commit central `98f3882356767c6d010824633ba459d316e9b814`. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
 
 ## Compilação
 
@@ -14,13 +14,19 @@ Base Node24 Debian/glibc com digest fixo. Os compiladores/managers são explíci
 
 ## Reproduzir pelo terminal fish
 
-Após os commits serem publicados e a validação abaixo concluída:
+O container validado já está rodando, sem mounts do host. Para entrar:
+
+```fish
+docker exec -it --user alex alex-dsh-clean-current-c6aa8602 fish
+```
+
+Para reproduzir em outro container a partir do commit publicado e validado:
 
 ```fish
 cd /home/alex/git/my/dsh-customs
-docker build --build-arg ROOT_COMMIT=(git rev-parse HEAD) -f docker/clean/Dockerfile -t alex-dsh-clean:20261013 .
-docker run -d --init --name alex-dsh-clean-c6aa8602 alex-dsh-clean:20261013
-docker exec -it --user alex alex-dsh-clean-c6aa8602 fish
+docker build --build-arg ROOT_COMMIT=98f3882356767c6d010824633ba459d316e9b814 -f docker/clean/Dockerfile -t alex-dsh-clean:20261013-current .
+docker run -d --init --name alex-dsh-clean-manual alex-dsh-clean:20261013-current
+docker exec -it --user alex alex-dsh-clean-manual fish
 ```
 
 `docker run` deve criar um container novo. Se esse nome já existir, use o container existente ou escolha outro nome; não remova containers aleatórios.
@@ -44,4 +50,14 @@ Prefira fazer o login manual dentro do container. Se você optar por reutilizar 
 
 Os recibos de fonte/build/artefatos/versões ficam em `/home/alex/.local/share/dsh-cli/artifacts/` e `clean-install-receipt.json`. Os testes de receitas usam fixtures temporárias sem contas. A captura/comparação pública lê somente manifests e código selecionado, não configs, OAuth ou histórico.
 
-**Estado da execução real:** pendente. A documentação será atualizada com imagem/commit, componentes efetivamente construídos, smoke checks e diferenças concretas após o primeiro build limpo. Não confundir testes de fixtures com Docker validado.
+**Estado da execução real:** aprovado nos básicos offline.
+
+- Imagem: `sha256:cdba98d0382e88de7d31a3d71f8d753d0b3eefaab7453611339ef9902ad9ec16`; container `alex-dsh-clean-current-c6aa8602`, rodando com zero mounts.
+- 54 testes das receitas passaram. No container: SDK50 aceita o evento sintético `agent/self-heal`, rejeita evento obrigatório desconhecido; observer38 classifica quota/rate limit, sanitiza fatos e descarta listener; probe de compatibilidade self-heal passa. Isso é validação em memória, não replay de sessões reais.
+- CLI TUI `--version` retorna 0.14.0 sem boot; `node-pty` executou `printf` com saída `pty-ok`, exit 0.
+- Comparação com captura atual do host: 11 versões iguais, todas as fontes selecionadas iguais e todos os hashes selecionados iguais exceto o bundle Antigravity. Nele, somente 17 comentários trocam o prefixo de scratch `.dumps/.../source/src/` por `src/`; após essa transformação específica, todos os demais bytes coincidem. Código executável equivalente; igualdade bruta permanece **false**, sem normalização genérica.
+- Cordis/scope/Pi dos pacotes instalados compartilham a identidade canônica. Dependências de desenvolvimento do fork TUI do host foram reportadas separadamente: não são prova da ativação de perfis nem de construtores em um daemon vivo.
+- Evidências públicas locais, ignoradas pelo Git: `.dumps/docker-dsh-52/host-public-v3.json`, `container-current-public.json` e `code-comparison/antigravity-comment-proof.json`. Capturas anteriores foram preservadas: houve alterações concorrentes dos artefatos TUI e do fork AG durante a validação.
+- Credenciais/OAuth/histórico lidos ou copiados: **nenhum**. Chamadas de modelos: **zero**. Inicialização interativa e autenticação permanecem testes manuais.
+
+A fonte nova de quota-reset Antigravity está presente, mas **desligada por padrão**. O executor separado e a política privada do host para esperar até 24h não foram habilitados/copiados. Configuração pessoal, servidores locais, browser, systemd e funcionamento de providers autenticados não fazem parte da equivalência comprovada aqui.

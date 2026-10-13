@@ -21,8 +21,8 @@ inventado. Mudanças locais não publicadas não aparecem num clone remoto.
 
 [DOCKER-DSH.md](DOCKER-DSH.md) descreve a receita atual, o ambiente isolado e os
 limites de comparação. `install.sh --fresh` é Docker-only e recusa uma instalação
-existente; nenhum OAuth ou histórico do host entra na imagem. A execução real
-está em validação; testes de fixtures não são prova de build concluído.
+existente; nenhum OAuth ou histórico do host entra na imagem. O build Docker real
+e os básicos offline passaram; evidências e limites estão documentados no link.
 
 `tools/clean-install/` usa os forks atuais e as melhorias de persistência/Codex.
 `tools/workshop/` permanece uma baseline histórica, não a receita do host atual.
