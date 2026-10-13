@@ -26,6 +26,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appliesToProfile } from './activation-selection.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT_DEFAULT = dirname(HERE);
@@ -112,9 +113,7 @@ function scalar(value) {
 // Isolated replacements must opt out to avoid conflicting with native plugins.
 function desiredEntries(manifest, profile, repoRoot) {
   return manifest.plugins
-    .filter(plugin => profile === null
-      ? plugin.overlay !== false
-      : !plugin.profiles || plugin.profiles.includes(profile))
+    .filter(plugin => appliesToProfile(plugin, profile, manifest))
     .map(plugin => ({
       id: plugin.id,
       name: resolve(repoRoot, 'plugins', plugin.module),

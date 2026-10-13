@@ -9,23 +9,28 @@
     "llm-llamacpp, antigravity-tui-login), so hand-written per-machine config",
     "survives every sync.",
     "A plugin may declare \"profiles\": [\"dsh-tui\"] to be enabled in only those",
-    "profiles; without it the plugin goes to every profile in the list above."
+    "profiles; without it the plugin goes to non-isolated profiles in the list above.",
+    "Companion is isolated: existing general-purpose plugins explicitly retain their old four profiles.",
+    "Its session tool is a preset child declared by tools/session-companion/profile.mjs; only the host bridge is managed here."
   ],
   "managedIdPrefix": "alex-",
-  "profiles": ["web", "headless", "tui", "dsh-tui"],
+  "profiles": ["web", "headless", "tui", "dsh-tui", "companion"],
+  "isolatedProfiles": ["companion"],
   "plugins": [
     { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
-    { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs" },
-    { "id": "alex-apply-patch", "module": "apply-patch/index.mjs" },
-    { "id": "alex-workspace-context", "module": "workspace-context/index.mjs" },
-    { "id": "alex-project-mcp", "module": "project-mcp/index.mjs" },
-    { "id": "alex-browser", "module": "browser/index.mjs" },
-    { "id": "alex-clipboard", "module": "clipboard/index.mjs" },
-    { "id": "alex-trash", "module": "trash/index.mjs" },
-    { "id": "alex-list", "module": "list/index.mjs" },
+    { "id": "alex-session-bridge", "module": "session/bridge.mjs", "profiles": ["dsh-tui"], "overlay": false },
+    { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-apply-patch", "module": "apply-patch/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-workspace-context", "module": "workspace-context/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-project-mcp", "module": "project-mcp/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-browser", "module": "browser/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-clipboard", "module": "clipboard/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-trash", "module": "trash/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-list", "module": "list/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     {
       "id": "alex-shell-reconsider",
       "module": "shell-reconsider/index.mjs",
+      "profiles": ["web", "headless", "tui", "dsh-tui"],
       "config": { "interval": 50, "unit": "steps" }
     },
     {

@@ -6,13 +6,14 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { appliesToProfile } from '../activation-selection.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(join(process.env.DSH_HOME ?? join(process.env.HOME, '.dsh'), 'profiles/noop.js'));
 const YAML = require('yaml');
 const generator = readFileSync(join(root, 'tools/activate.mjs'), 'utf8');
 const functions = generator.slice(generator.indexOf('// --- rendering'), generator.indexOf('// --- main'));
 const fixture = '# untouched\n- id: plan-mode\n  config: { custom: true }\n- insert:\n    - id: alex-old\n      name: /old\n    - id: local\n      name: /custom # retained\n';
-const context = vm.createContext({ resolve, existsSync: () => true, readFileSync: () => fixture, writeFileSync: () => { throw Error('Unexpected write'); } });
+const context = vm.createContext({ resolve, appliesToProfile, existsSync: () => true, readFileSync: () => fixture, writeFileSync: () => { throw Error('Unexpected write'); } });
 vm.runInContext(functions, context);
 const manifest = { managedIdPrefix: 'alex-', plugins: [
   { id: 'alex-default', module: 'default.mjs' },

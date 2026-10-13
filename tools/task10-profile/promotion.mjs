@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
+import { appliesToProfile } from '../activation-selection.mjs';
 
 export const TUI = '@deepseek-harness-tui/dsh-tui';
 const RUNTIME = '0.2.0-rc.2';
@@ -129,7 +130,7 @@ function activationPreview(p, manifest, source, YAML) {
   const generator = readFileSync(p.activate, 'utf8');
   const start = generator.indexOf('// --- rendering'), end = generator.indexOf('// --- main');
   if (start < 0 || end <= start) fail('Activation generator layout changed; review helper');
-  const context = vm.createContext({ resolve, join, existsSync: () => true, readFileSync: () => source, writeFileSync: () => fail('Preview attempted a write') });
+  const context = vm.createContext({ resolve, join, appliesToProfile, existsSync: () => true, readFileSync: () => source, writeFileSync: () => fail('Preview attempted a write') });
   vm.runInContext(generator.slice(start, end), context);
   const entries = context.desiredEntries(manifest, 'dsh-tui', p.repo);
   const result = context.syncFile('/preview', 'dsh-tui', entries, { write: false }, YAML, manifest);

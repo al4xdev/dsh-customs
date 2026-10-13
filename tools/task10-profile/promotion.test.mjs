@@ -72,6 +72,7 @@ function fixture(name) {
   write(join(work, 'plugins/existing/index.mjs'), 'export const fixture=true;\n');
   for (const module of ['index.mjs', 'tui.mjs', 'config.mjs', 'goal-resume.mjs']) write(join(work, 'plugins/managed-plans', module), 'export const fixture=true;\n');
   write(p.activate, text(join(repo, 'tools/activate.mjs')));
+  write(join(dirname(p.activate), 'activation-selection.mjs'), text(join(repo, 'tools/activation-selection.mjs')));
   for (const launcher of p.launchers) write(launcher, '# exact synthetic launcher bytes\n');
   write(p.preference, { preset: 'ptc' });
   write(p.recipe, { patchSha256: 'a'.repeat(64) });
