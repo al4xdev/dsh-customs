@@ -27,7 +27,14 @@ export async function copyUpstreamLicense(checkout, staged) {
 }
 
 async function prepare() {
-  const checkout = resolve(process.argv[2] ?? join(homedir(), 'git/my/pi'));
+  const checkout = resolve(process.argv[2] ?? join(repo, 'sources/pi-ai'));
+  // Git searches ancestors: a vendored snapshot must never borrow the workshop HEAD.
+  const ownGit = await lstat(join(checkout, '.git')).catch(error => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  assert(ownGit, 'This legacy preparer requires an independent Pi Git checkout; use tools/clean-install/pi.mjs for the verified snapshot');
+  assert.equal(resolve(execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: checkout, encoding: 'utf8' }).trim()), checkout, 'Pi checkout must own its Git history');
   const installRoot = process.env.DSH_INSTALL_ROOT ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'dsh-cli');
   const officialRoot = resolve(process.argv[3] ?? join(installRoot, 'node_modules'));
   // The portable workshop supplies an isolated donor and durable artifact root;

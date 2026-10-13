@@ -1,4 +1,5 @@
 import { resolveHost } from '../common.mjs';
+import { assertPersistenceCompatible, assertAuditReadable } from './persistence.mjs';
 import { sanitizeFailure, own, positiveInteger, routeFacts, usageFacts } from './sanitizer.mjs';
 import { AUDIT_EVENT, PROJECTION_KEY, INITIAL_STATE, POLICY_VERSION, MAX_STEP_CALLS, MAX_HUMAN_GRANTS, validateConfig, decide, transition, chainKey, foldState, observationText, healthyStepProof, recoveredState, manualResumeState } from './logic.mjs';
 const { createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
@@ -37,10 +38,12 @@ function downstream(next, signal) {
 }
 export function apply(ctx, config = {}) {
   const { maxCycles } = validateConfig(config);
+  assertPersistenceCompatible();
   // Keep checkpoint version 1: the new fields are optional and old spent budgets
   // remain readable without replay, config-driven reset or missing-log inference.
   ctx.sessionProjections.register({ key: PROJECTION_KEY, stateVersion: 1, stateSchema,
-    init: () => ({ ...INITIAL_STATE, policyVersion: POLICY_VERSION }), apply: foldState });
+    init: () => ({ ...INITIAL_STATE, policyVersion: POLICY_VERSION }),
+    apply: (state, event) => { assertAuditReadable(event, stateSchema); return foldState(state, event); } });
   const lifetime = new AbortController(), attempts = new WeakMap(), busy = new WeakSet(), active = new Set();
   const turnSignals = new WeakMap(), pendingRecovered = new WeakMap();
   const lastSplices = new WeakMap(), humanGrants = new WeakMap(), claimedHuman = new WeakMap();

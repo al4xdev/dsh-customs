@@ -1,0 +1,22 @@
+{
+  "kind": "verified-source-snapshot-not-a-git-checkout",
+  "createdAt": "2026-10-13T20:35:22.970Z",
+  "source": "/home/alex/git/my/dsh-customs/.dumps/pi-ai-fork/ws-review",
+  "canonical": "/home/alex/git/my/dsh-customs/sources/pi-ai",
+  "treeDigest": "3ea9487c1c502172b2f6b421ecae2556d8344854964dd0498733c272cd83e432",
+  "sourceDigest": "e228f62a3176b980617656e94795518b467b32512da4f6044bea2c066fb6ae48",
+  "entries": 2154,
+  "codexSourceHash": "206545bfd51ee0284248e00b39fa5736e212d6b4ff8394bbf27013d1353c089b",
+  "historicalSourceCommit": "f5a24c96d72732ba63aeca9a02295c320db04c2d",
+  "currentGitHead": null,
+  "omitted": [
+    ".git",
+    "node_modules",
+    ".dumps"
+  ],
+  "reason": "Original Git parent absent; owned remote currently unavailable. No fabricated Git metadata.",
+  "downstreamOverlaySources": [
+    "tools/pi-ai-fork/codex-failure-categories.mjs",
+    "tools/pi-ai-fork/provider-failure.ts"
+  ]
+}

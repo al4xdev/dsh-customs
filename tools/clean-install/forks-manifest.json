@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "nodeMajorMinimum": 24,
+  "tools": { "pnpm": "11.21.0", "esbuild": "0.28.2" },
+  "components": [
+    {
+      "id": "tui",
+      "package": "@deepseek-harness-tui/dsh-tui",
+      "version": "0.14.0",
+      "repository": "https://github.com/al4xdev/dsh-TUI.git",
+      "commit": "ebea5d738481bbc7c35006410ad9ce1a998dc883",
+      "strategy": "source-compile",
+      "submodule": {
+        "path": "vendor/dsh-std",
+        "repository": "https://github.com/T-Auto/dsh-std.git",
+        "commit": "614dfa1ac168db79fcf4577cf0ebb34e2e3b944b"
+      },
+      "qualification": "Compiles current committed OAuth32 source and vendor dependencies; fake-credential OAuth regression only, no provider login or inference."
+    },
+    {
+      "id": "antigravity",
+      "package": "@deepseek-ai/dsh-llm-pi-ai-antigravity",
+      "version": "0.1.0-rc.5",
+      "repository": "https://github.com/al4xdev/dsh-antigravity.git",
+      "commit": "5dbcb8a2b356e5be9e57c9221e4210d3a17e193d",
+      "strategy": "host-source-compile-with-committed-auxiliary-faces",
+      "sourceEntry": "src/index.ts",
+      "sourceOutput": "lib/index.js",
+      "target": "node22",
+      "qualification": "Rebuilds host index.js from current V4 source only. All other lib JS and declarations (including browser/client/typert faces) are committed-prebuilt, not rebuilt or browser-verified. Legacy client-runtime peer is optional only after a compiled host import guard. Pi dependency must be overridden by the owning clean-runtime installer."
+    }
+  ]
+}

@@ -7,6 +7,49 @@ wiring and rollback. Plugin name: `alex-agent-self-heal`; required services:
 zero disables observation admission. No model, credential, account, credit,
 permission, output-cap or timeout setting is changed.
 
+## Required persistence protocol (local bridge)
+
+`agent/self-heal` payload version 1 is **required owner state**, not ignorable
+telemetry: reservations, dedupe and recovery receipts must survive disk reload.
+The upstream installed SDK accepted append but refused these unknown records on
+reopen; projection/type registration alone does not change its static catalog.
+
+The audited downstream bridge `install-persistence.mjs` adds only this event to
+both static catalog faces of the exact local dsh-cli SDK baseline. It does not
+relax unknown-event refusals or change session format/version. The public event
+payload contract remains in `types.d.ts`; the plugin owns its reducer. Runtime
+`apply` probes the actual persistence validator **before** registering hooks, and
+replay refuses unsupported owner versions/actions or invalid state.
+
+```sh
+node plugins/agent-self-heal/install-persistence.mjs --apply
+node plugins/agent-self-heal/install-persistence.mjs --verify
+node --test plugins/agent-self-heal/tests/*.test.mjs
+env SELF_HEAL_NATIVE_TASK84=1 node --test plugins/agent-self-heal/tests/persistence.test.mjs
+```
+
+The final command opens task_84 read-only, checks its file/lock hashes, and restores the real
+projection without a model request. Regular tests use isolated `.dumps/` logs.
+Backups and hash-guarded rollback receipts live under
+`~/.local/share/dsh-customs-backups/self-heal-persistence-task50/`.
+`--rollback` restores only unchanged patched SDK bytes; it makes these sessions
+unreadable again and must not be used while the self-heal plugin is enabled.
+
+Activated entry: `lib/index-v2-persistence.mjs` (full bundle, no old submodule
+cache reuse). `promote-persistence.mjs` preflights SDK and profile hashes, backs
+up the profile, then atomically replaces its single pointer. It is intentionally
+one-shot. Start a **new DSH process** after installation: existing processes keep
+cached SDK modules, and may fail the new preflight on hot reload. No automatic
+process restart or live-TTY upgrade is claimed. SDK package reinstall/update can
+overwrite the local bridge; re-audit rather than applying to a new unknown hash.
+This does not patch the separate npx/web installation or provide portable upstream
+support. Owner-absent readers retain the entire recognized log; later plugin
+registration refolds it, so a missing checkpoint never grants a fresh budget.
+
+Task_84 is compatible through the reader fix alone: its 23 audits and all original
+compressed bytes are preserved. No session rewrite, event deletion or sequence
+renumbering is needed; other existing sessions are neither migrated nor deleted.
+
 ## Sequence and audit
 
 1. Await downstream `agent/request-error` listeners first. The official retry

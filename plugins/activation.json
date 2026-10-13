@@ -18,6 +18,7 @@
   "isolatedProfiles": ["companion"],
   "plugins": [
     { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
+    { "id": "alex-agent-self-heal", "module": "agent-self-heal/lib/index-v2-persistence.mjs", "profiles": ["dsh-tui"], "overlay": false, "config": { "maxCycles": 3 } },
     { "id": "alex-session-bridge", "module": "session/bridge.mjs", "profiles": ["dsh-tui"], "overlay": false },
     { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-apply-patch", "module": "apply-patch/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },

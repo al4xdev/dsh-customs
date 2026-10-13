@@ -1,0 +1,5 @@
+# The build clones reviewed public Git sources; it never receives this working tree.
+**
+!docker/
+!docker/clean/
+!docker/clean/Dockerfile
