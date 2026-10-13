@@ -18,7 +18,7 @@ Após os commits serem publicados e a validação abaixo concluída:
 
 ```fish
 cd /home/alex/git/my/dsh-customs
-docker build --progress=plain --build-arg ROOT_COMMIT=(git rev-parse HEAD) -f docker/clean/Dockerfile -t alex-dsh-clean:20261013 .
+docker build --build-arg ROOT_COMMIT=(git rev-parse HEAD) -f docker/clean/Dockerfile -t alex-dsh-clean:20261013 .
 docker run -d --init --name alex-dsh-clean-c6aa8602 alex-dsh-clean:20261013
 docker exec -it --user alex alex-dsh-clean-c6aa8602 fish
 ```

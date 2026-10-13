@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { inventory, compareInventories, packageNames, runInventoryCommand } from './inventory.mjs';
 
 async function file(path, contents) { await mkdir(dirname(path), { recursive: true }); await writeFile(path, contents); }
-async function fixture({ fallback = false, duplicatePi = false, missingCode = false, secretName = false } = {}) {
+async function fixture({ fallback = false, duplicatePi = false, missingCode = false, secretName = false, restrictedPi = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-public-inventory-')), runtimeRoot = join(root, 'runtime'), repoRoot = join(root, 'repo');
   await mkdir(runtimeRoot); await mkdir(repoRoot);
   const roots = {};
@@ -14,6 +14,7 @@ async function fixture({ fallback = false, duplicatePi = false, missingCode = fa
     const packageRoot = fallback && ['tui', 'antigravity'].includes(id) ? join(repoRoot, id === 'tui' ? 'frontend/dsh-tui' : 'plugins/dsh-antigravity') : join(runtimeRoot, 'node_modules', name);
     roots[id] = packageRoot;
     const metadata = { name: secretName && id === 'adapter' ? 'SECRET_NAME_CANARY' : name, version: '0.2.0-rc.2', exports: { './package.json': './package.json', '.': './index.js' }, secret: 'SECRET_VALUE_CANARY', scripts: { prepare: 'touch MUST_NEVER_EXECUTE' }, auth: { token: 'PRIVATE_AUTH_CANARY' } };
+    if (restrictedPi && id === 'pi') metadata.exports = { '.': { import: './index.js' } };
     await file(join(packageRoot, 'package.json'), JSON.stringify(metadata));
     // The fixture would throw if inventory imported/evaluated any package.
     await file(join(packageRoot, 'index.js'), 'throw new Error("PACKAGE_MUST_NOT_EXECUTE");');
@@ -53,6 +54,44 @@ test('relocated identical trees compare exact public parity without equating abs
   assert.equal(comparison.exactPublicParity, true);
   assert.equal(comparison.identicalVersions, true);
   assert.equal(comparison.sharedIdentity, true);
+});
+
+test('import-only Pi exports do not block confined anchored package metadata inspection', async () => {
+  const input = await fixture({ restrictedPi: true });
+  const result = inventory(input);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.identity.pi.sharedRuntime, true);
+  assert(Object.values(result.graph).every(peers => peers.pi === result.packages.pi.manifest));
+  assert.equal(compareInventories(result, result).exactPublicParity, true);
+});
+
+test('exports-restricted nearest nested Pi remains a real installed-runtime split', async () => {
+  const input = await fixture({ restrictedPi: true });
+  const nested = join(input.roots.adapter, 'node_modules', packageNames.pi, 'package.json');
+  await file(nested, JSON.stringify({ name: packageNames.pi, version: '0.2.0-rc.2', exports: { '.': { import: './no-entry-evaluation.js' } } }));
+  const result = inventory(input);
+  assert.equal(result.graph.adapter.pi, nested);
+  assert.equal(result.identity.pi.sharedRuntime, false);
+  assert(result.blockers.some(item => item.item === 'identity:pi'));
+});
+
+test('source-build splits remain visible without inventing an installed-runtime failure', async () => {
+  const input = await fixture({ fallback: true, restrictedPi: true });
+  for (const peer of ['cordis', 'scope', 'pi']) await file(join(input.roots.tui, 'node_modules', packageNames[peer], 'package.json'), JSON.stringify({ name: packageNames[peer], version: '0.2.0-rc.2', exports: { '.': { import: './not-loaded.js' } } }));
+  const result = inventory(input);
+  assert.deepEqual(result.blockers, []);
+  assert.equal(result.graphContext.tui, 'source-build-resolution-only');
+  for (const peer of ['cordis', 'scope', 'pi']) {
+    assert.equal(result.identity[peer].sharedRuntime, true);
+    assert.equal(result.identity[peer].shared, false);
+    assert.equal(result.identity[peer].physicalCopies.length, 2);
+    assert.equal(result.identity[peer].runtimePhysicalCopies.length, 1);
+  }
+  const comparison = compareInventories(result, inventory(await fixture()));
+  assert.equal(comparison.sharedIdentity, true);
+  assert.equal(comparison.allConsumerIdentity, false);
+  assert.deepEqual(comparison.sourceFallbackConsumers.host, ['tui', 'antigravity']);
+  assert.match(comparison.qualification, /not activation/);
 });
 
 test('split physical SDK is an explicit blocker even when package versions match', async () => {

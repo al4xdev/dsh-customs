@@ -31,8 +31,22 @@ export function inventory({ runtimeRoot, repoRoot, sources = {} } = {}) {
     assert(lstatSync(physical).isFile(), 'Regular public file required');
     return { physical, bytes: readFileSync(physical) };
   }
-  const packages = {}, code = {}, sourceCode = {}, graph = {}, blockers = [], texts = {};
-  function attempt(label, fn) { try { return fn(); } catch (error) { blockers.push({ item: label, reason: error.code === 'ENOENT' || error.code === 'MODULE_NOT_FOUND' ? 'missing' : 'invalid-or-unconfined' }); return null; } }
+  const packages = {}, code = {}, sourceCode = {}, graph = {}, graphContext = {}, blockers = [], sourceGraphIssues = [], texts = {};
+  function attempt(label, fn, issues = blockers) { try { return fn(); } catch (error) { issues.push({ item: label, reason: error.code === 'ENOENT' || error.code === 'MODULE_NOT_FOUND' ? 'missing' : 'invalid-or-unconfined' }); return null; } }
+  function peerManifest(anchored, name) {
+    try { return anchored.resolve(name + '/package.json'); } catch (error) {
+      if (!['ERR_PACKAGE_PATH_NOT_EXPORTED', 'MODULE_NOT_FOUND'].includes(error.code)) throw error;
+      // Metadata exports are optional. Follow Node's anchored search directories
+      // without resolving/evaluating an ESM entry or jumping past an existing
+      // shadow package. bytes() below enforces confinement and package identity.
+      for (const search of anchored.resolve.paths(name) ?? []) {
+        const candidate = join(search, name);
+        try { lstatSync(candidate); } catch (missing) { if (missing.code === 'ENOENT') continue; throw missing; }
+        return join(candidate, 'package.json');
+      }
+      throw error;
+    }
+  }
   for (const [id, name] of Object.entries(packageNames)) {
     packages[id] = attempt('package:' + id, () => {
       let path = join(runtimeRoot, 'node_modules', name, 'package.json'), origin = 'runtime';
@@ -57,18 +71,22 @@ export function inventory({ runtimeRoot, repoRoot, sources = {} } = {}) {
   for (const consumer of ['dsh', 'base', 'adapter', 'tui', 'antigravity', 'session', 'jsonl']) {
     if (!packages[consumer]) continue;
     graph[consumer] = {};
+    const sourceOnly = packages[consumer].origin === 'public-source-fallback';
+    graphContext[consumer] = sourceOnly ? 'source-build-resolution-only' : 'installed-runtime-resolution';
     const anchored = createRequire(packages[consumer].manifest);
     for (const peer of peerIds) graph[consumer][peer] = attempt('peer:' + consumer + ':' + peer, () => {
-      const file = bytes(anchored.resolve(packageNames[peer] + '/package.json'));
+      const file = bytes(peerManifest(anchored, packageNames[peer]));
       assert.equal(JSON.parse(file.bytes).name, packageNames[peer]);
       return file.physical;
-    });
+    }, sourceOnly ? sourceGraphIssues : blockers);
   }
   const identity = {};
   for (const peer of peerIds) {
     const paths = Object.values(graph).map(peers => peers[peer]);
-    identity[peer] = { shared: !!packages[peer] && paths.length > 0 && paths.every(path => path === packages[peer].manifest), physicalCopies: [...new Set(paths.filter(Boolean))] };
-    if (!identity[peer].shared) blockers.push({ item: 'identity:' + peer, reason: 'missing-or-split-physical-peer' });
+    const runtimePaths = Object.entries(graph).filter(([id]) => packages[id].origin === 'runtime').map(([, peers]) => peers[peer]);
+    const matches = values => !!packages[peer] && values.length > 0 && values.every(path => path === packages[peer].manifest);
+    identity[peer] = { shared: matches(paths), sharedRuntime: matches(runtimePaths), physicalCopies: [...new Set(paths.filter(Boolean))], runtimePhysicalCopies: [...new Set(runtimePaths.filter(Boolean))] };
+    if (!identity[peer].sharedRuntime) blockers.push({ item: 'identity:' + peer, reason: 'missing-or-split-physical-peer' });
   }
   function fingerprint(key, path) { const file = attempt('source:' + key, () => bytes(path)); sourceCode[key] = file ? digest(file.bytes) : null; }
   for (const [id, location] of Object.entries(locations)) for (const file of sourcePaths[id]) fingerprint(id + '/' + file, join(location, file));
@@ -80,7 +98,7 @@ export function inventory({ runtimeRoot, repoRoot, sources = {} } = {}) {
   }
   const features = { observer38: /subscribeProviderFailures/.test(texts['pi/dist/utils/provider-failure.js'] ?? '') && /reportCodexFailure/.test(texts['pi/dist/api/openai-codex-responses.js'] ?? ''), sdk50: ['session/lib/index.js', 'session/lib/types/known-event-types.js'].every(key => (texts[key] ?? '').includes('agent/self-heal')), oauth32: (texts['tui/lib/types/dsh-adapter/oauth/index.js'] ?? '').includes('retryPolicies'), antigravitySignedReplay: ['convertMessages', 'isThinkingPart', 'retainThoughtSignature'].every(marker => (texts['antigravity/lib/index.js'] ?? '').includes(marker)), selfhealPersistence: (texts['selfheal/lib/index-v2-persistence.mjs'] ?? '').includes('assertPersistenceCompatible') };
   for (const [feature, present] of Object.entries(features)) if (!present) blockers.push({ item: 'feature:' + feature, reason: 'static-marker-absent' });
-  return { schemaVersion: 1, packages, graph, identity, code, sourceCode, features, blockers, qualification: 'Static public metadata/byte fingerprints and physical resolution only. Source fallback is not activation; markers do not prove running-daemon behavior or provider authentication.' };
+  return { schemaVersion: 1, packages, graph, graphContext, identity, code, sourceCode, features, blockers, sourceGraphIssues, qualification: 'Static public metadata/byte fingerprints and installed-package physical resolution only. Source fallback is not activation; its build dependencies are reported separately, not used to infer loaded runtime peers. Markers do not prove running-daemon behavior or provider authentication.' };
 }
 
 export function compareInventories(host, container) {
@@ -88,10 +106,12 @@ export function compareInventories(host, container) {
   const versions = Object.keys(packageNames).map(id => ({ id, host: host.packages[id]?.version ?? null, container: container.packages[id]?.version ?? null, identical: !!host.packages[id] && !!container.packages[id] && host.packages[id].version === container.packages[id].version }));
   function differences(field) { return [...new Set([...Object.keys(host[field]), ...Object.keys(container[field])])].sort().filter(key => !host[field][key] || !container[field][key] || host[field][key] !== container[field][key]).map(key => ({ key, host: host[field][key] ?? null, container: container[field][key] ?? null })); }
   const codeDifferences = differences('code'), sourceDifferences = differences('sourceCode');
-  const sharedIdentity = [host, container].every(value => ['cordis', 'scope', 'pi'].every(peer => value.identity[peer]?.shared === true));
+  const sharedIdentity = [host, container].every(value => ['cordis', 'scope', 'pi'].every(peer => value.identity[peer]?.sharedRuntime === true));
+  const allConsumerIdentity = [host, container].every(value => ['cordis', 'scope', 'pi'].every(peer => value.identity[peer]?.shared === true));
+  const sourceFallbackConsumers = Object.fromEntries([['host', host], ['container', container]].map(([label, value]) => [label, Object.keys(value.packages).filter(id => value.packages[id]?.origin === 'public-source-fallback')]));
   const complete = [host, container].every(value => Array.isArray(value.blockers) && value.blockers.length === 0);
   const exactPublicParity = complete && sharedIdentity && versions.every(item => item.identical) && codeDifferences.length === 0 && sourceDifferences.length === 0;
-  return { versions, identicalVersions: versions.every(item => item.identical), sharedIdentity, codeDifferences, sourceDifferences, hostBlockers: host.blockers, containerBlockers: container.blockers, exactPublicParity, qualification: 'Different generated bytes remain differences. Compiler comments, notices, path annotations or formatting may explain them only after an explicit reviewed comparison; versions/markers alone never establish parity.' };
+  return { versions, identicalVersions: versions.every(item => item.identical), sharedIdentity, allConsumerIdentity, sourceFallbackConsumers, codeDifferences, sourceDifferences, hostBlockers: host.blockers, containerBlockers: container.blockers, hostSourceGraphIssues: host.sourceGraphIssues ?? [], containerSourceGraphIssues: container.sourceGraphIssues ?? [], exactPublicParity, qualification: 'Parity covers public bytes and installed-runtime package resolution, not activation of source fallbacks or live constructors. Source-build peer splits are separately reported. Different generated bytes remain differences; compiler comments, notices, path annotations or formatting require an explicit reviewed comparison. Versions/markers alone never establish parity.' };
 }
 
 const help = 'Public code inventory only: --runtime ABS [--repo ABS] [--output ABS (new file only)]\nSource mapping: [--tui-source ABS] [--antigravity-source ABS] [--pi-source ABS] [--selfheal-source ABS]\nCompare reviewed public inventories: --compare HOST_JSON_ABS CONTAINER_JSON_ABS\nNo arguments/--help performs no filesystem inspection. No auth, profiles, environment dump, imports or inference.\n';

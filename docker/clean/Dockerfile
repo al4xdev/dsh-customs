@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git build-essential python3 pkg-config fish \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1001 --shell /bin/bash alex
+# Docker WORKDIR creates missing parents as root even after USER; reserve ownership first.
+RUN install -d -o alex -g alex /home/alex/git/my
 USER alex
 ENV HOME=/home/alex \
     DSH_HOME=/home/alex/.dsh \
