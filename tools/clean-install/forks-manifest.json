@@ -22,12 +22,12 @@
       "package": "@deepseek-ai/dsh-llm-pi-ai-antigravity",
       "version": "0.1.0-rc.5",
       "repository": "https://github.com/al4xdev/dsh-antigravity.git",
-      "commit": "5dbcb8a2b356e5be9e57c9221e4210d3a17e193d",
+      "commit": "77c0c0fe39c0ddfa9647400db6d4726720aa7852",
       "strategy": "host-source-compile-with-committed-auxiliary-faces",
       "sourceEntry": "src/index.ts",
       "sourceOutput": "lib/index.js",
       "target": "node22",
-      "qualification": "Rebuilds host index.js from current V4 source only. All other lib JS and declarations (including browser/client/typert faces) are committed-prebuilt, not rebuilt or browser-verified. Legacy client-runtime peer is optional only after a compiled host import guard. Pi dependency must be overridden by the owning clean-runtime installer."
+      "qualification": "Rebuilds host index.js from current V4 plus quota-reset-24h provider source. Quota-reset recovery is opt-in/default off; enabling waits above 20min also requires the separately reviewed quota retry executor and public wiring. All other lib JS and declarations (including browser/client/typert faces) are committed-prebuilt, not rebuilt or browser-verified. Legacy client-runtime peer is optional only after a compiled host import guard. Pi dependency must be overridden by the owning clean-runtime installer."
     }
   ]
 }

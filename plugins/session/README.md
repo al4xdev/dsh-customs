@@ -57,6 +57,15 @@ alone, and report the separate `writerOwnership` evidence:
   result, unsafe/changing metadata, or unavailable observer. Missing observations are never relabeled
   `not-observed`.
 
+The companion now wires the bounded Linux kernel-flock observer using only the
+public JSONL service's effective configured root. It reads directory/lock metadata
+and `/proc/locks`, checks device/inode identity before and after the observation,
+and rejects ambiguous paths, symlinks, changed identities and exceeded budgets.
+It never probes ownership by trying to acquire a lock. Non-Linux or unsupported
+backends remain unknown; this is a diagnostic adapter, not a native DSH lease API.
+The TUI's red `held by pid` badge instead comes from its mount ledger; a surviving
+or reused PID alone is not authoritative ownership evidence.
+
 The host may supply `writerObserver(snapshots, signal)` returning a `Map` of
 session IDs to public `{ state, pid?, observedAt?, source?, reason? }` evidence.
 Without it, list/inspect explicitly return unknown writer evidence. The callback
@@ -127,7 +136,22 @@ dsh --patch (node tools/session-companion/bridge-overlay.mjs)
 
 Keep your usual profile/model arguments. The generator creates one unique private
 overlay per launch, rather than changing the global activation file in use.
-It exposes no tool to the ordinary agent.
+It exposes no tool to the ordinary agent. For the stock TUI launcher, use
+`dsh-tui --patch (node /home/alex/git/my/dsh-customs/tools/session-companion/bridge-overlay.mjs)`
+with `--patch` before workspace/application arguments. This is for a fresh
+launch only; it does not retrofit an already-running terminal. Verify its bridge
+handshake before treating it as sendable.
+
+On 2026-10-13, a read-only enumeration completed all 880 stored sessions across
+78 default-budget pages with no omissions while writers changed. Kernel evidence
+reported 12 writers at that observation; counts are snapshots, not constants.
+The default bridge root had no validated bridge and one dead-process record;
+that record was ignored, not removed. The current TUI composition did not load
+the declared bridge, so its open sessions remained observable but not sendable.
+The published companion was then updated alone and a disposable chat exercised
+`session.list` with `writer: "held"`: its reply distinguished writer evidence from
+the one locally confirmed agent without sending or resuming another session.
+A stale bridge warning does not invalidate independently valid bridges.
 
 ## Cold recovery limits
 

@@ -1,6 +1,8 @@
 # Pi AI fork for DSH Codex compaction
 
-The fork is [al4xdev/pi](https://github.com/al4xdev/pi/tree/fix/codex-implicit-reasoning-none), based on Pi 0.87.1, not the newer 1.x API. The source checkout is separate: `/home/alex/git/my/pi`.
+The fork is [al4xdev/pi](https://github.com/al4xdev/pi/tree/fix/codex-implicit-reasoning-none), based on Pi 0.87.1, not the newer 1.x API. Its canonical source location is `sources/pi-ai/` inside this workshop, excluded from the root Git history.
+
+As of the 2026-10-13 consolidation, this location contains a verified **source snapshot, not a Git checkout**. The original worktree's Git parent disappeared and the owned remote was unavailable to both clone and repository metadata queries. `SOURCE-PROVENANCE.json` records the source-tree digest and historical `f5a24c96…` provenance without claiming a current HEAD. No fake Git metadata or fresh-build acceptance is implied. Dependencies/toolchain must be supplied explicitly before preparation; the snapshot does not include the old `node_modules`.
 
 ## Portable workshop versus historical host operations
 
@@ -14,9 +16,10 @@ node tools/pi-ai-fork/prepare.mjs /absolute/isolated-pi-source /absolute/seed-ru
 ```
 
 Arguments are source, donor node_modules and optional output root.
-Omitting paths retains the
-historical checkout/scratch workflow: checkout defaults under HOME, installation
-root uses DSH_INSTALL_ROOT or XDG_DATA_HOME/HOME, and output defaults to `.dumps`.
+Omitting paths selects `sources/pi-ai/` in this repository; installation root
+uses DSH_INSTALL_ROOT or XDG_DATA_HOME/HOME, and output still defaults to the
+historical `.dumps` scratch workflow. Supply an explicit durable artifact root
+for anything intended to remain installed.
 Preparation **builds by default** and compiles telemetry in its source checkout;
 it is not a read-only doctor. Never pass an active checkout/donor accidentally.
 The workshop uses new clones and a new donor, so it does not copy the live machine's

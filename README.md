@@ -13,9 +13,19 @@ Não é um backup da máquina nem um segundo lugar para guardar configurações 
 | **Instalação DSH** | CLI e grafo de dependências produzido pela receita |
 | **Dados privados** | Sessões, attachments, credenciais e OAuth; não entram no manifesto nem no bootstrap |
 
-Os forks são repositórios separados. Não os absorvemos automaticamente no Git
-principal. O manifesto registra como reconstruí-los; mudanças ainda não commitadas
-neste checkout não aparecem magicamente num clone remoto.
+TUI e Antigravity continuam em forks separados, com URL e commit fixos. O Pi
+recuperado é um snapshot verificado e versionado em `sources/pi-ai`, sem Git HEAD
+inventado. Mudanças locais não publicadas não aparecem num clone remoto.
+
+## Instalação limpa em Docker
+
+[DOCKER-DSH.md](DOCKER-DSH.md) descreve a receita atual, o ambiente isolado e os
+limites de comparação. `install.sh --fresh` é Docker-only e recusa uma instalação
+existente; nenhum OAuth ou histórico do host entra na imagem. A execução real
+está em validação; testes de fixtures não são prova de build concluído.
+
+`tools/clean-install/` usa os forks atuais e as melhorias de persistência/Codex.
+`tools/workshop/` permanece uma baseline histórica, não a receita do host atual.
 
 ## Mapa do repositório
 
@@ -138,6 +148,16 @@ upgrade de TTYs já abertos. O bundle novo contém toda a lógica; após possív
 ativação V2, restaurar bytes V1 não é downgrade seguro de checkpoint. Ver o
 [resultado local](.dumps/agent-self-heal-20261013-v2/promotion-result-v2.md).
 
+A tarefa50 corrigiu a reabertura real de sessões selfheal: o SDK local dsh-cli
+agora reconhece o evento obrigatório `agent/self-heal`, sem relaxar o filtro dos
+outros eventos. O plugin verifica compatibilidade antes de ativar e recusa replay
+de protocolo desconhecido. O perfil aponta para `lib/index-v2-persistence.mjs`;
+109 testes (incluindo disco/zstd e task84) e49 native-loop por source/bundle
+passaram. Task84 mantém7376 eventos/23 audits e hashes originais; nenhuma sessão
+foi reescrita. É uma ponte local hashada, não atualização npx/web ou portabilidade
+upstream; requer processo novo. Ver [contrato e instalação](plugins/agent-self-heal/README.md#required-persistence-protocol-local-bridge)
+e [evidência](.dumps/self-heal-persistence-20261013/result.md).
+
 **A baseline portátil continua separada do build host local validado.** O build
 monorepo padrão Antigravity espera arquivos upstream ausentes neste clone; a receita
 histórica empacota `lib` commitado e aplica patch hashado para tornar opcional um
@@ -172,13 +192,30 @@ são reportados; não se tenta adivinhar a configuração.
 
 ## Estado da consolidação desta máquina
 
-A instalação local já executa as TUIs. O web ainda usa npx, e muitos links dos
-perfis dependem daquele cache. Existe também referência ativa a um adapter antigo
-em `.dumps`. **Nada disso pode ser limpo só pelo nome da pasta.**
+Locais canônicos: fontes/receitas neste repositório; CLI em
+`~/.local/share/dsh-cli`; configurações no dotfiles/`.dsh`; backups já existentes
+em `~/.local/share/dsh-customs-backups`. O frontend externo/Android/companion
+protótipo não faz parte da instalação da oficina.
 
-A tarefa 7 permanece aberta: provar reprodução primeiro, depois migrar dependentes
-com backup persistente/rollback e aprovação dos alvos; só então retirar duplicação.
-Não há `npm cache clean`, remoção automática, promoção live ou restart no bootstrap.
+Na janela de 2026-10-13, o **web foi migrado do npx para a CLI canônica**, sem
+alterar flags/configs. Dois builds de ensaio antigos foram retirados do workspace
+e 597 diretórios de fixtures descartáveis foram enviados para `/tmp`. A fonte Pi
+foi consolidada em `sources/pi-ai/`: snapshot verificado, não checkout Git
+(remoto indisponível), com `SOURCE-PROVENANCE.json`; ver [o guia Pi](tools/pi-ai-fork/README.md).
+
+O proprietário aplicou o corte em terminal separado: **404 links canônicos e
+205 links obsoletos retirados**. A antiga instalação npx, dois runtimes scratch
+Pi e o diretório vazio `dsh-tui-cli` foram enviados para `/tmp` após verificação
+sem consumidores/referências operacionais nos locais auditados. A TUI reaberta
+resolve o adapter no canônico. `status.mjs` verifica o estado atual sem depender
+dessas raízes antigas; o executor de corte ficou histórico, não deve ser repetido.
+Consulte [o levantamento pós-limpeza](LOCAIS-DSH.md) para os locais preservados,
+tamanhos e limites da limpeza. Fontes, dados, backups e compilador necessário
+não foram confundidos com lixo descartável.
+O manifesto já declara o bundle self-heal com persistência, sem reescrever o
+perfil live. Os pins workshop continuam baseline histórica, não reprodução
+integral do host atualizado. Não há limpeza global de cache nem remoção automática
+no bootstrap.
 
 ## Browser nativo
 

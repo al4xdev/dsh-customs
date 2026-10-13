@@ -77,11 +77,13 @@ async function fixture(overrides = {}) {
   return { sourcesRoot, artifactsRoot, toolchainRoot, spawn, env: { HOME: join(root, 'isolated-home'), PATH: '/synthetic-only' }, manifest, calls, root };
 }
 
-test('manifest pins current OAuth32 and AGV4 forks rather than historical workshop', async () => {
+test('manifest pins current OAuth32 and AGV4 quota-policy forks rather than historical workshop', async () => {
   const manifest = await loadForkManifest();
   assert.equal(manifest.components[0].commit, 'ebea5d738481bbc7c35006410ad9ce1a998dc883');
-  assert.equal(manifest.components[1].commit, '5dbcb8a2b356e5be9e57c9221e4210d3a17e193d');
+  assert.equal(manifest.components[1].commit, '77c0c0fe39c0ddfa9647400db6d4726720aa7852');
   assert.match(manifest.components[1].qualification, /committed-prebuilt/);
+  assert.match(manifest.components[1].qualification, /quota-reset-24h/);
+  assert.match(manifest.components[1].qualification, /opt-in\/default off/);
 });
 
 test('rejects credentials in manifest URLs and unreviewed strategy changes', async () => {

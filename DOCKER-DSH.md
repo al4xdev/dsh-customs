@@ -1,12 +1,12 @@
 # Instalação DSH limpa em Docker
 
-Esta receita está em validação. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
+O primeiro build limpo foi concluído e passou nos básicos offline. O pin Antigravity está sendo atualizado após uma alteração concorrente do fork durante a comparação. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
 
 ## Compilação
 
 - TUI: fork `al4xdev/dsh-TUI`, commit `ebea5d738481bbc7c35006410ad9ce1a998dc883`, submodule fixo e build de fonte com pnpm11.21.0.
 - Pi: snapshot recuperado agora versionado em `sources/pi-ai`, sem Git HEAD inventado; deps de lock, compilação completa telemetry/AI com patch observer38, catálogo público versionado e correção Codex.
-- Antigravity: fork `al4xdev/dsh-antigravity`, commit `5dbcb8a2b356e5be9e57c9221e4210d3a17e193d`; host JS compilado por esbuild0.28.2. **Tipos/client/typert auxiliares continuam prebuilt commitados**: não é anunciado como build de todos os exports.
+- Antigravity: fork `al4xdev/dsh-antigravity`, commit `77c0c0fe39c0ddfa9647400db6d4726720aa7852`; host JS compilado por esbuild0.28.2. **Tipos/client/typert auxiliares continuam prebuilt commitados**: não é anunciado como build de todos os exports.
 - Self-heal: bundle recompilado das fontes atuais, incluindo persistência; bridge SDK50 aplicado a apenas dois catálogos oficiais com hashes de base conferidos.
 - DSH0.2.0-rc.2 instalado em `/home/alex/.local/share/dsh-cli`; shared Cordis/scope/Pi devem ter uma única identidade física. Perfil público novo em `/home/alex/.dsh/profiles/dsh-tui`; nenhuma sessão/configuração privada é copiada.
 
