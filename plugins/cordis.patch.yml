@@ -8,6 +8,8 @@
       name: /home/alex/git/my/dsh-customs/plugins/workspace-context/index.mjs
     - id: alex-project-mcp
       name: /home/alex/git/my/dsh-customs/plugins/project-mcp/index.mjs
+    - id: alex-browser
+      name: /home/alex/git/my/dsh-customs/plugins/browser/index.mjs
     - id: alex-clipboard
       name: /home/alex/git/my/dsh-customs/plugins/clipboard/index.mjs
     - id: alex-trash

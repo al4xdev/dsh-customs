@@ -123,6 +123,15 @@ A tarefa 7 permanece aberta: provar reprodução primeiro, depois migrar depende
 com backup persistente/rollback e aprovação dos alvos; só então retirar duplicação.
 Não há `npm cache clean`, remoção automática, promoção live ou restart no bootstrap.
 
+## Browser nativo
+
+`plugins/browser` implementa uma única tool hierárquica `browser`, com Playwright
+estável1.64.0 público e worker SDK2 privado. Sessões/Pages pertencem ao Agent;
+screenshots, mobile, vídeo e trace usam artefatos próprios, sem código livre da LLM
+ou dependências no produto. Consulte [contrato e preparação](plugins/browser/README.md).
+A ativação continua controlada pelo manifest e pelos gates de smoke dos perfis;
+existência do módulo ou um doctor pronto não comprova rollout.
+
 ## Validação
 
 ```fish
@@ -130,6 +139,9 @@ npm run test:workshop
 npm run test:lts:contracts
 npm run test:project-mcp
 npm run test:managed-plans
+npm run browser:doctor
+npm run test:browser
+npm run test:browser:live
 ```
 
 Os testes da oficina usam fixtures isoladas e comandos controlados; não substituem

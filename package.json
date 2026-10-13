@@ -5,6 +5,10 @@
   "scripts": {
     "check": "node tools/activate.mjs",
     "activate": "node tools/activate.mjs --write",
+    "browser:doctor": "node tools/browser-runtime.mjs --doctor",
+    "browser:install": "node tools/browser-runtime.mjs --install",
+    "test:browser": "node tools/browser-tests.mjs",
+    "test:browser:live": "node tools/browser-tests.mjs --live",
     "test:lts:contracts": "node --test plugins/apply-patch/apply-patch.test.mjs plugins/list/list.test.mjs plugins/grammar-fix/grammar-fix.test.mjs plugins/grammar-fix/language-alias.test.mjs plugins/trash/trash.test.mjs plugins/clipboard/clipboard.test.mjs plugins/workspace-context/workspace-context.test.mjs && node tools/task10-profile/grammar-config-check.mjs",
     "test:trash": "node --test plugins/trash/trash.test.mjs",
     "test:clipboard": "node --test plugins/clipboard/clipboard.test.mjs",

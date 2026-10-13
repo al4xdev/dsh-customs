@@ -1,0 +1,14 @@
+{
+  "name": "alex-dsh-browser-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "ajv": "8.17.1",
+    "playwright": "1.64.0",
+    "yaml": "2.9.1"
+  }
+}
