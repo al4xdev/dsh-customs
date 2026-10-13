@@ -82,11 +82,68 @@ etapas explícitas posteriores. Ver [o guia da oficina](tools/workshop/README.md
 O host desta máquina já usa a promoção separada da tarefa 26: fonte `f5a24c96…`
 e artefato pi-ai `206545bfd51e`. Isso não atualiza os pins da oficina automaticamente.
 
-**Antigravity ainda não tem compilação standalone portátil.** Seu build espera
-arquivos do workspace upstream ausentes neste clone; empacotar o código já
-compilado não é o mesmo que reconstruí-lo da fonte. O empacotamento aplica um
-patch hashado para tornar opcional um peer legado usado só por tipos/client.
-Isso permite a instalação host/TUI, mas não comprova integração do client web.
+A tarefa 32 acrescenta `retryPolicies` por provider ao OAuth do fork TUI local;
+no perfil desta máquina, Codex usa modo normal, nove retries e backoff de 5s
+até 20min (última espera real 18–20min com jitter; 41min15s nominais acumulados,
+além das requisições). O motor oficial continua dono de orçamento e cancelamento.
+A etapa32 não muda os outros providers; a extensão Antigravity36 descrita abaixo
+configura sua política separadamente. Essa extensão local não está nos pins
+TUI/patch históricos acima; o checkout tem mudanças não publicadas. Não alegue
+reprodução da configuração atual só com o doctor/baseline portátil. Candidato e
+receipts de validação/promoção são separados, sem reempacotar artefatos antigos.
+
+A tarefa 33 acrescenta usage ao fork Antigravity local: `/antigravity-usage`
+mostra percentuais reportados por modelo, reset e janela desconhecida;
+`/antigravity-usage --refresh` ignora o cache de 60s. É metadata sob demanda,
+sem inferência, polling ou alteração de retry/billing; o serviço host
+`antiGravityUsage` aplica deadline de 10s, limites de resposta e invalidação de
+credenciais. A promoção local usa bundle host/declarations compilados em candidato
+isolado e backup durável; recomenda processo TUI novo para carregar módulos de
+forma reproduzível, sem reinício automático.
+Isso não atualiza o pin Antigravity/tarball histórico acima nem comprova painel
+web ou uso sem créditos. Preferências de overages do cliente oficial não são
+herdadas automaticamente pelo fork.
+
+As tarefas36/42 acrescentam resiliência compartilhada Claude/Gemini ao fork
+Antigravity local: SSE limitado, falhas tipadas sanitizadas, associação de
+assinaturas por bloco lógico e bridge request-local para o motor oficial.
+A política Antigravity deste perfil é normal9, 5s–20min com jitter0.1; Search,
+catálogo, contas e créditos não são rotacionados. `enabledCreditTypes: []` é
+validado no cliente, sem promessa universal de billing pelo servidor.
+
+V4 passou 310 testes de pacote e 26 casos native-loop, compilação host isolada,
+14 declarações e consumer público; root contracts 76/76 + grammar config e wiring
+YAML público do perfil também passaram. O teste real Claude aceitou cinco respostas
+de código e um follow-up com replay na mesma sessão; quatro respostas atingiram
+o teto16k, portanto não provam código completo ou executado. Gemini foi comparado
+offline. A sequência parou no primeiro429 real: `RATE_LIMIT`, hint373203889ms
+(~4,32dias), maior que o cap20min, logo zero retries oficiais — fail-fast correto.
+Saldo final ausente permanece desconhecido, não0%; janela e recuperação positiva
+após reset não foram comprovadas. Counters18/26/2 respeitaram32/40/4 e45min ativos.
+A causa do400 anterior continua desconhecida, apesar do bug lógico demonstrado.
+
+A promoção V4 substituiu somente `lib/index.js` compilado, com backup durável,
+comparação de hashes e rollback que recusa edições posteriores; quatro declarações,
+21 outros outputs e seis outputs TUI foram preservados. Nada atualiza os pins da
+oficina nem constitui nova publicação. Ver [documentação do fork](plugins/dsh-antigravity/README.md#official-retry-policy-and-validated-local-rollout)
+e o [resultado local](.dumps/antigravity-resilience-20261013/promotion-live-result-v4.md).
+Hot-mount de selfheal foi observado num perfil existente, mas não limpa caches SDK;
+idade do processo não prova ausência de todos os hooks. Recomenda-se TUI/worker novo
+para provar carregamento; não houve restart automático. A tarefa43 corrigiu e
+publicou selfheal V2: max3 por episódio consecutivo, renovado por progresso saudável
+causal ou retomada humana autenticada, não por mensagens artificiais/reload.
+Source96 e native50+4 em source/bundle passaram; três gates da entrada física
+configurada observaram audit policyVersion2 em processo próprio novo, sem afirmar
+upgrade de TTYs já abertos. O bundle novo contém toda a lógica; após possível
+ativação V2, restaurar bytes V1 não é downgrade seguro de checkpoint. Ver o
+[resultado local](.dumps/agent-self-heal-20261013-v2/promotion-result-v2.md).
+
+**A baseline portátil continua separada do build host local validado.** O build
+monorepo padrão Antigravity espera arquivos upstream ausentes neste clone; a receita
+histórica empacota `lib` commitado e aplica patch hashado para tornar opcional um
+peer legado usado só por tipos/client. O build host isolado recente usa ferramentas
+em cache e dependências desta instalação, não comprova bootstrap universal,
+integração client web, todas as versões LTS ou estabilidade de longo prazo.
 
 O catálogo usado pelo novo build pi-ai vem do DSH seed isolado, não do catálogo
 alterado desta máquina. Providers/modelos pessoais devem ser configurados
