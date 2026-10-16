@@ -49,6 +49,16 @@ class QuestionProjectionFenceTest {
             fence.accept(baseline(1)); assertNotNull(fence.current())
         }
     }
+    @Test fun unpresentableProjectionIsWithheldAndMarkedInsteadOfThrowing() {
+        val long = "x".repeat(UserQuestionLimits.TEXT + 1)
+        val oversized = ProjectionBaseline(0, obj("""{"userQuestions":{"active":[{"callId":"call","questions":[{"id":"q","question":"Synthetic?","detail":"$long"}],"state":"continued"}],"settled":[]}}"""))
+        val fence = QuestionProjectionFence(); fence.snapshot(snapshot(projection = oversized))
+        assertNull(fence.current()); assertTrue(fence.unpresentable)
+        // A later presentable projection, or none at all, clears the marker.
+        assertTrue(fence.accept(baseline(0))); assertNotNull(fence.current()); assertFalse(fence.unpresentable)
+        fence.accept(oversized); assertNull(fence.current()); assertTrue(fence.unpresentable)
+        fence.unavailable(); assertNull(fence.current()); assertFalse(fence.unpresentable)
+    }
     @Test fun sequenceGapUnavailableAndClearWithdrawContinuedAuthority() {
         val fence = QuestionProjectionFence(); fence.snapshot(snapshot())
         assertThrows(IllegalArgumentException::class.java) { fence.appended(event(2)) }

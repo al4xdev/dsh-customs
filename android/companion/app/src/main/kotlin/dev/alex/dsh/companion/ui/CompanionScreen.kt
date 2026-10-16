@@ -263,6 +263,13 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
                     TextButton(onClick = actions::reconnect, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reconectar") }
                 }
             }
+            // The retained catalog under an open chat must not repeat the chat's own warning.
+            if (state.showAnswererWarning && visible) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("answerer-unavailable"), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Aprovações e perguntas indisponíveis", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = actions::reconnect, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reconectar") }
+                }
+            }
             when {
                 !state.authenticated -> LoginScreen(state.busy, state.savedLogin, actions::login, accountActionsEnabled, restoreLogin, logout, Modifier.weight(1f))
                 settingsMode -> dev.alex.dsh.companion.ui.settings.SettingsScreen(
@@ -613,6 +620,7 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
         }
         }
         }
+        if ((state.chatAttention[state.selectedId]?.unsupported ?: 0) > 0) UnsupportedRequestNotice()
         if (approval != null) key(approval.key) { ApprovalCard(approval, visible && state.connected && state.authenticated, actions) }
         if (question != null) key(question.key) {
             UserQuestionCard(question, questionEnabled, actions::answerQuestion)
@@ -638,6 +646,15 @@ private fun MessageCard(message: UiMessage) {
         if (human) Surface(Modifier.fillMaxWidth(.88f), color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = MaterialTheme.shapes.large, content = content)
         else Column(Modifier.fillMaxWidth()) { content() }
+    }
+}
+
+/** Never a response control: the request could not be decoded or exceeds a limit of this app. */
+@Composable
+private fun UnsupportedRequestNotice() {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).testTag("unsupported-request")) {
+        Text("Há um pedido de permissão ou pergunta que este app não consegue exibir com segurança. Responda pelo PC.",
+            modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -702,15 +719,22 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                 FileSendPhase.NONE -> "Enviando…"
             }, style = MaterialTheme.typography.bodySmall)
             DeliveryStatus.ADMITTED -> Unit
-            DeliveryStatus.UNKNOWN -> Text(if (state.isNewDraft)
-                "Criação sem confirmação. Confira a lista de conversas; não repita esta tentativa."
-                else "Envio incerto. Confira o histórico antes de qualquer novo envio.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            DeliveryStatus.UNKNOWN -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(when {
+                    state.isNewDraft -> "Criação sem confirmação. Pode ter ficado uma conversa vazia na lista; Reenviar cria outra."
+                    state.resendFiles > 0 -> "Envio sem confirmação. Selecione os mesmos arquivos e toque em Reenviar; o mesmo identificador não duplica a mensagem."
+                    else -> "Envio sem confirmação. Reenviar usa o mesmo identificador e não duplica uma mensagem já recebida."
+                }, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = actions::resendUncertain, enabled = state.canResendUncertain,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("resend-uncertain")) { Text("Reenviar") }
+            }
         }
         if (state.filePickerPending) Text("Conferindo seleção de arquivos…", style = MaterialTheme.typography.bodySmall)
         dev.alex.dsh.companion.ui.files.SelectedFileRow(state.selectedFiles, actions::removeFile)
-        if (state.selectedFiles.any { it.needsReselect }) TextButton(onClick = actions::attachFiles,
-            enabled = state.authenticated && !sending && !unknown && !state.filePickerPending) { Text("Selecionar arquivos novamente") }
+        // An uncertain file prompt can only be resent with a fresh selection of its files.
+        val reselectForResend = unknown && state.resendFiles > 0
+        if (state.selectedFiles.any { it.needsReselect } || reselectForResend && state.selectedFiles.size < state.resendFiles) TextButton(onClick = actions::attachFiles,
+            enabled = state.authenticated && !sending && (!unknown || reselectForResend) && !state.filePickerPending) { Text("Selecionar arquivos novamente") }
         Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().testTag("message-composer")) {
             Column {
@@ -757,7 +781,7 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                     else if (keepStopSlot) Box(Modifier.size(48.dp))
                     dev.alex.dsh.companion.ui.files.ComposerFileAction(
                         text = state.draft, readyFileCount = state.selectedFiles.count { !it.needsReselect },
-                        canAttach = state.authenticated && !state.busy && !sending && !unknown && !state.filePickerPending,
+                        canAttach = state.authenticated && !state.busy && !sending && (!unknown || reselectForResend) && !state.filePickerPending,
                         canSend = state.authenticated && (state.connected || state.isNewDraft) && !state.busy && !sending && !unknown &&
                             !state.filePickerPending && state.selectedFiles.none { it.needsReselect } && (state.draft.isNotBlank() || state.selectedFiles.isNotEmpty()),
                         onAttach = actions::attachFiles, onSend = actions::send)

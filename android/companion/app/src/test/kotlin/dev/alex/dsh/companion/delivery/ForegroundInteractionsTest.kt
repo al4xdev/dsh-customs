@@ -95,6 +95,48 @@ class ForegroundInteractionsTest {
         assertThrows(ProtocolException::class.java) { owner.receive(approval("overflow", "other"), 1) }
         assertTrue(owner.approvals.pending().isEmpty()); assertTrue(owner.attention().isEmpty())
     }
+    @Test fun oneUnpresentableRequestIsIsolatedWithoutAnAnswerOrACarrierFailure() {
+        val owner = owner(); val source = owner.sourceToken
+        // An approval with an out-of-vocabulary field and a question over this app's text limit.
+        val extra = RemoteEventFrame.Waterfall("approval/request", "approval-extra", "chat-b",
+            json("""{"toolName":"synthetic-tool","futureField":true}""") as JsonObject)
+        val longDetail = RemoteEventFrame.Waterfall("user-questions/request", "question-long", "chat-a",
+            json("""{"questions":[{"id":"q","question":"Synthetic?","detail":"${"x".repeat(UserQuestionLimits.TEXT + 1)}"}]}""") as JsonObject)
+        assertEquals("chat-b", owner.receive(extra, 1)); assertEquals("chat-a", owner.receive(longDetail, 1))
+        assertTrue(owner.admit(proof("chat-b"), 1, source, 10)); assertTrue(owner.admit(proof("chat-a"), 1, source, 10))
+        assertTrue(owner.approvals.pending().isEmpty()); assertTrue(owner.questions.pending().isEmpty())
+        assertEquals(1, owner.attention().getValue("chat-b").unsupported)
+        assertTrue(owner.attention().getValue("chat-a").blocksOnUser)
+        // Admitted chats route directly; the same carrier still delivers the next valid request.
+        owner.receive(RemoteEventFrame.Waterfall("approval/request", "approval-extra-2", "chat-b",
+            json("""{"toolName":"synthetic-tool","futureField":1}""") as JsonObject), 1)
+        owner.receive(approval("approval-ok"), 1)
+        assertEquals("approval-ok", owner.approvals.pending().single().key.eventId)
+        assertEquals(2, owner.attention().getValue("chat-b").unsupported)
+        // Only the host withdraws a marker; nothing here answered or Next-ed it.
+        owner.receive(RemoteEventFrame.Cancel("approval-extra"), 1); owner.receive(RemoteEventFrame.Cancel("approval-extra-2"), 1)
+        assertEquals(0, owner.attention().getValue("chat-b").unsupported)
+        assertEquals(1, owner.attention().getValue("chat-b").approvals)
+    }
+    @Test fun undecodableWaterfallEnvelopeGetsOnlyAMarkerAndOnlyAfterFreshAdmission() {
+        val owner = owner(); val source = owner.sourceToken
+        assertEquals("chat-a", owner.receiveUnsupported("approval/request", "future", "chat-a", 1))
+        assertNull(owner.receiveUnsupported("future/request", "other", "chat-a", 1))
+        assertNull(owner.receiveUnsupported("approval/request", "stale", "chat-a", 2))
+        assertTrue(owner.needsAdmission("chat-a")); assertTrue(owner.attention().isEmpty())
+        assertTrue(owner.admit(proof("chat-a"), 1, source, 10))
+        assertFalse(owner.needsAdmission("chat-a"))
+        assertEquals(1, owner.attention().getValue("chat-a").unsupported)
+        assertTrue(owner.approvals.pending().isEmpty()); assertTrue(owner.questions.pending().isEmpty())
+        assertNull(owner.receiveUnsupported("user-questions/request", "admitted-now", "chat-a", 1))
+        assertEquals(2, owner.attention().getValue("chat-a").unsupported)
+        // Unverified agents are discarded with their candidates; a new carrier starts clean.
+        owner.receiveUnsupported("approval/request", "foreign-event", "foreign", 1); owner.discardCandidate("foreign")
+        assertFalse(owner.needsAdmission("foreign"))
+        owner.reset(2, 5); owner.receive(ready("new-client"), 2)
+        assertTrue(owner.attention().isEmpty())
+        assertNull(ForegroundInteractions().also { it.reset(1, 5) }.receiveUnsupported("approval/request", "before-ready", "chat-a", 1))
+    }
     @Test fun catalogVisibleCanQueueButOnlyResumedSelectedConversationCanRespond() {
         val catalog = InteractionViewport(true, true, true, true, false, null, false, true)
         assertTrue(catalog.answererActive); assertFalse(catalog.canRespond("chat-a"))

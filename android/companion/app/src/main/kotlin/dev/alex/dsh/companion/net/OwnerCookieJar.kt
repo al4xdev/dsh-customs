@@ -27,9 +27,13 @@ class OwnerCookieJar(private val store: OwnerCookieStore? = null) : CookieJar {
         return credentials.isNotEmpty()
     }
 
+    /**
+     * RAM only: a new private link must not erase a still-valid saved login before it is proven.
+     * commitLogin replaces the stored credentials; a failed login keeps them for "Tentar login salvo".
+     */
     @Synchronized
     fun beginLogin() {
-        clear()
+        credentials = emptyList()
         stagingLogin = true
     }
 

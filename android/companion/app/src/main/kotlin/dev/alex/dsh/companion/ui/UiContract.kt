@@ -48,6 +48,8 @@ data class CompanionUiState(
     val questions: List<UserQuestionPresentation> = emptyList(),
     val chatAttention: Map<String, ConversationAttention> = emptyMap(),
     val answererConnected: Boolean = false,
+    // The approvals/questions carrier was lost and has not delivered a fresh ready frame yet.
+    val answererUnavailable: Boolean = false,
     val questionProjectionCurrent: Boolean = false,
     val delivery: DeliveryStatus = DeliveryStatus.NONE,
     val savedLogin: Boolean = false,
@@ -75,10 +77,18 @@ data class CompanionUiState(
     val selectedFiles: List<SelectedFileChip> = emptyList(),
     val filePickerPending: Boolean = false,
     val fileSendPhase: FileSendPhase = FileSendPhase.NONE,
+    // Files carried by the selected chat's UNKNOWN prompt; Reenviar needs that many reselected.
+    val resendFiles: Int = 0,
 ) {
     val hasOpenConversation: Boolean get() = selectedId != null || isNewDraft
     // Catalog RPCs do not own a chat stream; no selected chat is not a disconnect.
     val showConnectionWarning: Boolean get() = authenticated && selectedId != null && !connected
+    // A selected chat already shows the connection warning; elsewhere approvals can silently stop.
+    val showAnswererWarning: Boolean get() = authenticated && selectedId == null && answererUnavailable && !answererConnected
+    // Reenviar reuses the uncertain requestId/literal (or, for a new chat, unlocks one more create).
+    val canResendUncertain: Boolean get() = authenticated && delivery == DeliveryStatus.UNKNOWN && !busy && !filePickerPending &&
+        (if (isNewDraft) selectedId == null
+        else selectedId != null && connected && (resendFiles == 0 || (selectedFiles.size == resendFiles && selectedFiles.none { it.needsReselect })))
     val canStopResponse: Boolean get() = authenticated && selectedId != null && connected &&
         ((fileSendPhase == FileSendPhase.PREPARING || fileSendPhase == FileSendPhase.UPLOADING) ||
             (delivery != DeliveryStatus.SENDING && delivery != DeliveryStatus.UNKNOWN && response.canStop))
@@ -107,6 +117,8 @@ interface UiActions {
     fun answerQuestion(key: UserQuestionKey, answer: UserQuestionAnswer) {}
     fun setQuestionDisplayed(key: UserQuestionKey, displayed: Boolean) {}
     fun cancelTurn()
+    /** Explicit owner action for an UNKNOWN send/create; never invoked automatically. */
+    fun resendUncertain() {}
     fun refreshNativeGoals() {}
     fun refreshMetadata() {}
     fun setCatalogVisible(visible: Boolean) {}

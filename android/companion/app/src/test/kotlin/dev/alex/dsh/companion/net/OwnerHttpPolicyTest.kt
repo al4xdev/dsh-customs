@@ -1,5 +1,8 @@
 package dev.alex.dsh.companion.net
 
+import dev.alex.dsh.companion.files.knownLengthUploadBody
+import dev.alex.dsh.companion.protocol.FileUploadLimits
+import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import okhttp3.Request
@@ -9,6 +12,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -57,6 +61,40 @@ class OwnerHttpPolicyTest {
                 .post("fixture-only".toRequestBody()).build()
             assertThrows(IOException::class.java) { client.newCall(request).execute().close() }
             assertEquals(1, server.requestCount)
+        }
+        client.connectionPool.evictAll()
+        client.dispatcher.executorService.shutdown()
+    }
+
+    @Test fun uploadDeadlineGrowsWithTheBodyButStaysBounded() {
+        assertEquals(OwnerHttpPolicy.UNARY_TIMEOUT_MILLIS, OwnerHttpPolicy.uploadTimeoutMillis(0))
+        // 20 MiB at the 32 KiB/s floor: 640 s on top of the ordinary 45 s exchange.
+        val largest = OwnerHttpPolicy.uploadTimeoutMillis(FileUploadLimits.MAX_BYTES)
+        assertEquals(45_000L + 640_000L, largest)
+        for (invalid in listOf(-1L, FileUploadLimits.MAX_BYTES + 1)) {
+            assertThrows(IllegalArgumentException::class.java) { OwnerHttpPolicy.uploadTimeoutMillis(invalid) }
+        }
+        val client = OwnerHttpPolicy.client(OwnerCookieJar())
+        val request = Request.Builder().url("https://fixture.invalid/").build()
+        assertEquals(TimeUnit.MILLISECONDS.toNanos(largest),
+            OwnerHttpPolicy.uploadCall(client, request, FileUploadLimits.MAX_BYTES).timeout().timeoutNanos())
+        assertEquals(0, client.callTimeoutMillis)
+        client.connectionPool.evictAll()
+        client.dispatcher.executorService.shutdown()
+    }
+
+    @Test fun unsizedUploadIsFramedByContentLengthNeverChunked() {
+        val client = OwnerHttpPolicy.client(OwnerCookieJar())
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("fixture-only"))
+            // Local fixture only: no owner credential, startup link or production request.
+            val body = knownLengthUploadBody(null, maximumBytes = 10, isCurrent = { true }) { ByteArrayInputStream(byteArrayOf(1, 2, 3)) }
+            val request = Request.Builder().url(server.url("/api/session/uploadFileBinary")).post(body).build()
+            OwnerHttpPolicy.uploadCall(client, request, body.contentLength()).execute().close()
+            val recorded = server.takeRequest()
+            assertEquals("3", recorded.getHeader("Content-Length"))
+            assertNull(recorded.getHeader("Transfer-Encoding"))
+            assertEquals(3L, recorded.bodySize)
         }
         client.connectionPool.evictAll()
         client.dispatcher.executorService.shutdown()

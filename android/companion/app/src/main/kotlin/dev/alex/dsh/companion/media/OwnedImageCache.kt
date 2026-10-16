@@ -41,7 +41,13 @@ class OwnedImageCache {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             }
-            val bitmap = BitmapFactory.decodeByteArray(value.data, 0, value.data.size, options) ?: throw ImageFailure("image-invalid")
+            val decoded = try {
+                BitmapFactory.decodeByteArray(value.data, 0, value.data.size, options)
+            } catch (_: OutOfMemoryError) {
+                // An in-limit image can still exceed a tight heap: fail this card, never the app.
+                throw ImageFailure("image-memory")
+            }
+            val bitmap = decoded ?: throw ImageFailure("image-invalid")
             if (bitmap.width > side || bitmap.height > side || bitmap.allocationByteCount > 16 * 1024 * 1024) throw ImageFailure("image-pixel-limit")
             return bitmap
         }

@@ -16,6 +16,7 @@ class RetainedCatalogTest {
         assertEquals(current.chatAttention, retained.chatAttention)
         assertEquals(setOf("owned"), retained.chatUnread)
         assertTrue(retained.answererConnected)
+        assertTrue(retainedCatalog(catalog(), current.copy(answererConnected = false, answererUnavailable = true)).answererUnavailable)
         assertFalse(retained.appStarted)
         assertFalse(retained.appResumed)
         assertFalse(retained.questionProjectionCurrent)

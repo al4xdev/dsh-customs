@@ -99,6 +99,19 @@ class NewChatDraftController {
         }
     }
 
+    /**
+     * Explicit owner action only. An uncertain create may have left an empty root on the host,
+     * which is harmless; repeating it silently is not. Back to LOCAL keeps the literal, so the next
+     * deliberate Send creates again. A late receipt for the released attempt is then ignored.
+     */
+    @Synchronized fun releaseUncertainCreate(): Boolean {
+        val current = attempt ?: return false
+        if (phase != Phase.CREATE_UNKNOWN || current.active || current.sessionId != null) return false
+        attempt = null
+        phase = Phase.LOCAL
+        return true
+    }
+
     /** Failure/cancellation uses the same conservative rule as navigation interruption. */
     @Synchronized fun failed(ticket: Ticket, generation: Long) {
         if (active(ticket, generation) != null) interrupt(generation)

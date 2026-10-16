@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -180,6 +181,52 @@ class SubmissionLedgerTest {
         assertNull(ledger.begin("chat-1", "request-1", "literal text", 2))
         val manual = ledger.begin("chat-1", "request-2", "literal text", 2)
         assertEquals("request-2", manual?.requestId); assertEquals(DeliveryStatus.SENDING, ledger.status("chat-1"))
+    }
+    @Test fun explicitResendReusesOnlyTheUncertainRequestIdAndLiteral() {
+        val ledger = ledger(); ledger.interrupted(1)
+        assertNull(ledger.retry("chat-1", "request-2", 2))
+        assertNull(ledger.retry("other-chat", "request-1", 2))
+        val resent = requireNotNull(ledger.retry("chat-1", "request-1", 2))
+        assertEquals("request-1", resent.requestId); assertEquals("literal text", resent.text); assertEquals(2L, resent.generation)
+        assertEquals(DeliveryStatus.SENDING, ledger.status("chat-1"))
+        // In flight again: neither a second resend nor a new intent may start.
+        assertNull(ledger.retry("chat-1", "request-1", 2))
+        assertNull(ledger.begin("chat-1", "request-3", "literal text", 2))
+        assertTrue(ledger.acknowledged("chat-1", "request-1", 2, 2))
+        assertEquals(DeliveryStatus.ADMITTED, ledger.status("chat-1"))
+        assertNull(ledger.retry("chat-1", "request-1", 3))
+    }
+    @Test fun resendStartsOnlyFromUnknownAndCanBecomeUnknownAgain() {
+        assertNull(SubmissionLedger().retry("chat-1", "request-1", 1))
+        val ledger = ledger()
+        assertNull(ledger.retry("chat-1", "request-1", 1))
+        ledger.interrupted(1)
+        assertNotNull(ledger.retry("chat-1", "request-1", 2))
+        ledger.interrupted(2)
+        assertEquals(DeliveryStatus.UNKNOWN, ledger.status("chat-1"))
+        assertNotNull(ledger.retry("chat-1", "request-1", 3))
+        assertThrows(IllegalArgumentException::class.java) { ledger.retry("chat-1", "request-1", -1) }
+    }
+    @Test fun aResendRefusedBeforeItsPostStaysUnknownInsteadOfBeingForgotten() {
+        val ledger = ledger(); ledger.interrupted(1)
+        assertNotNull(ledger.retry("chat-1", "request-1", 2))
+        ledger.refusedBeforePost("chat-1", "request-1")
+        assertEquals(DeliveryStatus.UNKNOWN, ledger.status("chat-1"))
+        assertNull(ledger.begin("chat-1", "request-2", "literal text", 2))
+        assertNotNull(ledger.retry("chat-1", "request-1", 2))
+    }
+    @Test fun fileResendKeepsTheFileCountAndRecordsOnlyFreshUploadEvidence() {
+        val old = SubmittedFileEvidence("attachment-old", "fixture.txt", 3)
+        val fresh = SubmittedFileEvidence("attachment-new", "fixture.txt", 3)
+        val ledger = SubmissionLedger()
+        ledger.begin("chat-1", "request-1", "", 1, listOf(old)); ledger.interrupted(1)
+        assertNull(ledger.retry("chat-1", "request-1", 2))
+        assertNull(ledger.retry("chat-1", "request-1", 2, listOf(fresh, SubmittedFileEvidence("attachment-extra", "extra.txt", 1))))
+        assertEquals(listOf(fresh), ledger.retry("chat-1", "request-1", 2, listOf(fresh))?.files)
+        // A text-only intent cannot silently gain attachments under its old requestId.
+        val text = ledger(); text.interrupted(1)
+        assertNull(text.retry("chat-1", "request-1", 2, listOf(fresh)))
+        assertEquals(DeliveryStatus.UNKNOWN, text.status("chat-1"))
     }
     @Test fun diagnosticsNeverContainTheStoredLiteralOrDestination() {
         val ledger = ledger(text = "synthetic private literal")

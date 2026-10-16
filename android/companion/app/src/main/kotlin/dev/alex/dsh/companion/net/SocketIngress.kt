@@ -3,6 +3,7 @@ package dev.alex.dsh.companion.net
 import dev.alex.dsh.companion.protocol.FollowFrame
 import dev.alex.dsh.companion.protocol.MuxFrame
 import dev.alex.dsh.companion.protocol.NativeCodec
+import dev.alex.dsh.companion.protocol.ProtocolException
 import dev.alex.dsh.companion.protocol.RemoteEventFrame
 import dev.alex.dsh.companion.protocol.requireValue
 import kotlinx.coroutines.CancellationException
@@ -17,12 +18,45 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 internal data class DecodedSocketFrame(
     val mux: MuxFrame,
     val remoteEvent: RemoteEventFrame? = null,
     val followed: FollowFrame? = null,
+    val unsupportedWaterfall: UnsupportedWaterfall? = null,
 )
+
+/** Identity of a live request this app cannot decode: enough for a "see it on the PC" marker, nothing more. */
+internal data class UnsupportedWaterfall(val event: String, val eventId: String, val agentId: String)
+
+/**
+ * Strict for every event frame except a waterfall whose envelope this app cannot decode. That one
+ * is isolated instead of failing the socket, because the gateway re-delivers pending waterfalls
+ * to every new client and a reconnect would fail on it again.
+ */
+internal fun decodeEventItem(mux: MuxFrame.Item): DecodedSocketFrame {
+    val value = mux.requireValue()
+    return try {
+        DecodedSocketFrame(mux, remoteEvent = NativeCodec.remoteEvent(value))
+    } catch (error: ProtocolException) {
+        DecodedSocketFrame(mux, unsupportedWaterfall = unsupportedWaterfallOf(value) ?: throw error)
+    }
+}
+
+private val waterfallAgentId = Regex("^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$")
+
+internal fun unsupportedWaterfallOf(value: JsonElement): UnsupportedWaterfall? {
+    val root = value as? JsonObject ?: return null
+    fun text(key: String): String? = (root[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    if (text("type") != "waterfall") return null
+    val event = text("event")?.takeIf { it.length <= 160 } ?: return null
+    val eventId = text("eventId")?.takeIf { it.isNotBlank() && it.length <= 160 && it.none(Char::isISOControl) } ?: return null
+    val agentId = text("agentId")?.takeIf { waterfallAgentId.matches(it) } ?: return null
+    return UnsupportedWaterfall(event, eventId, agentId)
+}
 
 /**
  * One ordered decoder, with reservations covering queued, executing and publishing frames.
@@ -40,9 +74,9 @@ internal class SocketIngress(
     private val maxQueuedFrames: Int = 256,
     private val decode: suspend (String) -> DecodedSocketFrame = { text ->
         val mux = NativeCodec.mux(text)
-        DecodedSocketFrame(
+        if (mux is MuxFrame.Item && mux.streamId == eventsId) decodeEventItem(mux)
+        else DecodedSocketFrame(
             mux,
-            remoteEvent = if (mux is MuxFrame.Item && mux.streamId == eventsId) NativeCodec.remoteEvent(mux.requireValue()) else null,
             followed = if (mux is MuxFrame.Item && mux.streamId == followId) NativeCodec.follow(mux.requireValue()) else null,
         )
     },

@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody
+import okio.Buffer
 import okio.BufferedSink
 
 /** Codes only: a provider IOException can contain the full private content URI. */
@@ -15,7 +16,10 @@ class FileTransferFailure(val kind: Kind) : IOException("File transfer unavailab
     enum class Kind { STALE, CANCELLED, ALREADY_ATTEMPTED, PERMISSION, SOURCE_UNAVAILABLE, TOO_LARGE, SIZE_MISMATCH, UNKNOWN_UPLOAD }
 }
 
-/** Exact original bytes, never multipart/base64 or file:// HTTP; the producer opens only once. */
+/**
+ * Exact original bytes, never multipart/base64 or file:// HTTP; the producer opens only once.
+ * A known length is sent as Content-Length: the owner host refuses chunked uploads (411).
+ */
 class FileUploadRequestBody internal constructor(
     private val declaredBytes: Long?,
     private val maximumBytes: Long = FileUploadLimits.MAX_BYTES,
@@ -35,8 +39,9 @@ class FileUploadRequestBody internal constructor(
         require(declaredBytes == null || declaredBytes in 0..maximumBytes)
     }
     override fun contentType() = "application/octet-stream".toMediaType()
-    // Provider SIZE is untrusted. Chunk the request; verify actual bytes independently.
-    override fun contentLength(): Long = -1
+    // Provider SIZE is untrusted, so writeTo still verifies the actual bytes against it; a
+    // short or long source fails closed instead of sending a body that disagrees with its header.
+    override fun contentLength(): Long = declaredBytes ?: -1L
     override fun isOneShot(): Boolean = true
 
     fun cancel() {
@@ -78,4 +83,21 @@ class FileUploadRequestBody internal constructor(
         finally { try { input.getAndSet(null)?.close() } catch (_: Exception) { /* No provider URI in diagnostics. */ } }
     }
     override fun toString(): String = "FileUploadRequestBody(redacted)"
+}
+
+/**
+ * The upload request must carry Content-Length. A provider that reports no SIZE is read once,
+ * with the same bounds/checks as the network body, into memory (at most [maximumBytes]) so the
+ * request length is exact. The provider is still opened only once.
+ */
+internal fun knownLengthUploadBody(
+    declaredBytes: Long?,
+    maximumBytes: Long,
+    isCurrent: () -> Boolean,
+    opener: () -> InputStream,
+): FileUploadRequestBody {
+    if (declaredBytes != null) return FileUploadRequestBody(declaredBytes, maximumBytes, isCurrent, opener)
+    val spool = Buffer()
+    FileUploadRequestBody(null, maximumBytes, isCurrent, opener).writeTo(spool)
+    return FileUploadRequestBody(spool.size, maximumBytes, isCurrent) { spool.inputStream() }
 }

@@ -42,4 +42,11 @@ class ConversationIndicatorFactsTest {
     @Test fun noFactsHasNoIndicator() {
         assertFalse(conversationIndicatorFacts(false, false, ConversationAttention()).hasIndicator)
     }
+
+    @Test fun unpresentableRequestStillAsksForTheOwnerAndBlocksWork() {
+        val facts = conversationIndicatorFacts(true, false, ConversationAttention(unsupported = 1))
+        assertFalse(facts.working)
+        assertTrue(facts.awaitingUser)
+        assertTrue(ConversationAttention(unsupported = 1).blocksOnUser)
+    }
 }

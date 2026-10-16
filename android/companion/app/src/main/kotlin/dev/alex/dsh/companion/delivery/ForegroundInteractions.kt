@@ -22,6 +22,11 @@ internal class ForegroundInteractions {
         private set
     private val admitted = mutableMapOf<String, AdmittedChat>()
     private val awaitingAdmission = linkedMapOf<String, RemoteEventFrame.Waterfall>()
+    // eventId -> agentId for live requests this app cannot present (new vocabulary, over a limit).
+    // They are never answered or Next-ed here: the gateway broadcasts each waterfall, so the PC can
+    // still answer, and a host Cancel withdraws the marker. Bounded like every pending request.
+    private val unsupportedRequests = linkedMapOf<String, String>()
+    private val unsupportedAwaitingAdmission = linkedMapOf<String, String>()
 
     fun reset(epoch: Long, authEpoch: Long) {
         require(epoch >= generation) { "interaction-generation" }
@@ -30,6 +35,7 @@ internal class ForegroundInteractions {
         sourceToken = "$authEpoch:$epoch:$nonce"
         ready = false
         admitted.clear(); awaitingAdmission.clear()
+        unsupportedRequests.clear(); unsupportedAwaitingAdmission.clear()
         approvals = ApprovalCoordinator(epoch)
         questions = UserQuestionCoordinator(epoch, sourceToken)
     }
@@ -53,6 +59,7 @@ internal class ForegroundInteractions {
             }
             is RemoteEventFrame.Cancel -> {
                 awaitingAdmission.remove(frame.eventId)
+                unsupportedRequests.remove(frame.eventId); unsupportedAwaitingAdmission.remove(frame.eventId)
                 if (ready) { approvals.receive(frame, epoch); questions.receive(frame, epoch, sourceToken) }
             }
             is RemoteEventFrame.Emit -> Unit
@@ -68,8 +75,21 @@ internal class ForegroundInteractions {
         return null
     }
 
+    /**
+     * A waterfall whose envelope failed strict decoding. It gets the same fresh-admission gate as a
+     * decodable one, but only ever a "see it on the PC" marker, never a response capability.
+     */
+    fun receiveUnsupported(event: String, eventId: String, agentId: String, epoch: Long): String? {
+        if (epoch != generation || !ready || event !in KNOWN) return null
+        if (agentId in admitted) { markUnsupported(eventId, agentId); return null }
+        if (unsupportedAwaitingAdmission.size >= UserQuestionLimits.PENDING && eventId !in unsupportedAwaitingAdmission) return null
+        unsupportedAwaitingAdmission[eventId] = agentId
+        return agentId
+    }
+
     fun hasAdmission(agentId: String): Boolean = agentId in admitted
-    fun needsAdmission(agentId: String): Boolean = awaitingAdmission.values.any { it.agentId == agentId }
+    fun needsAdmission(agentId: String): Boolean =
+        awaitingAdmission.values.any { it.agentId == agentId } || unsupportedAwaitingAdmission.containsValue(agentId)
 
     fun admit(proof: AdmittedChat, epoch: Long, source: String, expectedCreatedAt: Long? = null): Boolean {
         if (epoch != generation || source != sourceToken || proof.admission.generation != epoch) return false
@@ -82,6 +102,9 @@ internal class ForegroundInteractions {
             admitCoordinators(proof)
             val frames = awaitingAdmission.values.filter { it.agentId == proof.chat.id }
             frames.forEach { awaitingAdmission.remove(it.eventId); route(it) }
+            unsupportedAwaitingAdmission.filterValues { it == proof.chat.id }.keys.forEach { eventId ->
+                unsupportedAwaitingAdmission.remove(eventId); markUnsupported(eventId, proof.chat.id)
+            }
         }
         return true
     }
@@ -91,18 +114,33 @@ internal class ForegroundInteractions {
     }
 
     private fun route(frame: RemoteEventFrame.Waterfall) {
-        when (frame.event) {
-            "approval/request" -> {
-                // Admission is checked before this branch, so unsupported/foreign fallback cannot run.
-                approvals.receive(frame, generation)
+        try {
+            when (frame.event) {
+                "approval/request" -> {
+                    // Admission is checked before this branch, so unsupported/foreign fallback cannot run.
+                    approvals.receive(frame, generation)
+                }
+                "user-questions/request" -> questions.receive(frame, generation, sourceToken)
+                else -> Unit
             }
-            "user-questions/request" -> questions.receive(frame, generation, sourceToken)
+        } catch (_: ProtocolException) {
+            // Both coordinators reject before mutating. Failing the carrier instead would loop:
+            // the gateway re-delivers every pending waterfall to the next client.
+            markUnsupported(frame.eventId, frame.agentId)
         }
     }
 
-    fun discardCandidate(agentId: String) { awaitingAdmission.entries.removeAll { it.value.agentId == agentId } }
+    private fun markUnsupported(eventId: String, agentId: String) {
+        if (eventId in unsupportedRequests || unsupportedRequests.size < UserQuestionLimits.PENDING) unsupportedRequests[eventId] = agentId
+    }
+
+    fun discardCandidate(agentId: String) {
+        awaitingAdmission.entries.removeAll { it.value.agentId == agentId }
+        unsupportedAwaitingAdmission.entries.removeAll { it.value == agentId }
+    }
     fun withdraw(agentId: String) {
         admitted.remove(agentId); discardCandidate(agentId)
+        unsupportedRequests.entries.removeAll { it.value == agentId }
         // Ignore withdrawal Next values: closing our UI is not a user decision or a delegation.
         approvals.withdrawAdmission(agentId); questions.withdrawAdmission(agentId)
     }
@@ -118,6 +156,10 @@ internal class ForegroundInteractions {
         approvals.pending().forEach { item ->
             val previous = rows[item.key.agentId] ?: ConversationAttention()
             rows[item.key.agentId] = previous.copy(approvals = previous.approvals + 1)
+        }
+        unsupportedRequests.values.forEach { agentId ->
+            val previous = rows[agentId] ?: ConversationAttention()
+            rows[agentId] = previous.copy(unsupported = previous.unsupported + 1)
         }
         questionPresentations.forEach { item ->
             val previous = rows[item.key.agentId] ?: ConversationAttention()

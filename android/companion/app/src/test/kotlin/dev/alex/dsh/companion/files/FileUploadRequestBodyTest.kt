@@ -8,12 +8,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FileUploadRequestBodyTest {
-    @Test fun binaryBodyIsLazyExactChunkedAndOneShot() {
+    @Test fun binaryBodyIsLazyExactKnownLengthAndOneShot() {
         val bytes = byteArrayOf(0, 1, 13, 10, -1); var opens = 0; var closes = 0
         val body = FileUploadRequestBody(bytes.size.toLong(), isCurrent = { true }, opener = {
             opens++; object : ByteArrayInputStream(bytes) { override fun close() { closes++; super.close() } }
         })
-        assertEquals(0, opens); assertTrue(body.isOneShot()); assertEquals(-1L, body.contentLength())
+        // The owner host frames uploads by Content-Length and answers 411 to a chunked body.
+        assertEquals(0, opens); assertTrue(body.isOneShot()); assertEquals(5L, body.contentLength())
         assertEquals("application/octet-stream", body.contentType().toString())
         val sink = Buffer(); body.writeTo(sink); assertArrayEquals(bytes, sink.readByteArray()); assertEquals(1, opens); assertEquals(1, closes)
         assertEquals(5L, body.bytesWritten); assertTrue(body.fullyWritten)
@@ -63,5 +64,34 @@ class FileUploadRequestBodyTest {
             val body = FileUploadRequestBody(null, maximumBytes = 10, isCurrent = { true }, opener = { ByteArrayInputStream(bytes) })
             val sink = Buffer(); body.writeTo(sink); assertArrayEquals(bytes, sink.readByteArray()); assertTrue(body.fullyWritten)
         }
+    }
+    @Test fun unsizedProviderIsSpooledOnceSoTheRequestCarriesAnExactLength() {
+        val bytes = ByteArray(20_000) { it.toByte() }; var opens = 0
+        val body = knownLengthUploadBody(null, maximumBytes = 50_000, isCurrent = { true }) { opens++; ByteArrayInputStream(bytes) }
+        assertEquals(1, opens); assertEquals(20_000L, body.contentLength())
+        val sink = Buffer(); body.writeTo(sink)
+        assertArrayEquals(bytes, sink.readByteArray()); assertTrue(body.fullyWritten); assertEquals(20_000L, body.bytesWritten)
+        assertEquals(1, opens)
+        assertEquals(FileTransferFailure.Kind.ALREADY_ATTEMPTED, assertThrows(FileTransferFailure::class.java) { body.writeTo(Buffer()) }.kind)
+    }
+    @Test fun declaredSizeIsUsedDirectlyWithoutOpeningBeforeTheRequest() {
+        var opens = 0
+        val body = knownLengthUploadBody(3, maximumBytes = 10, isCurrent = { true }) { opens++; ByteArrayInputStream(byteArrayOf(1, 2, 3)) }
+        assertEquals(0, opens); assertEquals(3L, body.contentLength())
+        val sink = Buffer(); body.writeTo(sink); assertEquals(3L, sink.size); assertEquals(1, opens)
+    }
+    @Test fun spoolKeepsTheByteBudgetCurrencyAndRedaction() {
+        assertEquals(FileTransferFailure.Kind.TOO_LARGE, assertThrows(FileTransferFailure::class.java) {
+            knownLengthUploadBody(null, maximumBytes = 10, isCurrent = { true }) { ByteArrayInputStream(ByteArray(11)) }
+        }.kind)
+        assertEquals(FileTransferFailure.Kind.STALE, assertThrows(FileTransferFailure::class.java) {
+            knownLengthUploadBody(null, maximumBytes = 10, isCurrent = { false }) { ByteArrayInputStream(ByteArray(1)) }
+        }.kind)
+        val failed = assertThrows(FileTransferFailure::class.java) {
+            knownLengthUploadBody(null, maximumBytes = 10, isCurrent = { true }) { throw IOException("content://PRIVATE_BODY") }
+        }
+        assertEquals(FileTransferFailure.Kind.UNKNOWN_UPLOAD, failed.kind); assertFalse(failed.toString().contains("PRIVATE_BODY"))
+        val empty = knownLengthUploadBody(null, maximumBytes = 10, isCurrent = { true }) { ByteArrayInputStream(byteArrayOf()) }
+        assertEquals(0L, empty.contentLength())
     }
 }

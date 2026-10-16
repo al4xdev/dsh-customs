@@ -4,8 +4,8 @@ import java.io.IOException
 import android.content.ContentResolver
 import dev.alex.dsh.companion.files.BoundUploadedFiles
 import dev.alex.dsh.companion.files.FileTransferFailure
-import dev.alex.dsh.companion.files.FileUploadRequestBody
 import dev.alex.dsh.companion.files.SelectedUploadFile
+import dev.alex.dsh.companion.files.knownLengthUploadBody
 import dev.alex.dsh.companion.files.uploadBoundFiles
 import dev.alex.dsh.companion.files.validateSelectedUploads
 import dev.alex.dsh.companion.protocol.FileReceiptCodec
@@ -25,6 +25,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.Buffer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -134,14 +135,16 @@ class OwnerTransport(private val cookies: OwnerCookieJar = OwnerCookieJar()) {
         currentCoroutineContext().ensureActive()
         if (!cookies.authenticated()) throw TransportFailure(TransportFailure.Kind.AUTH_REQUIRED)
         if (!file.draft.matches(binding.draft) || !isCurrent()) throw FileTransferFailure(FileTransferFailure.Kind.STALE)
-        val body = FileUploadRequestBody(file.declaredBytes, maximumBytes,
-            isCurrent = { cookies.authenticated() && isCurrent() }, opener = { file.openForSend(resolver, binding) })
         val url = OwnerOrigin.root.newBuilder().encodedPath("/api/session/uploadFileBinary")
             .addQueryParameter("sessionId", binding.admission.sessionId).addQueryParameter("name", file.name).build()
         check(OwnerOrigin.accepts(url))
-        val request = Request.Builder().url(url).header("Origin", OwnerOrigin.ORIGIN).post(body).build()
+        // A blocking spool of an unsized document cannot observe cancellation itself; fence it per chunk.
+        val job = currentCoroutineContext()[Job]
         try {
-            fileCalls.await(OwnerHttpPolicy.unaryCall(client, request), body) { response ->
+            val body = knownLengthUploadBody(file.declaredBytes, maximumBytes,
+                isCurrent = { job?.isActive != false && cookies.authenticated() && isCurrent() }, opener = { file.openForSend(resolver, binding) })
+            val request = Request.Builder().url(url).header("Origin", OwnerOrigin.ORIGIN).post(body).build()
+            fileCalls.await(OwnerHttpPolicy.uploadCall(client, request, body.contentLength()), body) { response ->
                 val raw = readRpcResponse(response, FileUploadLimits.MAX_RECEIPT_BYTES.toLong())
                 if (response.code != 200 || !body.fullyWritten || !isCurrent()) throw FileTransferFailure(FileTransferFailure.Kind.STALE)
                 FileReceiptCodec.decode(raw, binding, body.bytesWritten)

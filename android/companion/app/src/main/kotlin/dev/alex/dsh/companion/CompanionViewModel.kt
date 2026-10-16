@@ -22,7 +22,10 @@ import dev.alex.dsh.companion.delivery.ForegroundInteractions
 import dev.alex.dsh.companion.delivery.QuestionProjectionFence
 import dev.alex.dsh.companion.delivery.QuestionResponseLedger
 import dev.alex.dsh.companion.delivery.InteractionViewport
+import dev.alex.dsh.companion.delivery.AnswererReconnectPolicy
+import dev.alex.dsh.companion.delivery.NativeGoalPermitAge
 import dev.alex.dsh.companion.delivery.questionAcknowledgement
+import dev.alex.dsh.companion.catalog.ConversationAttention
 import dev.alex.dsh.companion.catalog.ConversationReadNamespace
 import dev.alex.dsh.companion.catalog.ConversationReadState
 import dev.alex.dsh.companion.catalog.ConversationReadStore
@@ -111,6 +114,13 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     private var questionProjectionJob: Job? = null
     private var questionProjectionRequested = false
     private var answererVisibilityJob: Job? = null
+    private val answererRetry = AnswererReconnectPolicy()
+    private var answererRetryJob: Job? = null
+    // A rotation disposes the old composition before the new one claims the workspace.
+    private var workspaceRecreating = false
+    // The live assistant preview hit a limit/new vocabulary; the durable journal still renders.
+    private var assistantLiveDegraded = false
+    private val goalPermits = NativeGoalPermitAge()
     private var selectedOpenJob: Job? = null
     private data class TimedQuestionClaim(val streamId: String, val capability: UserQuestionAttachment, var timer: Job? = null)
     private val timedClaims = mutableMapOf<String, TimedQuestionClaim>()
@@ -317,6 +327,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 mutable.update { it.copy(filePickerPending = pickerTicket != null) }
             }
             answererVisibilityJob?.cancel(); answererVisibilityJob = null
+            answererRetryJob?.cancel(); answererRetryJob = null
             stopActivityReconciliation()
             nativeReadSerial++
             nativeReadJob?.cancel(); nativeReadJob = null
@@ -351,6 +362,8 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             if (restoreOnStart) restoreJob?.cancel()
             return
         }
+        // Returning to the foreground is a fresh start for the automatic reopen ladder.
+        answererRetry.reset()
         if (initialRestorePending) {
             initialRestorePending = false
             restoreLogin(initial = true)
@@ -370,7 +383,11 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         persistReadState()
     }
 
+    /** MainActivity only, from onStop during a configuration change: the UI is recreated, not hidden. */
+    fun holdWorkspaceForRecreation() { workspaceRecreating = true }
+
     override fun setWorkspaceVisibility(owner: Any, catalogVisible: Boolean, conversationVisible: Boolean) {
+        workspaceRecreating = false
         if (uiLifecycle.claimWorkspace(owner)) stopActivityReconciliation()
         setCatalogVisible(catalogVisible)
         setConversationVisible(conversationVisible)
@@ -378,6 +395,12 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     override fun clearWorkspaceVisibility(owner: Any) {
+        if (workspaceRecreating) {
+            // Keep pane visibility, so the answerer and an in-flight send survive until the
+            // recreated composition claims the workspace again (which clears this flag).
+            uiLifecycle.releaseWorkspace(owner)
+            return
+        }
         if (!uiLifecycle.releaseWorkspace(owner)) return
         stopActivityReconciliation()
         setCatalogVisible(false)
@@ -947,7 +970,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         mutable.update { it.copy(selectedId = null, isNewDraft = true, title = "Nova conversa",
             messages = emptyList(), richMessages = emptyList(), streamingText = null, hasMore = false,
             approvals = emptyList(), connected = false, busy = false, presentationPending = false,
-            draft = local.text, error = null, status = "Rascunho local",
+            draft = local.text, error = null, status = "Rascunho local", resendFiles = 0,
             delivery = if (local.phase == NewChatDraftController.Phase.CREATE_UNKNOWN) DeliveryStatus.UNKNOWN else DeliveryStatus.NONE) }
         reconcileAnswererVisibility()
     }
@@ -1003,6 +1026,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 responses.begin(proof.chat.id, epoch)
                 journal = SessionJournal(proof.admission)
                 assistant = AssistantAssembler(epoch)
+                assistantLiveDegraded = false
                 interactions.admit(proof, epoch, interactions.sourceToken)
                 mutable.update { publishVerifiedChat(it, proof).copy(busy = false, status = "Conectando") }
                 openSocket(epoch, proof)
@@ -1015,6 +1039,10 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 failure(error, epoch)
                 if (epoch == generation) updateDelivery()
+                // Offline while the conversation is on screen: keep trying to reopen it (read-only).
+                if (fromDraft == null && epoch == generation && error is TransportFailure && error.kind == TransportFailure.Kind.NETWORK) {
+                    scheduleAnswererReconnect(retryable = true)
+                }
             } finally { if (selectedOpenJob === owner) selectedOpenJob = null }
         }
     }
@@ -1027,7 +1055,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         mutable.update { it.copy(selectedId = null, isNewDraft = false, hasMore = false, presentationPending = false,
             messages = emptyList(), richMessages = emptyList(), streamingText = null,
             approvals = emptyList(), draft = "", connected = false, busy = false, title = "Conversas",
-            status = "Conversas", delivery = DeliveryStatus.NONE) }
+            status = "Conversas", delivery = DeliveryStatus.NONE, resendFiles = 0) }
         reconcileAnswererVisibility()
     }
     private fun currentFileDraft(): UploadDraftIdentity? {
@@ -1067,8 +1095,10 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     /** The platform adapter invokes this only for the explicit 48dp attach action. */
     fun beginFilePicker(): Boolean {
         val current = state.value
+        // An UNKNOWN file prompt may reselect its files, but only to resend that same intent.
         if (!uiLifecycle.started || !current.authenticated || !current.hasOpenConversation || current.busy || activeFileSend != null ||
-            current.filePickerPending || current.delivery in setOf(DeliveryStatus.SENDING, DeliveryStatus.UNKNOWN)) return false
+            current.filePickerPending || current.delivery == DeliveryStatus.SENDING ||
+            current.delivery == DeliveryStatus.UNKNOWN && current.resendFiles == 0) return false
         val draft = currentFileDraft() ?: return false
         if (!current.isNewDraft && (current.selectedId != fileRouteId || fileRouteCreatedAt == null)) {
             mutable.update { it.copy(error = "Aguarde a verificação da conversa antes de selecionar arquivos.") }; return false
@@ -1124,13 +1154,13 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         publishSelectedFiles(); updateDelivery()
     }
 
-    private fun captureFileSend(literal: String): FileSendIntent? {
+    private fun captureFileSend(literal: String, requestId: String = id()): FileSendIntent? {
         val draft = currentFileDraft() ?: return null
         if (selectedFiles.isEmpty() || filesNeedReselect || activeFileSend != null || state.value.filePickerPending) return null
         try { validateSelectedUploads(selectedFiles, draft) } catch (_: IllegalArgumentException) {
             mutable.update { it.copy(error = "Seleção indisponível. Selecione até 4 arquivos com total de até 20 MiB.") }; return null
         }
-        return FileSendIntent(draft, selectedFiles.toList(), literal, id(), generation, fileRouteId, fileRouteCreatedAt).also { activeFileSend = it }
+        return FileSendIntent(draft, selectedFiles.toList(), literal, requestId, generation, fileRouteId, fileRouteCreatedAt).also { activeFileSend = it }
     }
 
     private fun fileSendCurrent(intent: FileSendIntent, sessionId: String, createdAt: Long, epoch: Long): Boolean {
@@ -1151,7 +1181,12 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     override fun reconnect() {
         val selected = state.value.selectedId
         if (state.value.busy) return
-        if (selected == null) refresh() else select(selected)
+        answererRetry.reset()
+        if (selected == null) {
+            refresh()
+            // The events carrier does not depend on the catalog read succeeding.
+            reconcileAnswererVisibility()
+        } else select(selected)
     }
 
     override fun send() {
@@ -1163,6 +1198,37 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             current.delivery == DeliveryStatus.UNKNOWN || current.delivery == DeliveryStatus.SENDING) return
         val files = if (selectedFiles.isNotEmpty()) captureFileSend(current.draft) ?: return else null
         if (!submitAdmitted(proof, current.draft, files?.requestId ?: id(), generation, files = files) && files != null) retireFileSend()
+    }
+
+    /**
+     * Explicit owner action for an UNKNOWN delivery; nothing calls this automatically. A chat prompt
+     * is resent with its original requestId and literal (the host admits a requestId once), files
+     * via a fresh reselection. An uncertain "Nova conversa" is released and created again: at
+     * worst an extra empty chat remains, which is harmless, unlike a silent repeat.
+     */
+    override fun resendUncertain() {
+        val current = state.value
+        if (!current.authenticated || current.busy || current.delivery != DeliveryStatus.UNKNOWN ||
+            current.filePickerPending || activeFileSend != null) return
+        if (current.isNewDraft) {
+            if (current.selectedId != null) return
+            newChatDraft.edit(current.draft)
+            if (!newChatDraft.releaseUncertainCreate()) return
+            updateDelivery()
+            sendFirstDraft()
+            return
+        }
+        val proof = admitted ?: return
+        if (!current.connected || current.selectedId != proof.chat.id) return
+        val entry = submissions.entry(proof.chat.id)?.takeIf { it.status == DeliveryStatus.UNKNOWN } ?: return
+        val files = if (entry.files.isEmpty()) null else {
+            if (filesNeedReselect || selectedFiles.size != entry.files.size) {
+                mutable.update { it.copy(error = "Selecione novamente os mesmos arquivos antes de reenviar.") }
+                return
+            }
+            captureFileSend(entry.text, entry.requestId) ?: return
+        }
+        if (!submitAdmitted(proof, entry.text, entry.requestId, generation, files = files, resend = true) && files != null) retireFileSend()
     }
 
     private fun sendFirstDraft() {
@@ -1214,7 +1280,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun submitAdmitted(proof: AdmittedChat, literal: String, requestId: String, epoch: Long,
-        fromDraft: NewChatDraftController.Ticket? = null, files: FileSendIntent? = null): Boolean {
+        fromDraft: NewChatDraftController.Ticket? = null, files: FileSendIntent? = null, resend: Boolean = false): Boolean {
         if (epoch != generation || admitted !== proof || proof.admission.generation != epoch ||
             state.value.selectedId != proof.chat.id || !state.value.authenticated || !state.value.connected) return false
         // Stream publications during header preflight must not enable a second tap.
@@ -1273,11 +1339,14 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 val rpcId = id()
                 val body = if (uploaded != null) NativeFileRequests.prompt(rpcId, proof.admission, requestId, literal, uploaded.receipts, uploaded.binding)
                     else NativeRequests.prompt(rpcId, proof.admission, requestId, literal)
-                if (!responses.prepare(requestId, literal, journal?.state()?.cursor ?: -1, epoch, evidence)) {
+                // A resend in the same carrier is already tracked under this requestId; that is not a refusal.
+                if (!responses.prepare(requestId, literal, journal?.state()?.cursor ?: -1, epoch, evidence) && !resend) {
                     mutable.update { it.copy(error = "Não enviado: reconecte a conversa para renovar o acompanhamento.") }
                     return@launch
                 }
-                if (submissions.begin(proof.chat.id, requestId, literal, epoch, evidence) == null) { updateDelivery(); return@launch }
+                val ledgerEntry = if (resend) submissions.retry(proof.chat.id, requestId, epoch, evidence)
+                    else submissions.begin(proof.chat.id, requestId, literal, epoch, evidence)
+                if (ledgerEntry == null) { updateDelivery(); return@launch }
                 if (files != null) {
                     if (!fileSendCurrent(files, proof.chat.id, uploaded!!.binding.sessionCreatedAt, epoch)) {
                         submissions.refusedBeforePost(proof.chat.id, requestId); return@launch
@@ -1294,7 +1363,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 if (epoch == generation) publish()
             } catch (error: Exception) {
                 if (postAttempted) submissions.interrupted(epoch)
-                failure(error, epoch, if (postAttempted) "Envio sem confirmação. Não reenviar: a mensagem pode ter sido admitida."
+                failure(error, epoch, if (postAttempted) "Envio sem confirmação. Use Reenviar: o mesmo identificador não duplica a mensagem."
                     else if (!modelPrepared) "Não enviado: verificação da conversa ou escolha global sem confirmação. Atualize o estado antes de tentar novamente."
                     else if (files?.uploadStarted == true) "Arquivos sem confirmação de envio da mensagem. Remova-os ou selecione-os novamente; não haverá repetição automática."
                     else "Não enviado: a verificação da conversa falhou.")
@@ -1353,6 +1422,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         nativeReadJob = viewModelScope.launch {
             delay(180)
             try {
+                val readSentAt = goalPermits.now()
                 val rpcId = id()
                 val result = unaryResult("nativeGoals/read", rpcId, NativeGoalRequests.read(rpcId, proof.admission), allowRefusal = true)
                 if (epoch != generation || admitted !== proof || serial != nativeReadSerial || hostEpoch != hostObservation.epoch || hostObservation.suspended) return@launch
@@ -1370,6 +1440,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                         error = "O estado do goal mudou durante a consulta. Atualize para confirmar.")) }
                     return@launch
                 }
+                current.control?.let { goalPermits.issued(it.permit, readSentAt) }
                 mutable.update { it.copy(nativeGoals = current) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -1381,8 +1452,18 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     override fun controlNativeGoal(expected: NativeGoalControl, action: NativeGoalAction) {
+        controlNativeGoal(expected, action, renewed = false)
+    }
+
+    private fun controlNativeGoal(expected: NativeGoalControl, action: NativeGoalAction, renewed: Boolean) {
         val proof = admitted ?: return
         val snapshot = state.value
+        // The host permit lives 30 s; a stale one would be refused and turn this tap "uncertain".
+        // Renew at most once per tap, so a slow link cannot loop reads.
+        if (!renewed && expected == snapshot.nativeGoals.control && !goalPermits.fresh(expected.permit)) {
+            renewNativeGoalPermit(proof, expected, action)
+            return
+        }
         if (hostObservation.suspended || opening || !nativeGoalOnce.acquire(expected, snapshot.nativeGoals, proof.chat.id, generation,
                 snapshot.authenticated, snapshot.connected, action)) return
         val epoch = generation
@@ -1392,6 +1473,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 if (epoch != generation || admitted !== proof || !state.value.connected) return@launch
+                val controlSentAt = goalPermits.now()
                 val rpcId = id()
                 if (serial != nativeReadSerial || hostObservation.suspended) {
                     mutable.update { it.copy(nativeGoals = it.nativeGoals.copy(pending = false, uncertain = true, control = null)) }
@@ -1408,6 +1490,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     val current = accepted?.takeIf { it.ready }?.let {
                         NativeGoalsCodec.catchUpRead(observed, it.records, it.cursor)
                     }
+                    current?.control?.let { goalPermits.issued(it.permit, controlSentAt) }
                     mutable.update { it.copy(nativeGoals = current ?: it.nativeGoals.copy(pending = false,
                         uncertain = true, control = null, error = "Atualize para confirmar o estado após o controle.")) }
                 } else {
@@ -1422,6 +1505,48 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     error = "Controle sem confirmação. Não reenviado; atualize para reconciliar.")) }
                 if (error is TransportFailure && error.kind == TransportFailure.Kind.AUTH_REQUIRED) failure(error, epoch)
             }
+        }
+    }
+
+    /** Read a fresh permit, then act once, only if the same goal revision still allows this action. */
+    private fun renewNativeGoalPermit(proof: AdmittedChat, expected: NativeGoalControl, action: NativeGoalAction) {
+        val snapshot = state.value
+        if (hostObservation.suspended || opening || snapshot.nativeGoals.pending || !snapshot.authenticated || !snapshot.connected ||
+            snapshot.selectedId != proof.chat.id) return
+        val epoch = generation
+        val serial = ++nativeReadSerial
+        val hostEpoch = hostObservation.epoch
+        nativeReadJob?.cancel()
+        nativeReadJob = viewModelScope.launch {
+            val owner = currentCoroutineContext().job
+            try {
+                val readSentAt = goalPermits.now()
+                val rpcId = id()
+                val result = unaryResult("nativeGoals/read", rpcId, NativeGoalRequests.read(rpcId, proof.admission), allowRefusal = true)
+                if (epoch != generation || admitted !== proof || serial != nativeReadSerial || hostEpoch != hostObservation.epoch || hostObservation.suspended) return@launch
+                val accepted = journal?.state()
+                val current = if (result is RpcResult.Failure || accepted == null || !accepted.ready) null
+                    else NativeGoalsCodec.catchUpRead(NativeGoalsCodec.read(result.requireValue(), proof.chat.id, epoch), accepted.records, accepted.cursor)
+                if (current == null) {
+                    mutable.update { it.copy(nativeGoals = it.nativeGoals.copy(control = null,
+                        error = "Não foi possível renovar o controle do goal. Atualize e tente novamente.")) }
+                    return@launch
+                }
+                val fresh = current.control
+                fresh?.let { goalPermits.issued(it.permit, readSentAt) }
+                mutable.update { it.copy(nativeGoals = current) }
+                if (nativeReadJob === owner) nativeReadJob = null
+                if (fresh != null && fresh.goalId == expected.goalId && fresh.revision == expected.revision) {
+                    controlNativeGoal(fresh, action, renewed = true)
+                } else {
+                    mutable.update { it.copy(nativeGoals = it.nativeGoals.copy(error = "O goal mudou. Confira o estado antes de controlar.")) }
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                if (epoch != generation || serial != nativeReadSerial) return@launch
+                mutable.update { it.copy(nativeGoals = it.nativeGoals.copy(control = null, error = "Não foi possível renovar o controle do goal.")) }
+                if (error is TransportFailure && error.kind == TransportFailure.Kind.AUTH_REQUIRED) failure(error, epoch)
+            } finally { if (nativeReadJob === owner) nativeReadJob = null }
         }
     }
 
@@ -1871,9 +1996,16 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         }
         val keys = pendingQuestions.map { it.key }.toSet()
         timedClaims.values.filter { it.capability.key !in keys }.map { it.capability.key }.toList().forEach(::closeTimedClaim)
+        val projectionCurrent = questionProjection.current() != null
+        val selectedId = admitted?.chat?.id
+        val attention = interactions.attention(pendingQuestions).let { rows ->
+            // A continued question this app cannot present is still the owner's to answer, on the PC.
+            if (selectedId == null || !interactions.ready || !questionProjection.unpresentable) rows
+            else rows + (selectedId to (rows[selectedId] ?: ConversationAttention()).let { it.copy(unsupported = it.unsupported + 1) })
+        }
         mutable.update { it.copy(approvals = approvals.pending(), questions = pendingQuestions,
-            chatAttention = interactions.attention(pendingQuestions), answererConnected = interactions.ready && !opening,
-            questionProjectionCurrent = questionProjection.current() != null) }
+            chatAttention = attention, answererConnected = interactions.ready && !opening,
+            questionProjectionCurrent = projectionCurrent) }
         publishInteractionCheckHints()
     }
 
@@ -1968,7 +2100,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             onFailure = { error -> if (connectionSerial == socketSerial) disconnect(epoch, error) })
         ingress?.close()
         ingress = reader
-        socket = transport.socket(object : WebSocketListener() {
+        val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 viewModelScope.launch {
                     if (epoch != generation || connectionSerial != socketSerial || !answererVisible()) { webSocket.cancel(); return@launch }
@@ -1976,19 +2108,39 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     try {
                         check(webSocket.send(NativeRequests.events(eventsId)))
                         if (proof != null) check(webSocket.send(NativeRequests.follow(followId, proof.admission)))
-                    } catch (error: Exception) { disconnect(epoch, error) }
+                    } catch (error: Exception) { disconnect(epoch, error, retryable = true) }
                 }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 reader.offer(text)
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                // A refused upgrade would be refused again; an explicit Reconectar re-checks login.
+                val refused = response?.code == 401 || response?.code == 403
+                viewModelScope.launch { if (connectionSerial == socketSerial) disconnect(epoch, null, retryable = !refused) }
+            }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // The peer sends nothing more. Finish the close handshake now: without it OkHttp
+                // never reports onClosed and this carrier would look alive while delivering nothing.
+                webSocket.close(1000, null)
                 viewModelScope.launch { if (connectionSerial == socketSerial) disconnect(epoch, null) }
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 viewModelScope.launch { if (connectionSerial == socketSerial) disconnect(epoch, null) }
             }
-        })
+        }
+        socket = try {
+            transport.socket(listener)
+        } catch (error: Exception) {
+            // No saved cookie (AUTH_REQUIRED) or a refused client must neither crash the owner
+            // scope nor strand opening=true, which would block every later reopen.
+            reader.close()
+            if (ingress === reader) ingress = null
+            opening = false
+            if (error is TransportFailure && error.kind == TransportFailure.Kind.AUTH_REQUIRED) failure(error, epoch)
+            else disconnect(epoch, error)
+            return
+        }
     }
 
     private fun incoming(decoded: DecodedSocketFrame, epoch: Long) {
@@ -2001,17 +2153,28 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         }
         when (frame) {
             is MuxFrame.Item -> if (frame.streamId == eventStream) {
+                decoded.unsupportedWaterfall?.let { item ->
+                    // Marked "see it on the PC", never answered, and the carrier stays up.
+                    interactions.receiveUnsupported(item.event, item.eventId, item.agentId, epoch)?.let(::requestInteractionAdmission)
+                    publishInteractions()
+                    return
+                }
                 val event = requireNotNull(decoded.remoteEvent)
                 interactions.receive(event, epoch)?.let(::requestInteractionAdmission)
                 if (event is RemoteEventFrame.Ready) {
                     eventsReady = true
+                    answererRetry.ready()
+                    mutable.update { it.copy(answererUnavailable = false) }
                     reconcileQuestionProjection()
                     refreshQuestionProjection()
                 }
                 if (event is RemoteEventFrame.Emit) {
                     responses.status(event, epoch)
-                    val rows = NativeActivityEvents.receive(state.value.chatActivity, event, ownedSessionIds)
-                    val goalState = NativeActivityEvents.activation(state.value.nativeGoals, event)
+                    // Emits are broadcast presentation hints: drop a malformed one (and its controls), not the carrier.
+                    val rows = try { NativeActivityEvents.receive(state.value.chatActivity, event, ownedSessionIds) }
+                        catch (_: ProtocolException) { state.value.chatActivity }
+                    val goalState = try { NativeActivityEvents.activation(state.value.nativeGoals, event) }
+                        catch (_: ProtocolException) { state.value.nativeGoals.copy(control = null) }
                     if (rows != state.value.chatActivity) activitySerial++
                     if (goalState != state.value.nativeGoals) nativeReadSerial++
                     mutable.update { it.copy(chatActivity = if (hostObservation.suspended || hostActivityNeedsRead) emptyMap() else rows,
@@ -2036,13 +2199,22 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                         reconcileQuestionProjection()
                         nativeReadSerial++
                         val sid = admitted?.chat?.id ?: error("missing-admission")
-                        mutable.update { it.copy(nativeGoals = NativeGoalsCodec.snapshot(sid, followed.projections, followed.page.records, followed.cursor)) }
-                        followed.assistantStream?.let { assistant.baseline(it, epoch, followed.cursor) }
+                        val goals = try { NativeGoalsCodec.snapshot(sid, followed.projections, followed.page.records, followed.cursor) }
+                            catch (_: ProtocolException) { NativeGoalsState(sessionId = sid, error = UNPRESENTABLE_GOALS) }
+                        mutable.update { it.copy(nativeGoals = goals) }
+                        followed.assistantStream?.let { stream ->
+                            try { assistant.baseline(stream, epoch, followed.cursor) }
+                            catch (_: ProtocolException) { degradeAssistant(epoch, followed.cursor) }
+                        }
                         responses.snapshot(followed.page.records, assistant.state(), epoch)
                         admitted?.let { proof -> mutable.update { publishFollowTitle(it, proof, followed, update) } }
                     }
-                    is FollowFrame.Assistant -> if (update is JournalUpdate.Assistant) {
-                        when (assistant.frame(followed.frame, epoch)) {
+                    is FollowFrame.Assistant -> if (update is JournalUpdate.Assistant && !assistantLiveDegraded) {
+                        val result = try { assistant.frame(followed.frame, epoch) } catch (_: ProtocolException) {
+                            degradeAssistant(epoch, journal?.state()?.cursor ?: -1L)
+                            AssistantUpdate.Ignored
+                        }
+                        when (result) {
                             AssistantUpdate.RebaselineRequired -> { disconnect(epoch, null); return }
                             AssistantUpdate.Ignored -> Unit
                             else -> responses.assistant(assistant.state(), epoch)
@@ -2054,7 +2226,10 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                             reconcileQuestionProjection()
                             responses.event(followed.event, epoch)
                             val before = state.value.nativeGoals
-                            val after = NativeGoalsCodec.event(before, followed.event)
+                            // Goal/TODO are presentation; an over-limit change withholds controls, not the carrier.
+                            val after = try { NativeGoalsCodec.event(before, followed.event) } catch (_: ProtocolException) {
+                                before.copy(knowledge = NativeKnowledge.UNKNOWN, control = null, asOfSeq = followed.event.seq, error = UNPRESENTABLE_GOALS)
+                            }
                             if (after != before) {
                                 // Journal progress is reconciled against the RPC cut, not a new request.
                                 // Incrementing here lets every streamed token retire an in-flight read.
@@ -2067,7 +2242,11 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                                 }
                             }
                         }
-                        if (assistant.durable(followed.event, epoch) != AssistantUpdate.Ignored) responses.assistant(assistant.state(), epoch)
+                        val durable = try { assistant.durable(followed.event, epoch) } catch (_: ProtocolException) {
+                            degradeAssistant(epoch, journal?.state()?.cursor ?: -1L)
+                            AssistantUpdate.Ignored
+                        }
+                        if (durable != AssistantUpdate.Ignored) responses.assistant(assistant.state(), epoch)
                     }
                 }
                 publish()
@@ -2076,8 +2255,23 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 if (followed is FollowFrame.Snapshot || followed is FollowFrame.Event &&
                     followed.event.type in setOf("goal/change", "todo/write", "turn/start", "turn/end", "user/message")) refreshNativeGoals()
             }
-            is MuxFrame.End, is MuxFrame.Error -> if (frame.streamId == followStream || frame.streamId == eventStream) disconnect(epoch, null)
+            // A stream the host ended may reopen; one it refused with an error waits for Reconectar.
+            is MuxFrame.End, is MuxFrame.Error -> if (frame.streamId == followStream || frame.streamId == eventStream) {
+                disconnect(epoch, null, retryable = frame is MuxFrame.End)
+            }
         }
+    }
+
+    /**
+     * The live assistant preview is presentation only. If it exceeds a limit or uses new vocabulary,
+     * drop it for this carrier instead of the whole connection (whose reopen would hit the same
+     * baseline). The durable journal still delivers the committed message and every approval.
+     */
+    private fun degradeAssistant(epoch: Long, cursor: Long) {
+        assistantLiveDegraded = true
+        assistant = AssistantAssembler(epoch).also { it.baseline(JsonObject(mapOf("revision" to JsonPrimitive(0))), epoch, cursor) }
+        responses.assistant(assistant.state(), epoch)
+        mutable.update { it.copy(error = "Prévia ao vivo indisponível para esta resposta; o texto aparece quando ela terminar (ou veja no PC).") }
     }
 
     private fun publish() {
@@ -2131,7 +2325,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     private fun updateDelivery() {
         if (state.value.isNewDraft && state.value.selectedId == null) {
             val local = newChatDraft.snapshot()
-            mutable.update { it.copy(delivery = when {
+            mutable.update { it.copy(resendFiles = 0, delivery = when {
                 local.pending -> DeliveryStatus.SENDING
                 local.phase == NewChatDraftController.Phase.CREATE_UNKNOWN -> DeliveryStatus.UNKNOWN
                 else -> DeliveryStatus.NONE
@@ -2153,12 +2347,15 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val pending = firstDraft
         val preparingFirst = pending != null && pending.sessionId == sessionId && pending.generation == generation &&
             newChatDraft.current(pending.ticket, generation, sessionId)
-        mutable.update { it.copy(delivery = if (preparingFirst || preparations.active(sessionId)) DeliveryStatus.SENDING else submissions.status(sessionId)) }
+        val uncertainFiles = submissions.entry(sessionId)?.takeIf { it.status == DeliveryStatus.UNKNOWN }?.files?.size ?: 0
+        mutable.update { it.copy(resendFiles = uncertainFiles,
+            delivery = if (preparingFirst || preparations.active(sessionId)) DeliveryStatus.SENDING else submissions.status(sessionId)) }
     }
 
     /** Hiding panes revokes only the answerer; settings/model reads keep their own generation. */
     private fun suspendAnswerer() {
         retireFileSend()
+        answererRetryJob?.cancel(); answererRetryJob = null
         val wasOpeningSelected = selectedOpenJob?.isActive == true
         socketSerial++
         closeInteractionIO()
@@ -2166,13 +2363,16 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         socket?.cancel(); socket = null
         eventsReady = false; opening = false; admitted = null; journal = null
         interactions.reset(generation, readScopeAuthEpoch)
-        mutable.update { it.copy(connected = false, busy = if (wasOpeningSelected) false else it.busy, answererConnected = false, approvals = emptyList(), questions = emptyList(),
+        mutable.update { it.copy(connected = false, busy = if (wasOpeningSelected) false else it.busy, answererConnected = false,
+            answererUnavailable = false, approvals = emptyList(), questions = emptyList(),
             chatAttention = emptyMap(), questionProjectionCurrent = false, streamingText = null, presentationPending = false,
             richMessages = it.richMessages.map { message -> if (message.streaming) message.copy(streaming = false, interrupted = true) else message },
             status = "Conversa suspensa") }
     }
 
     private fun resetConnection(preserveDraft: NewChatDraftController.Ticket? = null) {
+        // A deliberate reset owns its own reopen; a pending automatic one would only race it.
+        answererRetryJob?.cancel(); answererRetryJob = null
         stopActivityReconciliation()
         socketSerial++
         closeInteractionIO()
@@ -2193,14 +2393,16 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         images.clear()
         mutable.update { it.copy(connectionGeneration = generation, response = responses.state(), settings = it.settings.copy(loading = false),
             nativeGoals = NativeGoalsState(), chatActivity = emptyMap(), connected = false,
-            approvals = emptyList(), questions = emptyList(), chatAttention = emptyMap(), answererConnected = false, questionProjectionCurrent = false) }
+            approvals = emptyList(), questions = emptyList(), chatAttention = emptyMap(), answererConnected = false,
+            answererUnavailable = false, questionProjectionCurrent = false) }
         modelCatalogSerial++
         catalogSerial++
         socket?.cancel(); socket = null
         eventsReady = false; opening = false; admitted = null; journal = null
         interactions.reset(generation, readScopeAuthEpoch)
     }
-    private fun disconnect(epoch: Long, error: Exception?) {
+    /** [retryable] false: a data error or refused upgrade, which only an explicit Reconectar retries. */
+    private fun disconnect(epoch: Long, error: Exception?, retryable: Boolean = error == null) {
         if (epoch != generation) return
         retireFileSend()
         newChatDraft.interrupt(epoch)
@@ -2223,10 +2425,30 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         eventsReady = false; opening = false; admitted = null; journal = null
         interactions.reset(generation, readScopeAuthEpoch)
         mutable.update { it.copy(connected = false, busy = false, approvals = emptyList(), questions = emptyList(),
-            chatAttention = emptyMap(), answererConnected = false, questionProjectionCurrent = false, streamingText = null, presentationPending = false,
+            chatAttention = emptyMap(), answererConnected = false, answererUnavailable = true, questionProjectionCurrent = false,
+            streamingText = null, presentationPending = false,
             richMessages = it.richMessages.map { message -> if (message.streaming) message.copy(streaming = false, interrupted = true) else message },
             status = "Desconectado", error = if (error == null) "Conexão encerrada. Reconecte para obter um histórico confirmado." else "Dados não suportados. Reconecte sem reenviar mensagens.") }
         updateDelivery()
+        scheduleAnswererReconnect(retryable)
+    }
+
+    /**
+     * While an answerer pane is visible, reopen a lost carrier with bounded backoff, so approvals and
+     * questions do not stop silently. This only re-reads (detail + follow/events); it never
+     * replays a prompt, answer or control. The gateway re-delivers pending waterfalls on reopen.
+     */
+    private fun scheduleAnswererReconnect(retryable: Boolean) {
+        answererRetryJob?.cancel(); answererRetryJob = null
+        if (!answererVisible()) return
+        val wait = answererRetry.failed(retryable) ?: return
+        val epoch = generation
+        answererRetryJob = viewModelScope.launch {
+            delay(wait)
+            if (epoch != generation || socket != null || opening || !answererVisible()) return@launch
+            // Another read (e.g. a catalog refresh) owns busy right now; try again on the next step.
+            if (state.value.busy) scheduleAnswererReconnect(retryable = true) else reconcileAnswererVisibility()
+        }
     }
     private suspend fun unary(method: String, rpcId: String, body: String): JsonElement = unaryResult(method, rpcId, body).requireValue()
     private suspend fun unaryResult(method: String, rpcId: String, body: String, allowRefusal: Boolean = false): RpcResult = coroutineScope {
@@ -2269,6 +2491,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     override fun onCleared() { revokeReadAuthority(); revokeNotificationAuthority(); resetConnection(); transport.close() }
     private companion object {
         fun id(): String = UUID.randomUUID().toString()
+        const val UNPRESENTABLE_GOALS = "Goal ou TODO desta conversa não pode ser exibido aqui; veja no PC."
         val FOREGROUND_READ_METHODS = dev.alex.dsh.companion.net.NativeRpcPolicy.foregroundReads
         val MODEL_REFUSALS = setOf("model-invalid-request", "model-unavailable", "model-read-only", "model-default-conflict", "model-catalog-unavailable", "model-catalog-limit")
             .map { "companion/$it" }.toSet()

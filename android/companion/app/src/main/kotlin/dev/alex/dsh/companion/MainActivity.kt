@@ -95,8 +95,14 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        // Fence callbacks before the platform releases this Activity's visible surface.
-        controller.setAppVisibility(started = false, resumed = false)
+        if (isChangingConfigurations) {
+            // Rotation/resize recreates only this Activity. The ViewModel, its carrier and any
+            // in-flight send survive; suspending them here would turn a SENDING prompt UNKNOWN.
+            controller.holdWorkspaceForRecreation()
+        } else {
+            // Fence callbacks before the platform releases this Activity's visible surface.
+            controller.setAppVisibility(started = false, resumed = false)
+        }
         super.onStop()
     }
 

@@ -14,6 +14,7 @@ internal fun retainedCatalog(cached: CompanionUiState, current: CompanionUiState
         chatUnread = current.chatUnread.intersect(sameIncarnation),
         chatAttention = current.chatAttention.filterKeys { it in sameIncarnation },
         answererConnected = current.answererConnected,
+        answererUnavailable = current.answererUnavailable,
         questionProjectionCurrent = false,
     )
 }

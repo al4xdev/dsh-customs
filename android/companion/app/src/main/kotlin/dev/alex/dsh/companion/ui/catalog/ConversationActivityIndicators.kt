@@ -50,7 +50,8 @@ internal fun ConversationActivityIndicators(
         if (facts.working) add("Agente trabalhando")
         if (facts.awaitingUser) add(when {
             attention.approvals > 0 -> "Aguardando você: permissão pendente"
-            else -> "Aguardando você: pergunta pendente"
+            attention.blockingQuestions + attention.continuedQuestions > 0 -> "Aguardando você: pergunta pendente"
+            else -> "Aguardando você no PC: pedido não exibível aqui"
         })
         if (facts.pendingConfirmation) add("Resposta enviada; confirmação pendente")
         // Preserve the standalone accessibility label while keeping combined states natural.

@@ -240,6 +240,39 @@ class NewChatDraftControllerTest {
         assertTrue(gate.active(sid))
     }
 
+    @Test fun ownerCanReleaseAnUncertainCreateForOneDeliberateNewCreate() {
+        val controller = local()
+        val ticket = started(controller)
+        assertTrue(controller.markCreateAttempted(ticket, 1))
+        controller.failed(ticket, 1)
+        assertEquals(NewChatDraftController.Phase.CREATE_UNKNOWN, controller.snapshot().phase)
+        assertTrue(controller.releaseUncertainCreate())
+        assertEquals(NewChatDraftController.Phase.LOCAL, controller.snapshot().phase)
+        assertEquals(literal, controller.snapshot().text)
+        assertNull(controller.snapshot().sessionId)
+        assertFalse(controller.releaseUncertainCreate())
+        // The released attempt's late receipt neither identifies a root nor reaches navigation.
+        assertFalse(controller.created(ticket, 1, sid))
+        assertNull(controller.snapshot().sessionId)
+        assertNotNull(controller.begin(2))
+        assertNull(controller.begin(2))
+    }
+
+    @Test fun releaseNeverDropsAKnownRootAnInFlightCreateOrALocalDraft() {
+        val known = local()
+        created(known)
+        known.interrupt(1)
+        assertFalse(known.releaseUncertainCreate())
+        assertEquals(sid, known.snapshot().sessionId)
+        val inFlight = local()
+        val ticket = started(inFlight)
+        assertTrue(inFlight.markCreateAttempted(ticket, 1))
+        assertFalse(inFlight.releaseUncertainCreate())
+        assertTrue(inFlight.snapshot().pending)
+        assertTrue(inFlight.current(ticket, 1))
+        assertFalse(local().releaseUncertainCreate())
+    }
+
     @Test fun diagnosticsDoNotDiscloseTextDestinationOrTicketSerial() {
         val controller = local()
         val ticket = created(controller)

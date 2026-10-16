@@ -67,6 +67,24 @@ class OwnerCookiePersistenceTest {
         assertTrue(store.saved.isEmpty())
     }
 
+    @Test fun aNewLinkKeepsTheSavedLoginUntilTheNewOneIsProven() {
+        val store = MemoryStore().apply { saved = listOf(cookie(name = "dsh-auth-previous")) }
+        val jar = OwnerCookieJar(store)
+        assertTrue(jar.restore())
+        jar.beginLogin()
+        // The startup request carries no previous credential, but nothing on disk is erased yet.
+        assertFalse(jar.authenticated())
+        assertEquals(0, store.clears); assertEquals(listOf("dsh-auth-previous"), store.saved.map { it.name })
+        jar.forgetMemory() // what a refused or invalid link does
+        assertTrue(OwnerCookieJar(store).restore())
+        jar.beginLogin()
+        jar.saveFromResponse(OwnerOrigin.root, listOf(cookie(name = "dsh-auth-current")))
+        assertEquals(listOf("dsh-auth-previous"), store.saved.map { it.name })
+        jar.commitLogin()
+        assertEquals(listOf("dsh-auth-current"), store.saved.map { it.name })
+        assertEquals(0, store.clears)
+    }
+
     @Test fun explicitForgetRemovesBothSavedAndRamCredentials() {
         val store = MemoryStore()
         val jar = OwnerCookieJar(store)

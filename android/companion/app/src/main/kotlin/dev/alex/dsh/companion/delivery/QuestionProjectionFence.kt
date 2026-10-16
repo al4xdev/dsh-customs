@@ -15,7 +15,7 @@ internal class QuestionProjectionFence {
     private var invalidatedThrough = -1L
     private var candidate: ProjectionBaseline? = null
 
-    fun clear() { cursor = -1; invalidatedThrough = -1; candidate = null }
+    fun clear() { cursor = -1; invalidatedThrough = -1; candidate = null; unpresentable = false }
     fun unavailable() { candidate = null }
     fun snapshot(frame: FollowFrame.Snapshot) {
         cursor = frame.cursor
@@ -37,11 +37,25 @@ internal class QuestionProjectionFence {
         candidate = baseline
         return true
     }
+    /**
+     * The last current() saw a projection this app cannot present (a question over a limit or in new
+     * vocabulary). Its continued card is withheld and the owner answers on the PC.
+     */
+    var unpresentable = false
+        private set
+
     fun current(): UserQuestionProjection? {
+        unpresentable = false
         val baseline = candidate ?: return null
         if (baseline.asOfSeq > cursor || baseline.asOfSeq < invalidatedThrough) return null
         val value = baseline.values["userQuestions"] ?: return null
-        return UserQuestionCodec.projection(value)
+        return try {
+            UserQuestionCodec.projection(value)
+        } catch (_: ProtocolException) {
+            // Throwing would fail the follow carrier, whose reopen replays this same projection.
+            unpresentable = true
+            null
+        }
     }
 
     companion object {

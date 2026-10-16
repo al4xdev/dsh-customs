@@ -17,6 +17,8 @@ class SubmissionLedger {
         val generation: Long,
         val status: DeliveryStatus,
         val files: List<SubmittedFileEvidence> = emptyList(),
+        // Set by an explicit resend: its first attempt may have been admitted, so never forget it.
+        val resent: Boolean = false,
     ) {
         // An accidental diagnostic must not disclose a destination or literal prompt.
         override fun toString(): String = "SubmissionLedger.Entry(generation=$generation,status=$status)"
@@ -32,6 +34,24 @@ class SubmissionLedger {
         val previous = entries[sessionId]
         if (previous?.status == DeliveryStatus.SENDING || previous?.status == DeliveryStatus.UNKNOWN || previous?.requestId == requestId) return null
         val entry = Entry(sessionId, requestId, text, generation, DeliveryStatus.SENDING, files.toList())
+        entries[sessionId] = entry
+        return entry
+    }
+
+    /**
+     * Explicit owner "Reenviar" of an UNKNOWN intent only, never automatic. It keeps the original
+     * requestId and literal: the host admits a requestId at most once, so a copy that was in fact
+     * admitted becomes a no-op instead of a duplicate prompt. File receipts cannot be replayed, so
+     * a file intent is resent with fresh uploads of the owner's reselection, same file count.
+     */
+    @Synchronized
+    fun retry(sessionId: String, requestId: String, generation: Long, files: List<SubmittedFileEvidence> = emptyList()): Entry? {
+        require(generation >= 0) { "invalid-submission" }
+        require(files.size <= FileUploadLimits.MAX_FILES && files.sumOf { it.bytes } <= FileUploadLimits.MAX_BYTES) { "invalid-submission-files" }
+        val previous = entries[sessionId] ?: return null
+        if (previous.status != DeliveryStatus.UNKNOWN || previous.requestId != requestId || previous.files.size != files.size) return null
+        val entry = previous.copy(generation = generation, status = DeliveryStatus.SENDING, resent = true,
+            files = if (files.isEmpty()) previous.files else files.toList())
         entries[sessionId] = entry
         return entry
     }
@@ -55,11 +75,15 @@ class SubmissionLedger {
         return true
     }
 
-    /** Caller must prove that no prompt POST was attempted, not merely that no ACK arrived. */
+    /**
+     * Caller must prove that no prompt POST was attempted, not merely that no ACK arrived.
+     * A refused resend returns to UNKNOWN: only its own POST was skipped, not the original one.
+     */
     @Synchronized
     fun refusedBeforePost(sessionId: String, requestId: String) {
         val entry = entries[sessionId] ?: return
-        if (entry.requestId == requestId && entry.status == DeliveryStatus.SENDING) entries.remove(sessionId)
+        if (entry.requestId != requestId || entry.status != DeliveryStatus.SENDING) return
+        if (entry.resent) entries[sessionId] = entry.copy(status = DeliveryStatus.UNKNOWN) else entries.remove(sessionId)
     }
 
     /**
