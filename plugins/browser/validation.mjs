@@ -2,7 +2,7 @@ import { loadRuntime } from './deps.mjs';
 import { fail } from './errors.mjs';
 import { ROOT_SCHEMA, OUTPUT_SCHEMA } from './protocol.mjs';
 import { DEFAULT_CONFIG } from './config.mjs';
-import { catalogRevision, OPERATIONS, getOperation, operationAvailability, operationDefaults } from './manifest.mjs';
+import { catalogRevision, OPERATIONS, getOperation, operationAvailability, operationDefaults, operationExample } from './manifest.mjs';
 
 const META = new Set(['help', 'describe', 'capabilities']);
 const cache = new Map();
@@ -153,35 +153,57 @@ function semanticArgs(request, descriptor, config) {
   return descriptor.operation === 'diagnostics.request' && (args.includeHeaders || args.includeBody) ? Object.freeze({ ...descriptor, sensitive: true }) : descriptor;
 }
 
-/** Exact envelope + leaf validation happens before a policy decision and again in the worker. */
+/** Relocate only declared metadata, never leaf fields, authority or an inferred target. */
+function normalizeEnvelope(input, descriptor) {
+  const request = { ...input, args: { ...input.args } };
+  const keys = ['catalogRevision'];
+  if (['help', 'describe'].includes(input.operation)) keys.push('path');
+  if (descriptor.requiresSession) keys.push('sessionId');
+  if (descriptor.usesPage) keys.push('pageId');
+  for (const key of keys) {
+    if (!Object.hasOwn(request.args, key)) continue;
+    if (Object.hasOwn(request, key) && request[key] !== request.args[key]) fail('INVALID_ENVELOPE', `Conflicting ${key} at the top level and in args; supply one identical value. No operation was executed.`);
+    request[key] = request.args[key];
+    delete request.args[key];
+  }
+  return request;
+}
+
+/** Bounds precede copying; the same idempotent normalization guards policy, broker and worker. */
 export async function validateCall(input, { config = DEFAULT_CONFIG } = {}) {
   boundedJson(input, { maxBytes: config.limits.inputBytes, maxDepth: 12, code: 'INVALID_ENVELOPE' });
   if (!basicSchema(ROOT_SCHEMA, input)) fail('INVALID_ENVELOPE', 'Invalid browser envelope; operation and exact args object are required.');
   if (!/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/.test(input.operation) || input.operation.length > 160) fail('UNKNOWN_OPERATION', 'Browser operation must be an exact curated path.');
   let descriptor = getOperation(input.operation);
-  if (!descriptor) fail('UNKNOWN_OPERATION', 'Browser operation is not in the reviewed catalog.');
+  if (!descriptor) fail('UNKNOWN_OPERATION', input.operation === 'page.goto'
+    ? 'page.goto is not a browser operation. Use page.navigate: {"operation":"page.navigate","sessionId":"<refs.sessionId>","pageId":"<refs.pageId>","args":{"url":"http://127.0.0.1:8000/"}}. Reuse owned refs from session.open; do not guess IDs.'
+    : 'Browser operation is not in the reviewed catalog. Discover valid names with {"operation":"help","args":{}}; no operation was executed.');
+  input = normalizeEnvelope(input, descriptor);
+  if (!basicSchema(ROOT_SCHEMA, input)) fail('INVALID_ENVELOPE', 'Browser metadata must use the declared string types, including when supplied inside args. No operation was executed.');
   for (const key of ['sessionId', 'pageId', 'catalogRevision']) {
     if (input[key] !== undefined && (input[key].length === 0 || input[key].length > 160 || /\s|\0/.test(input[key]))) fail('INVALID_ENVELOPE', 'Browser reference/revision must be a bounded opaque id.');
   }
   if (input.catalogRevision !== undefined && input.catalogRevision !== catalogRevision(config)) fail('CATALOG_CHANGED', 'Browser catalog changed; describe the operation again before effects.');
   if (META.has(input.operation)) {
     if (input.sessionId !== undefined || input.pageId !== undefined) fail('INVALID_ARGS', 'Catalog operations do not accept session/page ids.');
-    if (input.operation === 'describe' && !input.path) fail('INVALID_ARGS', 'Describe requires the exact operation in path.');
+    if (input.operation === 'describe' && !input.path) fail('INVALID_ARGS', 'Describe requires an exact leaf in top-level path: {"operation":"describe","path":"page.navigate","args":{}}. For branches use {"operation":"help","path":"page","args":{}}.');
     if (input.operation === 'capabilities' && input.path !== undefined) fail('INVALID_ARGS', 'Capabilities does not accept path.');
     if (input.path !== undefined) {
       if (input.path.length > 160 || (input.path !== '' && !/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/.test(input.path))) fail('INVALID_ARGS', 'Catalog path is not valid.');
       if (input.path && !OPERATIONS.some(item => item.operation === input.path || item.operation.startsWith(`${input.path}.`))) fail('UNKNOWN_OPERATION', 'Catalog path does not exist.');
-      if (input.operation === 'describe' && !getOperation(input.path)) fail('UNKNOWN_OPERATION', 'Describe requires an operation, not a branch.');
+      if (input.operation === 'describe' && !getOperation(input.path)) fail('UNKNOWN_OPERATION', `Describe requires a leaf, not a branch. Use ${JSON.stringify({ operation: 'help', path: input.path, args: {} })}; each item provides its nextCall.`);
     }
-    if (!basicSchema(descriptor.inputSchema, input.args)) fail('INVALID_ARGS', 'Invalid catalog arguments; help/describe never accept executable code.');
+    if (!basicSchema(descriptor.inputSchema, input.args)) fail('INVALID_ARGS', 'Invalid catalog arguments. Use {"operation":"help","path":"session","args":{}} or {"operation":"describe","path":"session.open","args":{}}. Help allows only query/limit/cursor/availability; describe and capabilities use empty args after metadata relocation. Code and unknown fields remain forbidden.');
   } else {
     if (input.path !== undefined) fail('INVALID_ARGS', 'Executable operations use operation only; path is reserved for catalog discovery.');
-    if (descriptor.requiresSession !== (input.sessionId !== undefined)) fail('INVALID_ARGS', descriptor.requiresSession ? 'This operation requires an owned sessionId.' : 'This operation does not accept sessionId.');
+    if (descriptor.requiresSession !== (input.sessionId !== undefined)) fail('INVALID_ARGS', descriptor.requiresSession
+      ? `This operation requires an owned sessionId returned by session.open. Reuse existing refs; place sessionId/pageId at the top level. Example: ${JSON.stringify(operationExample(descriptor, config))}. If none is open, call {"operation":"session.open","args":{}}.`
+      : 'This operation does not accept sessionId.');
     if (input.pageId !== undefined && !descriptor.usesPage) fail('INVALID_ARGS', 'This operation does not accept pageId; capture/artifact handles already identify their owned source.');
     const availability = operationAvailability(descriptor, config);
     if (availability.state !== 'verified') fail(availability.state === 'unsupported' ? 'UNSUPPORTED_CAPABILITY' : 'POLICY_DENIED', availability.reason ?? 'Operation is unavailable.');
     const validate = await validator(input.operation, 'input');
-    if (!validate(input.args)) fail('INVALID_ARGS', 'Arguments do not match the exact operation schema.', { fieldErrors: validate.errors.slice(0, 8).map(error => ({ path: error.instancePath.slice(0, 256), keyword: error.keyword })) });
+    if (!validate(input.args)) fail('INVALID_ARGS', `Arguments do not match the exact ${input.operation} schema. Inspect ${JSON.stringify({ operation: 'describe', path: input.operation, args: {} })}; its example includes required fields. Unknown fields/types are not removed or coerced.`, { fieldErrors: validate.errors.slice(0, 8).map(error => ({ path: error.instancePath.slice(0, 256), keyword: error.keyword })) });
   }
   const defaults = operationDefaults(descriptor, config);
   const request = { ...input, args: mergeDefaults(input.args, defaults) };

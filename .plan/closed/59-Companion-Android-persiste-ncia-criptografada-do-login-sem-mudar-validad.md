@@ -1,0 +1,13 @@
+# Login persistente do Companion Android14
+
+## Pedido e contrato confirmado
+O proprietário quer evitar colar o link a cada abertura, reinício do PC ou prazo curto. O DSH rc.2 usa token de lançamento por processo e cookie assinado com segredo persistente nas credentials; cookieMaxAgeDays é finito positivo, padrão30. Cookie válido pode sobreviver ao reinício do PC. O cliente atual perde todos os cookies quando seu processo termina. O proprietário pediu continuar.
+
+## Escopo autorizado desta revisão
+1. Guardar somente cookies owner válidos, criptografados com AES-GCM e chave não exportável Android Keystore, em diretório privado sem backup. Nunca guardar link/token inicial, plaintext temporário, bearer externo, screenshots, intent/clipboard, drafts ou fila de mutations. Manter HTTPS/host/porta fixos e filtros HttpOnly/domínio/path/expiração; dados limitados e versão explícita, falhar fechado em corrupção.
+2. Restaurar autenticação em IO ao abrir, verificando-a apenas por catálogo nativo somente leitura. Não autoenviar mensagens, criar chat, retomar Agent ou decidir aprovação. Rede indisponível não apaga credencial; cookie expirado/401 real exige novo login. Fechar o transporte não deve equivaler a esquecer o login salvo. Nenhum aumento de validade ou alteração de credentials/profile/backend/Tailscale nesta task.
+3. Fornecer ação explícita Sair/Esquecer login local, sem alegar revogação remota que o DSH não oferece. Preservar generation guards, nonce/preparation gate, ledger UNKNOWN/SENDING, noRetry e proibição de retry. O ledger continua RAM e não há restauração automática de rascunhos; não atribuir durabilidade a intenções não persistidas. Registrar limitação de morte do processo com envio incerto, sem restaurar/repetir a intenção.
+4. Testar armazenamento/codec/fronteira e lifecycle com fixtures JVM; testar Keystore real em emulador API34 próprio com dados dummy. Rodar protocol/app/lint/APK. Atualizar README sobre autenticação persistente e caveats. Não instalar/atualizar no telefone pessoal, usar Work, capturar tela/logs pessoais, digitar link privado nem mudar TTL do backend sem autorização separada.
+
+## Aceite
+Login salvo criptografado e restaurado apenas para operações read-only; segredo inicial nunca persistido; expiração/audience/auth nativas intactas; desligamento normal preserva login, Sair o remove; testes reais do Keystore e regressões passam. Validade infinita não é prometida: configuração de prazo longo no servidor fica para decisão específica, podendo usar 365dias ou outro prazo finito. Sem mudanças publicadas e sem commit/push.

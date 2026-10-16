@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { access, lstat, mkdir, readFile, readdir, realpath, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildForks } from './forks.mjs';
 import { preparePi } from './pi.mjs';
 import { installProtocol } from './protocol.mjs';
@@ -66,6 +66,69 @@ export async function sharedGraph(install) {
   assert(piIdentities.every(path => path === join(modules, '@earendil-works/pi-ai/package.json')), 'Pi terminal observer graph split');
   proof['@earendil-works/pi-ai'] = piIdentities[0];
   return proof;
+}
+
+/** Both reviewed records are checked before the builder can publish the new
+ * controller. The owner must already exist and is verified, never rebuilt;
+ * this wrapper independently binds its result to the checked-in review records.
+ */
+export async function prepareUnifiedRecovery({ repo, esbuildModule }, { build } = {}) {
+  assert.equal(repo, await realpath(repo), 'Recovery repository must be canonical');
+  assert.equal(esbuildModule, resolve(esbuildModule), 'Explicit compiler module required');
+  const compiler = await realpath(esbuildModule);
+  const publicFile = async path => {
+    assert.equal(await realpath(path), path, 'Recovery file must not redirect');
+    assert((await lstat(path)).isFile(), 'Regular recovery file required');
+    return readFile(path);
+  };
+  const specs = {
+    controller: { entry: 'plugins/llm-resilience/index.mjs', output: 'plugins/llm-resilience/lib/index-v5-unified.mjs', rollback: 'plugins/llm-resilience/lib/index-v1-resilience.mjs' },
+    selfHeal: { entry: 'plugins/agent-self-heal/index.mjs', output: 'plugins/agent-self-heal/lib/index-v6-unified.mjs', rollback: 'plugins/agent-self-heal/lib/index-v3-resilience.mjs' },
+  };
+  const historicPaths = ['plugins/agent-self-heal/lib/index-v2-persistence.mjs', ...Object.values(specs).map(spec => spec.rollback)];
+  const historicHashes = Object.fromEntries(await Promise.all(historicPaths.map(async path => [path, sha(await publicFile(join(repo, path)))])));
+  const checked = {};
+  for (const [id, spec] of Object.entries(specs)) {
+    const output = join(repo, spec.output), manifest = output.replace(/\.mjs$/, '.build.json');
+    const manifestBytes = await publicFile(manifest), record = JSON.parse(manifestBytes);
+    assert.equal(record.schema, 1, 'Reviewed recovery record schema required');
+    assert.equal(record.output, basename(output), 'Recovery record output differs');
+    assert.equal(record.compilerVersion, versions.esbuild, 'Recovery compiler record drift');
+    assert.equal(record.target, 'node24', 'Recovery build target differs');
+    assert.match(record.sha256, /^[a-f0-9]{64}$/, 'Recovery output hash required');
+    assert.equal(record.rollbackSha256, historicHashes[spec.rollback], 'Recovery rollback bundle drift');
+    assert(record.sourceHashes && Object.hasOwn(record.sourceHashes, spec.entry), 'Recovery entry source record missing');
+    for (const [relative, expected] of Object.entries(record.sourceHashes)) {
+      const path = resolve(repo, relative);
+      assert((relative.startsWith('plugins/') || relative.startsWith('tools/resilience/')) && relative.endsWith('.mjs') && relative.split('/').every(part => part && !['.', '..', '.dsh', '.dumps'].includes(part)) && path.startsWith(repo + sep) && path === join(repo, relative), 'Recovery source record escaped public sources');
+      assert.match(expected, /^[a-f0-9]{64}$/);
+      assert.equal(sha(await publicFile(path)), expected, 'Recovery source record drift');
+    }
+    const outputBeforeHash = await statOrNull(output) ? sha(await publicFile(output)) : null;
+    if (id === 'selfHeal') assert(outputBeforeHash !== null, 'Existing reviewed immutable owner required');
+    if (outputBeforeHash !== null) assert.equal(outputBeforeHash, record.sha256, 'Versioned recovery output differs; refuse overwrite');
+    checked[id] = { output, manifest, manifestSha256: sha(manifestBytes), record, outputBeforeHash };
+  }
+  // Lazy import keeps help/tests inert and never invokes the historical builder.
+  const buildUnifiedRecovery = build ?? (await import(pathToFileURL(join(repo, 'tools/resilience/build-unified-recovery.mjs')).href)).buildUnifiedRecovery;
+  const built = await buildUnifiedRecovery({ repoRoot: repo, esbuildModule });
+  assert.equal(built.schema, 1); assert.equal(built.kind, 'unified-recovery-build');
+  assert.equal(built.compiler, compiler, 'Unexpected recovery compiler');
+  assert.equal(built.modelCalls, 0); assert.equal(built.profilesModified, false);
+  assert.deepEqual(built.rollbackHashes, historicHashes, 'Historical recovery records differ');
+  assert.deepEqual(Object.keys(built.artifacts).sort(), Object.keys(specs).sort(), 'Both recovery artifacts required');
+  for (const [id, expected] of Object.entries(checked)) {
+    const artifact = built.artifacts[id];
+    if (id === 'selfHeal') assert.equal(artifact.reused, true, 'Owner must be reused without rebuilding');
+    assert.equal(artifact.output, expected.output); assert.equal(artifact.manifest, expected.manifest);
+    assert.equal(artifact.sha256, expected.record.sha256); assert.deepEqual(artifact.sourceHashes, expected.record.sourceHashes);
+    assert.equal(artifact.rollbackSha256, expected.record.rollbackSha256);
+    assert.equal(sha(await publicFile(expected.manifest)), expected.manifestSha256, 'Reviewed recovery manifest changed during build');
+    assert.equal(sha(await publicFile(expected.output)), expected.record.sha256, 'Recovery compiler output differs from review');
+    for (const [relative, hash] of Object.entries(expected.record.sourceHashes)) assert.equal(sha(await publicFile(join(repo, relative))), hash, 'Recovery source changed during build');
+  }
+  for (const [path, hash] of Object.entries(historicHashes)) assert.equal(sha(await publicFile(join(repo, path))), hash, 'Historical recovery bundle changed');
+  return { ...built, reviewed: true, outputBeforeHashes: Object.fromEntries(Object.entries(checked).map(([id, value]) => [id, value.outputBeforeHash])) };
 }
 
 /** No implicit installs at import/default CLI. --fresh requires an actual Docker
@@ -136,21 +199,13 @@ export async function installFresh({ home = process.env.HOME, repo = repoDefault
     native = { package: 'node-pty', version: pty.version, rebuilt: true, nodeHeaders: '/usr/local' };
   }
   const protocol = await (io.installProtocol ?? installProtocol)({ sessionRoot: join(paths.install, 'node_modules/@deepseek-ai/dsh-session') });
-  const selfhealSource = join(repo, 'plugins/agent-self-heal/index.mjs');
-  const selfhealOutput = join(repo, 'plugins/agent-self-heal/lib/index-v2-persistence.mjs');
-  const selfhealInputs = ['plugins/common.mjs', ...['index.mjs', 'logic.mjs', 'sanitizer.mjs', 'persistence.mjs'].map(name => 'plugins/agent-self-heal/' + name)];
-  const sourceHashes = {};
-  for (const file of selfhealInputs) sourceHashes[file] = sha(await readFile(join(repo, file)));
-  const outputBeforeHash = await statOrNull(selfhealOutput) ? sha(await readFile(selfhealOutput)) : null;
-  run(esbuild, [selfhealSource, '--bundle', '--platform=node', '--format=esm', '--packages=external', '--target=node24', `--outfile=${selfhealOutput}`], repo);
-  for (const file of selfhealInputs) assert.equal(sha(await readFile(join(repo, file))), sourceHashes[file], 'Self-heal source changed during build');
-  const selfheal = { source: selfhealSource, sourceHashes, output: selfhealOutput, outputBeforeHash, outputHash: sha(await readFile(selfhealOutput)), sourceCompiled: true };
+  const unifiedRecovery = await prepareUnifiedRecovery({ repo, esbuildModule: join(toolchain, 'node_modules/esbuild/lib/main.js') }, { build: io.buildUnifiedRecovery });
   const graph = await sharedGraph(paths.install);
   await symlink(join(paths.install, 'node_modules'), join(repo, 'node_modules'), 'dir');
   const profile = await (io.seedProfile ?? seedProfile)({ home, installRoot: paths.install, repo }, { run });
   await mkdir(paths.bin, { recursive: true, mode: 0o700 });
   await symlink(join(paths.install, 'node_modules/.bin/dsh'), join(paths.bin, 'dsh'));
-  const receipt = { schemaVersion: 1, status: 'installed-not-booted', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, selfheal, native, graph, profile, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0, qualification: 'AG host source-built; auxiliary faces committed-prebuilt. No CLI boot, OAuth login or inference acceptance.' };
+  const receipt = { schemaVersion: 1, status: 'installed-not-booted', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, unifiedRecovery, native, graph, profile, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0, qualification: 'AG host source-built; auxiliary faces committed-prebuilt. No CLI boot, OAuth login or inference acceptance.' };
   await writeFile(join(paths.install, 'clean-install-receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   return receipt;
 }

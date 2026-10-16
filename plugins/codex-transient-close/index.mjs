@@ -1,5 +1,5 @@
 import { resolveHost } from '../common.mjs';
-import { bridgeRequestFailures, captureProviderFailure } from './failure-bridge.mjs';
+import { bridgeRequestFailures, captureProviderFailure, providerFailureCapabilities } from './failure-bridge.mjs';
 import { resolveHostSdkEntry } from './sdk-host.mjs';
 const hostSdk = await import(resolveHostSdkEntry());
 
@@ -18,11 +18,11 @@ export function apply(ctx) { return applyWithObserver(ctx, hostSdk); }
 // Explicit test seam, not profile/configuration: candidate SDK tests must use
 // the very same package instance that produces the asynchronous error stream.
 export function applyWithObserver(ctx, sdk) {
-  const observerAvailable = sdk?.PROVIDER_FAILURE_OBSERVER_VERSION === 1 && typeof sdk.subscribeProviderFailures === 'function';
+  const { observerAvailable, apis } = providerFailureCapabilities(sdk);
   if (observerAvailable) ctx.effect(() => sdk.subscribeProviderFailures(captureProviderFailure));
   ctx.on('llm/stream', function (options, next) {
-    if (options.provider !== 'openai-codex' || options.purpose !== undefined || !isAgentLoopRequest(options)) return next();
-    const legacy = (async function* () {
+    const legacyEligible = options.provider === 'openai-codex' && options.purpose === undefined && isAgentLoopRequest(options);
+    const dispatch = () => !legacyEligible ? next() : (async function* () {
       for await (const chunk of next()) {
         if (chunk.type !== 'finish' || chunk.reason.kind !== 'error' || options.signal?.aborted) {
           yield chunk;
@@ -40,10 +40,14 @@ export function applyWithObserver(ctx, sdk) {
           continue;
         }
         // Change routing facts before the loop commits its failed attempt. The
-        // official retry plugin alone owns budgets, delays, cancellation and audit.
-        yield { ...chunk, reason: { ...chunk.reason, failure: { ...failure, code: 'TRANSPORT' } } };
+        // recovery controller alone owns budgets, delays, cancellation and audit.
+        const { replayState: _successfulReplay, ...rest } = chunk;
+        yield { ...rest, reason: { ...chunk.reason, failure: { ...failure, code: 'TRANSPORT' } } };
       }
     })();
-    return observerAvailable ? bridgeRequestFailures(options, () => legacy) : legacy;
-  }, { prepend: true });
+    // Excluded nested requests need inactive scopes, not their parent's ALS.
+    return bridgeRequestFailures(options, dispatch, { capture: observerAvailable && (apis !== undefined || legacyEligible), apis });
+  // Auxiliary recovery prepends and must consume our normalized terminal facts,
+  // regardless of which plugin mounts first. Classification stays innermost.
+  }, { prepend: false });
 }

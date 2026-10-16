@@ -10,8 +10,9 @@
 //   YAML dumper would silently destroy all of that, and editing the files by
 //   hand from several sessions is exactly what made this repo drift from the
 //   live profiles. So we locate the contiguous run of managed entries through
-//   the YAML CST and splice only that byte range: every other byte of the file,
-//   comments included, is copied through untouched.
+//   the YAML CST and splice only that byte range. Root profiles selecting global
+//   resilience also migrate known retry engines/policies through targeted edits;
+//   unrelated config and comments outside those owned ranges remain untouched.
 //
 // Paths are resolved against wherever this repo actually lives, so a fresh
 // machine only needs `git clone` + `node tools/activate.mjs --write`.
@@ -138,6 +139,31 @@ function renderEntries(entries, listIndent, YAML) {
   return lines.length ? `${lines.join('\n')}\n` : '';
 }
 
+// Recovery configuration is an owner opt-down, not disposable generated defaults.
+// A manifest/source disagreement must be reviewed rather than granting credits.
+function preserveRecoveryConfig(entries, doc) {
+  const ids = new Set(['alex-llm-resilience', 'alex-agent-self-heal']);
+  const configured = new Map();
+  for (const patch of doc.contents?.items ?? []) for (const node of patch.get?.('insert')?.items ?? []) {
+    const id = node.get?.('id'), config = node.get?.('config', true);
+    if (ids.has(id) && config !== undefined) configured.set(id, config.toJSON());
+  }
+  function merge(manifestValue, sourceValue, path) {
+    if (manifestValue === undefined || manifestValue === null) return sourceValue;
+    if (manifestValue && sourceValue && typeof manifestValue === 'object' && typeof sourceValue === 'object' && !Array.isArray(manifestValue) && !Array.isArray(sourceValue)) {
+      const merged = Object.assign(Object.create(null), manifestValue);
+      for (const key of Object.keys(sourceValue)) merged[key] = merge(Object.hasOwn(merged, key) ? merged[key] : undefined, sourceValue[key], `${path}.${key}`);
+      return merged;
+    }
+    if (JSON.stringify(manifestValue) !== JSON.stringify(sourceValue)) {
+      const error = new Error('Conflicting explicit recovery configuration');
+      error.code = 'conflicting-activation-recovery-config'; error.path = path; throw error;
+    }
+    return sourceValue;
+  }
+  return entries.map(entry => configured.has(entry.id) ? { ...entry, config: merge(entry.config, configured.get(entry.id), `${entry.id}.config`) } : entry);
+}
+
 // --- CST surgery -----------------------------------------------------------
 
 // Returns the max-width indent of the entry's own line, so a generated block
@@ -218,10 +244,9 @@ const HEADER = `# Your patch layer for this dsh profile, applied after every bun
 
 // --- sync one target file --------------------------------------------------
 
-// Splices the desired managed block into `path`. Everything outside the managed
-// run is copied through byte-for-byte, which is what keeps the hand-written
-// comments and the per-machine (non `alex-*`) siblings alive.
-function syncFile(path, label, entries, options, YAML, manifest) {
+// Splice the managed block, then optionally migrate only known retry targets.
+// Other hand-written comments and per-machine siblings retain their exact bytes.
+function syncFile(path, label, entries, options, YAML, manifest, migrate) {
   const exists = existsSync(path);
   const src = exists ? readFileSync(path, 'utf8') : '';
   const result = { label, path, exists, changed: false, created: false, note: '' };
@@ -240,6 +265,18 @@ function syncFile(path, label, entries, options, YAML, manifest) {
       return result;
     }
     const runs = locateManagedRuns(doc, src, manifest.managedIdPrefix);
+    if (migrate) {
+      try {
+        // Validate original ownership before normal sync can hide foreign paths,
+        // invalid caps or a conflict with native provider opt-outs.
+        migrate(src);
+        entries = preserveRecoveryConfig(entries, doc);
+      } catch (error) {
+        result.error = true;
+        result.note = `resilience migration refused: ${error.code ?? error.name} at ${error.path ?? label}`;
+        return result;
+      }
+    }
     if (runs.length > 1) {
       result.note = `${runs.length} separate managed runs; refusing to guess (normalize the file by hand)`;
       result.error = true;
@@ -258,6 +295,11 @@ function syncFile(path, label, entries, options, YAML, manifest) {
         next = src.slice(0, point.start) + block + src.slice(point.start);
         result.block = block;
         result.note = 'inserted a new managed block into the existing insert list';
+      } else if (YAML.isSeq(doc.contents) && doc.contents.flow && !doc.contents.items.length) {
+        const block = `- insert:\n${renderEntries(entries, 4, YAML)}`;
+        next = src.slice(0, doc.contents.range[0]) + block + src.slice(doc.contents.range[1]);
+        result.block = block;
+        result.note = 'replaced the empty root with a managed insert block';
       } else {
         const block = `- insert:\n${renderEntries(entries, 4, YAML)}`;
         next = `${src.replace(/\n*$/, '\n')}${src.trim() ? '' : HEADER}${block}`;
@@ -272,22 +314,66 @@ function syncFile(path, label, entries, options, YAML, manifest) {
     result.created = true;
   }
 
-  result.changed = next !== src;
-  if (result.changed && options.write) {
-    writeFileSync(path, next, 'utf8');
-    result.written = true;
+  if (migrate) {
+    try {
+      // Keep final derivation after normal synchronization. Explicit source
+      // opt-downs survived above; native exceptions still need deriving here.
+      const proposal = migrate(next);
+      next = proposal.candidate;
+      result.resilience = { changed: proposal.changed, reasons: [...new Set(proposal.changes.map(change => change.reason))] };
+      const migratedDoc = YAML.parseDocument(next, { keepSourceTokens: true });
+      const runs = locateManagedRuns(migratedDoc, next, manifest.managedIdPrefix);
+      if (runs.length === 1) {
+        // A pure CST append can extend config:{} in flow form. Normalize only
+        // our generated run now, not on the next check after preserving it.
+        const finalEntries = (migratedDoc.contents?.items ?? []).flatMap(patch => patch.get?.('insert')?.items ?? []).filter(node => node.get?.('id')?.startsWith(manifest.managedIdPrefix)).map(node => ({ id: node.get('id'), name: node.get('name'), config: node.get('config', true)?.toJSON() }));
+        const run = runs[0], block = renderEntries(finalEntries, run.indent, YAML);
+        next = next.slice(0, run.start) + block + next.slice(run.end);
+        result.block = block;
+      }
+    } catch (error) {
+      result.error = true;
+      result.note = `resilience migration refused: ${error.code ?? error.name} at ${error.path ?? label}`;
+      return result;
+    }
   }
+
+  result.changed = next !== src;
+  if (result.changed && options.write) pendingWrites.push({ path, next, result });
   return result;
 }
 
-function syncProfile(profile, options, YAML, manifest) {
+async function syncProfile(profile, options, YAML, manifest) {
+  const entries = desiredEntries(manifest, profile, options.repoRoot);
+  let migrate;
+  if (entries.some(entry => entry.id === 'alex-llm-resilience')) {
+    // Keep controller-free activations independent of the optional resilience
+    // tooling, including consumers that copy this generator into a fixture.
+    const { migrateResilienceProfile, RESILIENCE_PROFILES, RESILIENCE_MODULES } = await import('./resilience/profile.mjs');
+    if (RESILIENCE_PROFILES.includes(profile)) {
+      const invalid = entries.find(entry => ['alex-llm-resilience', 'alex-agent-self-heal'].includes(entry.id) && entry.config !== null && (!entry.config || typeof entry.config !== 'object' || Array.isArray(entry.config)));
+      if (invalid) return { label: profile, path: join(PROFILES_DIR, profile, 'cordis.patch.yml'), error: true, changed: false, note: `Invalid recovery activation config: ${invalid.id}` };
+      const missing = Object.values(RESILIENCE_MODULES).filter(module => !existsSync(resolve(options.repoRoot, 'plugins', module)));
+      if (missing.length) return { label: profile, path: join(PROFILES_DIR, profile, 'cordis.patch.yml'), error: true, changed: false, note: `Missing unified recovery artifacts: ${missing.join(', ')}` };
+      // The pure migrator requires these companions. Render them in the same
+      // managed run so a minimal controller-only manifest remains idempotent.
+      for (const [id, module] of [
+        ['alex-codex-transient-close', 'codex-transient-close/index.mjs'],
+        ['alex-agent-self-heal', RESILIENCE_MODULES['alex-agent-self-heal']],
+      ]) {
+        if (!entries.some(entry => entry.id === id)) entries.push({ id, name: resolve(options.repoRoot, 'plugins', module), config: {} });
+      }
+      migrate = source => migrateResilienceProfile(source, { repoRoot: options.repoRoot, profile });
+    }
+  }
   return syncFile(
     join(PROFILES_DIR, profile, 'cordis.patch.yml'),
     profile,
-    desiredEntries(manifest, profile, options.repoRoot),
+    entries,
     options,
     YAML,
     manifest,
+    migrate,
   );
 }
 
@@ -342,6 +428,7 @@ const manifest = loadManifest(options.repoRoot);
 
 const profiles = options.profiles ?? manifest.profiles ?? [];
 const reports = [];
+const pendingWrites = [];
 
 // The repo overlay is a repo artifact, not a profile, so a targeted --profile
 // run leaves it alone; a full run keeps it honest with the live profiles.
@@ -352,12 +439,21 @@ for (const profile of profiles) {
     reports.push({ label: profile, path: join(PROFILES_DIR, profile, 'cordis.patch.yml'), skipped: true, note: 'profile directory does not exist on this machine' });
     continue;
   }
-  reports.push(syncProfile(profile, options, YAML, manifest));
+  reports.push(await syncProfile(profile, options, YAML, manifest));
 }
 
 const audit = auditPlugins(options, manifest);
 const drifted = reports.filter(r => r.changed);
 const failed = reports.filter(r => r.error);
+
+// Reject semantic/YAML failures across the complete selection before the first
+// write. This is preflight, not multi-file atomicity: later I/O can still fail.
+if (!failed.length) {
+  for (const { path, next, result } of pendingWrites) {
+    writeFileSync(path, next, 'utf8');
+    result.written = true;
+  }
+}
 
 if (options.json) {
   console.log(JSON.stringify({ mode: options.write ? 'write' : 'check', repoRoot: options.repoRoot, yamlFrom: from, reports, audit }, null, 2));

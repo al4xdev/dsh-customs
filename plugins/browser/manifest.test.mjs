@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, normalizeConfig } from './config.mjs';
-import { OPERATIONS, CATALOG_REVISION, getOperation, helpCatalog, describeOperation } from './manifest.mjs';
+import { OPERATIONS, CATALOG_REVISION, getOperation, helpCatalog, describeOperation, operationAvailability } from './manifest.mjs';
+import { loadRuntime } from './deps.mjs';
+import { validateCall } from './validation.mjs';
 
 const owner = { ownerId: 'contract-owner' };
 test('manifest is immutable, exact and has a single stable hash for the public contract', async () => {
@@ -30,6 +32,33 @@ test('help is bounded immediate-child navigation, not a dump of every leaf/schem
   assert.deepEqual(helpCatalog({ path: 'media.video' }, DEFAULT_CONFIG, owner).items.map(item => item.operation), ['media.video.start', 'media.video.status', 'media.video.stop']);
   assert.ok(Buffer.byteLength(JSON.stringify(root)) <= 8192);
   assert.ok(Buffer.byteLength(JSON.stringify(media)) <= 8192);
+});
+
+test('help teaches a complete owned-page workflow and each item provides its next metadata call', async () => {
+  const root = helpCatalog();
+  assert.deepEqual(root.quickStart.calls.map(call => call.operation), ['session.open', 'page.navigate', 'observe.snapshot', 'media.screenshot']);
+  assert.ok(root.usage.envelope.includes('top level'));
+  for (const call of root.quickStart.calls) await validateCall(call);
+  for (const path of ['', 'session', 'page', 'media', 'media.video']) {
+    for (const item of helpCatalog({ path }).items) {
+      assert.deepEqual(item.nextCall, { operation: item.kind === 'branch' ? 'help' : 'describe', path: item.operation, args: {} });
+      await validateCall(item.nextCall);
+    }
+  }
+  assert.deepEqual(helpCatalog({ path: 'page.navigate' }).usage.nextCall, { operation: 'describe', path: 'page.navigate', args: {} });
+});
+
+test('describe templates include required fields and match every declared leaf schema', async () => {
+  const { default: Ajv } = await loadRuntime('ajv/dist/2020.js');
+  const ajv = new Ajv({ strict: true, strictRequired: false, allErrors: true });
+  for (const descriptor of OPERATIONS) {
+    const { example } = describeOperation(descriptor.operation);
+    const validate = ajv.compile(descriptor.inputSchema);
+    assert.equal(validate(example.args), true, `${descriptor.operation}: ${JSON.stringify(validate.errors)}`);
+    if (operationAvailability(descriptor).state === 'verified') await validateCall(example);
+  }
+  assert.equal(describeOperation('describe').example.path, 'page.navigate');
+  assert.equal(describeOperation('page.navigate').example.args.url, 'http://127.0.0.1:8000/');
 });
 
 test('help cursor is signed and bound to owner/path/query/revision/config', () => {

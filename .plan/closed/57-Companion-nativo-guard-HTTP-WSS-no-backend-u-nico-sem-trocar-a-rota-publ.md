@@ -1,0 +1,16 @@
+# Guard de transporte companion no backend existente
+
+## Objetivo e evidência
+Continuar o goal ativo e a task49: o APK Kotlin/API34 já foi entregue, validado com 82 testes JVM, transporte real somente leitura e cinco testes Compose no emulador. O proprietário autorizou instalação/abertura exclusivamente no perfil Alex/user0; Work/user10 continua sem o pacote. A publicação atual permanece 8443→3082→3081, 443→3080 intacta.
+
+A auditoria pública e 20 probes anônimos demonstram uma diferença: `connection.admit` nativo permite Origin ausente e compara apenas o host do Origin. O proxy atual exige Origin serializado exato em POST/WSS. Não remover o proxy enfraquecendo essa proteção.
+
+## Escopo de execução
+1. Confirmar a composição pública e o id/configuração do provider `dsh-host-webserver`. Criar provider próprio derivado da classe WebServer publicamente exportada, dentro do MESMO processo backend. Wrappers somente de `register`, `registerUpgrade` e `registerFallback`, antes dos handlers nativos; não acessar campos privados, monkeypatchar objetos em execução, editar módulos instalados ou implementar autenticação/mux próprios.
+2. Implementar política pura e limitada de Host/Origin/path/Fetch-Metadata equivalente à fronteira existente. Host público fixo com porta8443; Origin HTTPS exato; Origin obrigatório em métodos diferentes de GET/HEAD e em todos os upgrades; rejeitar cross-site, caminhos inválidos e valores ambíguos. Preservar encaminhamento e autoridade nativos. Não broadenar hosts/portas nem usar trust-all. Verificar o limite de corpo nativo antes de decidir se é necessário algum ajuste.
+3. Testar essa política com fixtures e servidor nativo isolado em loopback/porta efêmera, sem credenciais reais, modelos, sessões reais ou processos publicados. Cobrir HTTP/WSS e fallback/GET bootstrap, Origin ausente ou malformado, esquema/porta/credenciais/path, prioridade403 antes401, disposer e lifecycle. Provar que o provider usa os handlers, autorização e mux nativos, não um protocolo alternativo.
+4. Preparar geração de profile/configuração como opção explícita, desativada por padrão, preservando o preset/permission/modelo/catalog/API existentes. Não alterar o profile ativo, listeners, services, PrivateLink ou Tailscale durante esta task. Não instalar outro APK, ler screenshot/logs do telefone ou automatizar login/approvals no telefone.
+5. Documentar migração e rollback: instalação do provider só em janela ociosa comprovada, considerar reinicialização de dependentes e invalidação de cookie/token/streams. Publicação8443→3081 e parada3082 ficam para revisão/autorização específica e nova prova autenticada real/Kotlin, sem afetar443/3080. Se a seam pública não permitir equivalência, registrar a limitação; nunca contornar com internals.
+
+## Aceite
+Política e provider testados em fixtures isoladas, nenhum segredo ou autenticação alternativa, nenhuma rota/processo/profile ativo alterado. Evidência do caminho público de composição e plano de migração com verificações/rollback. Esta aprovação não autoriza a troca da rota publicada nem a desativação do frontend. Sem commit/push.

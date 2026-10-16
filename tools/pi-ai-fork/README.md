@@ -193,6 +193,82 @@ The helper maps reviewed structured auth/quota/context/request/server/rate/trans
 
 The root [Codex middleware](../../plugins/codex-transient-close/README.md#structured-terminal-failure-observer) owns request-local ALS and listener lifetime. `applyWithObserver(ctx, candidateSdk)` is the offline test seam. Typed SDK/source/bridge tests do not themselves prove actual agent recovery: separate native Loop tests must use real PiAiAdapter, the exact candidate Codex API and subscriber graph, and official retry scheduling. No new phrase fallback was added for the reported message-only overload; absence of a live machine code remains an honest unknown.
 
+## Generalized failure observer candidate (plan105)
+
+`generalized-failure-categories.mjs` is the new maintained, offline-only build recipe.
+Its reviewed source baseline is **candidate3's canonical source** from Task38,
+not the older `sources/pi-ai` snapshot. `generalized-failure-baseline.json` pins
+all thirteen affected source inputs. It preserves the existing Codex work,
+instruments the ten KnownApi terminal paths, retains Responses/Azure SSE machine
+payloads before display conversion, and normalizes known OpenAI/Anthropic SDK
+connection/timeout/abort classes at their dependency boundaries.
+
+```fish
+node tools/pi-ai-fork/generalized-failure-categories.mjs /absolute/canonical-source-root /absolute/cached-node_modules /absolute/installed-pi-ai /absolute/FRESH-output
+node tools/pi-ai-fork/generalized-failure-check.mjs /absolute/FRESH-output/candidate-manifest.json /absolute/FRESH-output/sdk-offline-proof.json
+# Direct fixtures; all socket/TLS/fetch access outside in-memory mocks is blocked:
+env GENERALIZED_FAILURE_CANDIDATE=/absolute/FRESH-output/package node --test tools/pi-ai-fork/generalized-failure-categories.test.mjs
+```
+
+No install, download, paid inference, native adapter, profile, activation, model,
+credential, lockfile or installed SDK edit occurs. The thin overlay allowlist is
+52 outputs: ten API modules, Responses shared module, public index and portable
+helper, each `.js`, `.js.map`, `.d.ts`, `.d.ts.map`. Candidate4 changes37; all724
+other regular package files are hashed/protected, including OAuth and catalogs.
+Package metadata stays byte-identical. Source copies and compiler outputs are
+recorded separately; `sourceDigest` hashes sorted `{path,beforeSha256,afterSha256}`
+source records. Superseded candidates remain evidence, never overwritten.
+
+### Public compatibility and coverage
+
+`PROVIDER_FAILURE_OBSERVER_VERSION` remains1. Existing
+`subscribeProviderFailures`, `classifyCodexFailure`, `reportCodexFailure`, and
+`codexHttpFailureFacts` exports remain. Codex wrappers delegate once; the final
+Codex catch now uses the generic reporter once, not both reporters.
+`PROVIDER_FAILURE_APIS` is a frozen array of the ten instrumented API IDs.
+`classifyProviderFailure(error,provider,api,aborted=false)` returns `undefined`
+for unknown facts; `reportProviderFailure` emits only classified terminal facts.
+
+The frozen detached DTO is `{provider:string,api?:string,code:string,message:string,
+status?:number,requestId?:string,providerRetryAfterMs?:number}`. Codes are neutral;
+messages are fixed safe strings. Request IDs must be nonblank, at most256 code
+units, with no control characters. Hints are finite0..2147483647; the harness
+bridge intentionally omits0. Permanent/cancellation facts outrank transient
+status, including nested permanent statuses. Own-data reads are bounded; display
+strings, stack and arbitrary getters are not evidence. Header projection uses
+only genuine platform Headers and known field names. The legacy low-level
+`providerRetryAfterMs` parser still accepts its historical trusted `get` facade;
+unknown error objects never supply that facade.
+
+See `generalized-failure-capabilities.json` for explicit per-API facts and limits.
+In particular, Google/Vertex's reviewed SDK exposes actual HTTP status but discards
+machine body and headers into display text: no named quota/id/hint is fabricated.
+A429 with quota text only remains RATE_LIMIT. Bedrock metadata has no retry-after
+Headers; stream exception branch codes do not invent503 or copy successful200.
+Pi wire errors have only display text/usage/reason: non-cancel errors stay unknown;
+explicit wire cancellation is retained. All APIs preserve caller cancellation.
+Capabilities mean instrumented coverage, **not** guaranteed classification of
+all opaque errors. Unknown/custom APIs inherit global harness policy separately;
+this SDK list is not a provider/policy allowlist. SDK owns no ALS or scheduler.
+
+### Promotion and regression boundaries
+
+`generalized-failure-promotion.mjs` is a **new** guarded recipe for eventual parent
+approval gates, not authorization to run it now. It binds exact manifest/gate/report
+hashes, stages durable backups, applies one allowlisted output with CAS guards,
+and rolls back in reverse. Per-file rename is atomic; publication is not
+multi-file atomic. Parent must prove the real adapter/controller candidate graph,
+full host gates and authorization before installed promotion; no process restart
+or inference is part of SDK preparation.
+
+Historical Task38 candidates/receipts/promoter pins are unchanged. Its41-test
+suite contains a prepromotion before-state verifier that correctly refuses an
+already-promoted host. Run its40 behavioral regressions separately with
+`--test-skip-pattern='candidate preflight'`; do not weaken that historical guard.
+Future executions of the old Codex builder read the evolved portable helper and
+therefore produce a **new digest**, not the pinned historical artifact. Use the
+new generalized builder for this feature; never reuse old Task38 promotion pins.
+
 ## Upstream references
 
 - [Compaction fails with GPT-5 models, #3342](https://github.com/earendil-works/pi/issues/3342): same class of `none` rejection, fixed in Pi's coding agent by inheriting session thinking; DSH uses its own summarizer.

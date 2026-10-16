@@ -66,9 +66,10 @@ test('only native close1000/1012 and exact opaque WebSocket error finishes are c
     assert.equal(same, before);
     assert.notEqual(changed, original);
     assert.notEqual(changed.reason.failure, original.reason.failure);
-    assert.deepEqual(changed, { ...original, reason: { ...original.reason, failure: { ...original.reason.failure, code: 'TRANSPORT' } } });
+    const { replayState: _replay, ...rest } = original;
+    assert.deepEqual(changed, { ...rest, reason: { ...original.reason, failure: { ...original.reason.failure, code: 'TRANSPORT' } } });
     assert.equal(original.reason.failure.code, 'PI_AI_ERROR');
-    assert.equal(changed.replayState, original.replayState);
+    assert(!('replayState' in changed));
   }
 });
 

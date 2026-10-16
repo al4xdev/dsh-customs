@@ -1,0 +1,15 @@
+# Regressão real do contexto opcional no APK13
+
+## Evidência e autorização
+Dono pediu printADB porque debugOFF ainda mostra contexto. `.dumps/tasks/apk13-phone-debug-off-20261015.png` SHA37966fe267ad19435a464e4d2e90c0c3bf3f95f1b087a08d41055c7a9fa5bcf8 mostra humano 'tudo bem ?' seguido de **Contexto · agent-instructions**, system-reminder/AGENTS.md. Whitelist106 omitiu esse tipo. Não mascarar como preferência ligada nem alegar testes sintéticos cobriram o caso.
+Dono autorizou **poed debugar se quiser o celular** e **to sem usar ele**, após captura. Goal8c2c23c6r5 guia execução. Celular exatoZY22F2395W/user0/API34, APK13instalado Task108; sem outra conversa como alvo.
+
+## Execução
+1. Parent: debugADB sobre app/conversa atualmente aberta; capturas/hierarchy/navegar Configurações e ler estado do toggle; pode abrir/voltar/toggle para comparar OFF/ON/OFF. Nenhum Enviar/intent de prompt/goalPauseResume/Stop de trabalho/clear/grant/cookies ou outras sessões. Não coletar logcat amplo. Não abrir outros apps.
+2. D: readonly SDKpublictypes/producers reais para TODOS tipos de contexto inicial/model-facing reconhecidos, incluindo agent-instructions e skills; especificar formatos/source roles/metadata exatos, distinguir avisos/safety/humanos e versões desconhecidas. Não ler corpos/históricos de outras conversas nem tocar backendwatched.
+3. Renderer88b: corrigir whitelist por metadata/tipo e shapes públicos após fronteiraGO; testes formatos reais em Root/rich e presenter/snapshot/live/prepend/debugtoggle, humanos citados e mixed/unknown/avisos preservados, goalroundpositivo SEMPREoculto. Sem esconder por texto/XML nem alterar journal/modelinput. Só arquivos render/TranscriptPresentation e respectivos testes apósGO; Parent cuida VM/UI/Gradle/ADB/docs.
+4. Parent: integrar, revisar fronteiras e regressões; versionCode14 nome0.14.0-context-fix, mesmo package/cert/API34. Unit/protocol/lint/native e captura real da opção OFF antes/depois; emulador se necessário é privado5039/5580, não servidor5037físico.
+5. Debugautorizado inclui atualizar APK corrigido no mesmo telefone com -r/user0, preservandoUID10318/CEinode899458/firstInstallTime/permissões. Validar a mesma conversa atual OFF/ON/OFF, sem modelo/prompt/goalcontrol e sem navegação de outras conversas. Se alvo não puder ser reencontrado exatamente após atualização, parar essa navegação e pedir identificação, não adivinhar SID por conteúdo.
+
+## Limites e entrega
+Backend843485/frontend841/Fonte99/SDK/SettingsLOW/globalperfil/TUI/Firebase/HA intocados; não editar watched ativo nem reiniciar sem necessidade (reinícioCompanionjáautorizado,nãoperguntar). Sem commit/push. Recibo108sóinstallanterior mantém válido; capturas novas são autorização posterior. Task104Pausar/Continuar E2Epositivo real continua fora da alegação até prova/decisãoOwner. Entregar printAntes/depois e APK14/recibo de atualização, registrar falha de cobertura13 sem ocultar histórico106.

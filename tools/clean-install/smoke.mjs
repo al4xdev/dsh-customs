@@ -4,7 +4,6 @@ import { access, realpath } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inventory } from './inventory.mjs';
-import { longCodexRetryConfig, longCodexNominalDelays } from '../pi-ai-fork/long-retry-policy.mjs';
 
 export function syntheticPersistence(sdk) {
   assert.equal(typeof sdk.validateStoredEvents, 'function');
@@ -33,13 +32,21 @@ export function syntheticObserver(observer) {
   observer.reportCodexFailure(rate, 'openai-codex');
   assert.equal(seen.length, 1, 'Unsubscribed listener was called');
   assert.equal(seen[0].code, 'RATE_LIMIT');
-  // These are policy metadata checks, not a scheduler or wait execution. A hint
-  // above the cap stays intact for the official owner to refuse, never shortened.
-  assert.equal(longCodexRetryConfig.maxRetries, 9);
-  assert.equal(longCodexRetryConfig.backoff.maxDelayMs, 1_200_000);
-  assert.equal(longCodexNominalDelays.length, 9);
-  assert.equal(longCodexNominalDelays.reduce((a, b) => a + b, 0), 2_475_000);
-  assert(classified.providerRetryAfterMs > longCodexRetryConfig.backoff.maxDelayMs);
+}
+
+/** Current harness authority only. The unchanged SDK recipe's historical 9/20m
+ * fixture is neither an active profile override nor an additional retry budget.
+ */
+export function syntheticRecoveryPolicy(policyModule) {
+  const { DEFAULT_POLICY, localDelay } = policyModule;
+  assert.equal(DEFAULT_POLICY.maxRetries, 10);
+  assert.equal(DEFAULT_POLICY.initialDelayMs, 7031.25);
+  assert.equal(DEFAULT_POLICY.maxDelayMs, 3600000);
+  assert.equal(DEFAULT_POLICY.jitterRatio, 0);
+  const delays = Array.from({ length: DEFAULT_POLICY.maxRetries }, (_, index) => localDelay(DEFAULT_POLICY, index + 1, () => 0.5));
+  assert.deepEqual(delays, [7031.25, 14062.5, 28125, 56250, 112500, 225000, 450000, 900000, 1800000, 3600000]);
+  assert.equal(delays.reduce((sum, delay) => sum + delay, 0), 7192968.75);
+  return { authority: 'alex-llm-resilience', recoveryVersion: 2, maxRetries: 10, nominalDelaysMs: delays, accumulatedWaitMs: 7192968.75, legacySdkMetadataIsAuthority: false };
 }
 
 /** Imports only selected public validators/helper modules, never SDK root/index,
@@ -69,7 +76,8 @@ export async function smoke({ runtimeRoot, repoRoot }, io = {}) {
   const selfheal = await load(join(repoRoot, 'plugins/agent-self-heal/persistence.mjs'));
   assert.equal(typeof selfheal.assertPersistenceCompatible, 'function');
   selfheal.assertPersistenceCompatible();
-  return { sdk50SyntheticRoundtrip: true, unknownRequiredEventStillRejected: true, observer38Synthetic: true, selfhealCompatibilityProbe: true, publicInventoryPassed: true, retryPolicyMetadataChecked: true, modelCalls: 0, credentialsRead: false, sessionFilesRead: false, cliBooted: false, qualification: 'Synthetic in-memory validation and public package identity only; no disk-session replay, inference, authentication or real retry waits.' };
+  const unifiedRecoveryPolicy = syntheticRecoveryPolicy(await load(join(repoRoot, 'plugins/llm-resilience/policy.mjs')));
+  return { sdk50SyntheticRoundtrip: true, unknownRequiredEventStillRejected: true, observer38Synthetic: true, selfhealCompatibilityProbe: true, publicInventoryPassed: true, retryPolicyMetadataChecked: true, unifiedRecoveryPolicy, modelCalls: 0, credentialsRead: false, sessionFilesRead: false, cliBooted: false, qualification: 'Synthetic in-memory validation and public package identity only; no disk-session replay, inference, authentication or real retry waits.' };
 }
 
 export async function main(args = process.argv.slice(2)) {

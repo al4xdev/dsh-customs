@@ -12,7 +12,11 @@ const inside = (root, path) => path === root || path.startsWith(root + sep);
 function absolute(path) { assert(typeof path === 'string' && isAbsolute(path) && resolve(path) === path, 'Normalized absolute path required'); return path; }
 function directory(path) { absolute(path); assert.equal(realpathSync(path), path, 'Canonical directory required'); assert(lstatSync(path).isDirectory()); return path; }
 const codePaths = { session: ['lib/index.js', 'lib/types/known-event-types.js'], pi: ['dist/index.js', 'dist/api/openai-codex-responses.js', 'dist/utils/provider-failure.js'], antigravity: ['lib/index.js'], tui: ['index.js', 'index.d.ts', 'index.d.ts.map', 'profiles.js', 'profiles.d.ts', 'profiles.d.ts.map'].map(name => 'lib/types/dsh-adapter/oauth/' + name) };
-const sourcePaths = { tui: ['src/dsh-adapter/oauth/index.ts', 'src/dsh-adapter/oauth/profiles.ts'], antigravity: ['src/index.ts', 'src/api.ts', 'src/failure.ts', 'src/failure-bridge.ts'], pi: ['packages/ai/src/index.ts', 'packages/ai/src/api/openai-codex-responses.ts'], selfheal: ['index.mjs', 'logic.mjs', 'sanitizer.mjs', 'persistence.mjs'] };
+const sourcePaths = { tui: ['src/dsh-adapter/oauth/index.ts', 'src/dsh-adapter/oauth/profiles.ts'], antigravity: ['src/index.ts', 'src/api.ts', 'src/failure.ts', 'src/failure-bridge.ts'], pi: ['packages/ai/src/index.ts', 'packages/ai/src/api/openai-codex-responses.ts'], selfheal: ['index.mjs', 'logic.mjs', 'sanitizer.mjs', 'persistence.mjs', 'state-schema.mjs'], resilience: ['index.mjs', 'policy.mjs', 'controller.mjs', 'main-driver.mjs', 'aux-driver.mjs', 'recovery-accounting.mjs'] };
+const recoveryArtifacts = {
+  selfheal: ['lib/index-v2-persistence.mjs', 'lib/index-v3-resilience.mjs', 'lib/index-v6-unified.mjs', 'lib/index-v6-unified.build.json'],
+  resilience: ['lib/index-v1-resilience.mjs', 'lib/index-v5-unified.mjs', 'lib/index-v5-unified.build.json'],
+};
 
 /** Reads only explicitly selected public package metadata/code; never imports a
  * package, walks a config directory, searches credentials or touches session logs.
@@ -22,7 +26,7 @@ export function inventory({ runtimeRoot, repoRoot, sources = {} } = {}) {
   directory(runtimeRoot);
   if (repoRoot) directory(repoRoot);
   assert(Object.keys(sources).every(key => Object.hasOwn(sourcePaths, key)), 'Unknown source mapping');
-  const locations = { ...(repoRoot ? { tui: join(repoRoot, 'frontend/dsh-tui'), antigravity: join(repoRoot, 'plugins/dsh-antigravity'), pi: join(repoRoot, 'sources/pi-ai'), selfheal: join(repoRoot, 'plugins/agent-self-heal') } : {}), ...sources };
+  const locations = { ...(repoRoot ? { tui: join(repoRoot, 'frontend/dsh-tui'), antigravity: join(repoRoot, 'plugins/dsh-antigravity'), pi: join(repoRoot, 'sources/pi-ai'), selfheal: join(repoRoot, 'plugins/agent-self-heal'), resilience: join(repoRoot, 'plugins/llm-resilience') } : {}), ...sources };
   const roots = [runtimeRoot, ...(repoRoot ? [repoRoot] : []), ...Object.values(sources).map(directory)];
   function bytes(path) {
     const physical = realpathSync(path);
@@ -91,14 +95,21 @@ export function inventory({ runtimeRoot, repoRoot, sources = {} } = {}) {
   function fingerprint(key, path) { const file = attempt('source:' + key, () => bytes(path)); sourceCode[key] = file ? digest(file.bytes) : null; }
   for (const [id, location] of Object.entries(locations)) for (const file of sourcePaths[id]) fingerprint(id + '/' + file, join(location, file));
   if (repoRoot) for (const file of ['plugins/common.mjs', 'tools/pi-ai-fork/provider-failure.ts', 'tools/pi-ai-fork/codex-failure-categories.mjs']) fingerprint(file, join(repoRoot, file));
-  if (locations.selfheal) {
-    const key = 'selfheal/lib/index-v2-persistence.mjs';
-    const file = attempt('code:' + key, () => bytes(join(locations.selfheal, 'lib/index-v2-persistence.mjs')));
+  for (const [id, paths] of Object.entries(recoveryArtifacts)) if (locations[id]) for (const path of paths) {
+    const key = `${id}/${path}`;
+    const file = attempt('code:' + key, () => bytes(join(locations[id], path)));
     code[key] = file ? digest(file.bytes) : null; if (file) texts[key] = file.bytes.toString('utf8');
   }
-  const features = { observer38: /subscribeProviderFailures/.test(texts['pi/dist/utils/provider-failure.js'] ?? '') && /reportCodexFailure/.test(texts['pi/dist/api/openai-codex-responses.js'] ?? ''), sdk50: ['session/lib/index.js', 'session/lib/types/known-event-types.js'].every(key => (texts[key] ?? '').includes('agent/self-heal')), oauth32: (texts['tui/lib/types/dsh-adapter/oauth/index.js'] ?? '').includes('retryPolicies'), antigravitySignedReplay: ['convertMessages', 'isThinkingPart', 'retainThoughtSignature'].every(marker => (texts['antigravity/lib/index.js'] ?? '').includes(marker)), selfhealPersistence: (texts['selfheal/lib/index-v2-persistence.mjs'] ?? '').includes('assertPersistenceCompatible') };
+  // Historical controller4 is optional provenance, not an active/portable gate.
+  // Keep it out of parity-required code so a fresh 5/6 install need not ship it.
+  const historicalArtifacts = {};
+  if (locations.resilience) for (const path of ['lib/index-v4-unified.mjs', 'lib/index-v4-unified.build.json']) {
+    const file = attempt('history:resilience/' + path, () => bytes(join(locations.resilience, path)), []);
+    if (file) historicalArtifacts['resilience/' + path] = digest(file.bytes);
+  }
+  const features = { observer38: /subscribeProviderFailures/.test(texts['pi/dist/utils/provider-failure.js'] ?? '') && /report(?:Codex|Provider)Failure/.test(texts['pi/dist/api/openai-codex-responses.js'] ?? ''), sdk50: ['session/lib/index.js', 'session/lib/types/known-event-types.js'].every(key => (texts[key] ?? '').includes('agent/self-heal')), oauth32: (texts['tui/lib/types/dsh-adapter/oauth/index.js'] ?? '').includes('retryPolicies'), antigravitySignedReplay: ['convertMessages', 'isThinkingPart', 'retainThoughtSignature'].every(marker => (texts['antigravity/lib/index.js'] ?? '').includes(marker)), selfhealPersistence: (texts['selfheal/lib/index-v6-unified.mjs'] ?? '').includes('assertPersistenceCompatible'), unifiedRecoveryArtifacts: Object.entries(recoveryArtifacts).every(([id, paths]) => paths.every(path => !!code[`${id}/${path}`])), contextualHarnessWarning: ['selfheal/lib/index-v6-unified.mjs', 'resilience/lib/index-v5-unified.mjs'].every(key => (texts[key] ?? '').includes('harness warning:')), historyReadinessAlias: ['selfheal/lib/index-v6-unified.mjs', 'resilience/lib/index-v5-unified.mjs'].every(key => (texts[key] ?? '').includes('llmRecoveryHistory')) };
   for (const [feature, present] of Object.entries(features)) if (!present) blockers.push({ item: 'feature:' + feature, reason: 'static-marker-absent' });
-  return { schemaVersion: 1, packages, graph, graphContext, identity, code, sourceCode, features, blockers, sourceGraphIssues, qualification: 'Static public metadata/byte fingerprints and installed-package physical resolution only. Source fallback is not activation; its build dependencies are reported separately, not used to infer loaded runtime peers. Markers do not prove running-daemon behavior or provider authentication.' };
+  return { schemaVersion: 1, packages, graph, graphContext, identity, code, sourceCode, historicalArtifacts, features, blockers, sourceGraphIssues, qualification: 'Static public metadata/byte fingerprints and installed-package physical resolution only. Source fallback is not activation; its build dependencies are reported separately, not used to infer loaded runtime peers. Historical artifacts are optional provenance, not active targets or parity requirements. Markers do not prove running-daemon behavior or provider authentication.' };
 }
 
 export function compareInventories(host, container) {
@@ -114,12 +125,12 @@ export function compareInventories(host, container) {
   return { versions, identicalVersions: versions.every(item => item.identical), sharedIdentity, allConsumerIdentity, sourceFallbackConsumers, codeDifferences, sourceDifferences, hostBlockers: host.blockers, containerBlockers: container.blockers, hostSourceGraphIssues: host.sourceGraphIssues ?? [], containerSourceGraphIssues: container.sourceGraphIssues ?? [], exactPublicParity, qualification: 'Parity covers public bytes and installed-runtime package resolution, not activation of source fallbacks or live constructors. Source-build peer splits are separately reported. Different generated bytes remain differences; compiler comments, notices, path annotations or formatting require an explicit reviewed comparison. Versions/markers alone never establish parity.' };
 }
 
-const help = 'Public code inventory only: --runtime ABS [--repo ABS] [--output ABS (new file only)]\nSource mapping: [--tui-source ABS] [--antigravity-source ABS] [--pi-source ABS] [--selfheal-source ABS]\nCompare reviewed public inventories: --compare HOST_JSON_ABS CONTAINER_JSON_ABS\nNo arguments/--help performs no filesystem inspection. No auth, profiles, environment dump, imports or inference.\n';
+const help = 'Public code inventory only: --runtime ABS [--repo ABS] [--output ABS (new file only)]\nSource mapping: [--tui-source ABS] [--antigravity-source ABS] [--pi-source ABS] [--selfheal-source ABS] [--resilience-source ABS]\nCompare reviewed public inventories: --compare HOST_JSON_ABS CONTAINER_JSON_ABS\nNo arguments/--help performs no filesystem inspection. No auth, profiles, environment dump, imports or inference.\n';
 export function runInventoryCommand(argv) {
   if (!argv.length || (argv.length === 1 && argv[0] === '--help')) return help;
   if (argv[0] === '--compare') { assert.equal(argv.length, 3); return compareInventories(...argv.slice(1).map(path => JSON.parse(readFileSync(absolute(path), 'utf8')))); }
   const args = {};
-  for (let i = 0; i < argv.length; i += 2) { const flag = argv[i]; assert(['--runtime', '--repo', '--output', '--tui-source', '--antigravity-source', '--pi-source', '--selfheal-source'].includes(flag) && !Object.hasOwn(args, flag), 'Unknown/duplicate inventory option'); args[flag] = absolute(argv[i + 1]); }
+  for (let i = 0; i < argv.length; i += 2) { const flag = argv[i]; assert(['--runtime', '--repo', '--output', '--tui-source', '--antigravity-source', '--pi-source', '--selfheal-source', '--resilience-source'].includes(flag) && !Object.hasOwn(args, flag), 'Unknown/duplicate inventory option'); args[flag] = absolute(argv[i + 1]); }
   assert(args['--runtime'], '--runtime required');
   const sources = Object.fromEntries(Object.keys(sourcePaths).filter(id => args['--' + id + '-source']).map(id => [id, args['--' + id + '-source']]));
   const result = inventory({ runtimeRoot: args['--runtime'], repoRoot: args['--repo'], sources });

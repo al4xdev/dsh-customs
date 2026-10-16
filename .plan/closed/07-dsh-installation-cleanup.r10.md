@@ -1,0 +1,15 @@
+# Limpeza final pós-corte e levantamento no usuário
+
+## Autorização atual
+Usuário aplicou o finalizador:404links canônicos/205obsoletos retirados; main confirmou stagecompleted/canonical404/zeroactions, webrunning. Agora pediu remover os restos 'tudo agora' e levantamento de onde DSH ficou espalhado no usuário. Usar goalfdbad938 para executar; não apagar dados por interpretar tudo literalmente. Companion/frontend/Android protótipo permanece excluído.
+
+## Alvos e gates
+1. Revalidar metadata/processos próprios, symlinks de perfis/canônico/fontes e referências executáveis públicas a roots antigos. Sem conteúdo de credenciais/sessões/env/journals/modelcalls.
+2. Se não há consumidor/dependency legítima, retirar via trash para/tmp EXACT root `/home/alex/.npm/_npx/1e7f6d9597241db0` e EXACT scratch `/home/alex/git/my/dsh-customs/.dumps/pi-ai-fork/runtime-cc0c4b95b7145f89`, um call cada; verificar realpath intended antes. Backups já existentes ficam; não criar outro plano de rollback. Referência histórica em receipts não é consumidor live; scripts de verificação que dependem do antigo layout devem ser atualizados ou documentados antes retirar.
+3. Inventariar outras instalações DSH locais/npx/browser caches/source builds com metadados/tamanho/finalidade. Outros roots só retirar se pacote proprietárioDSH comprovado,zero uso e sem fonte/artefato necessário; gerar listaexata e reportar antes call. Não limpar ~/.npm inteira, node_modules canônico, browserruntime/cache requerido, dotfiles, .dsh storages/sessões, toolchainworkshopbuild3 ou candidatos/vencedores/proveniência únicos.
+4. Guard/status pós-corte deve verificar graph C+packages locais/hashSDK50/observer sem exigir N/S existentes. Não executarapply/reinstalar/reverterlinks durante TUIs atuais; user já reabriu2TUIs canonical. Corrigir guia para mostrar estado final sucinto e não exigir resolver sourceN após lixo sair; testsfixture se modificarmaintenancecode.
+5. Levantamento final Markdown durável no repo: fonte/forks, runtime/artifacts, perfis/config/dotfiles, dados/classes auxiliares, browser/cache/npm, backups/quarentena/tmp. Paths, tamanhos, dono lógico/finalidade, o que removido vs preservado e porquê. Não publicar valoresprivados ou dizer ausência fora do escopo percorrido; protótipo só marcadocomoforaescopo.
+6. Confirmar404aliases C+zeroN/Sgraphrefs, SDKobserver/session50hashes, pacote localpreservado, webactive/auth401. Sem providerimports/login/inferência/SDKbuild/versionupgrade/Gitpublication/encerrarTUIs. Encerrar task7 apenas após alvos antigos seguros retirados e fronteiras documentadas; snapshots/provenance necessários mantidos não são lixo, reproduçãofullhostbaseline ainda separada.
+
+## Escopo de /tmp
+Descarte recuperável da sessão conforme pedido humano, não substituto de fonte canônica. Npx root509MiB/S95MiB podem ir para/tmp enquantofontes/backup existentes permanecem. Não alegar remoção física de todo artefato/caches de plugins existentes nem instalação fresh universal.

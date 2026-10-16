@@ -143,10 +143,9 @@ test('unsafe root/socket/key modes fail closed', async t => {
 
 test('apply registers lifecycle disposal only, no tools', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-br-'));
-  let dispose;
-  const ctx = { agents: { list: () => [], get: () => undefined }, on(event, callback) { assert.equal(event, 'dispose'); dispose = callback; } };
-  const bridge = await apply(ctx, { root });
-  t.after(async () => { await bridge.close(); await fs.rm(root, { recursive: true, force: true }); });
+  const ctx = { agents: { list: () => [], get: () => undefined } };
+  const dispose = await apply(ctx, { root });
+  t.after(async () => { await dispose(); await fs.rm(root, { recursive: true, force: true }); });
   assert.equal(typeof dispose, 'function'); await dispose();
   assert.deepEqual((await discoverBridges({ root })).bridges, []);
 });
@@ -175,9 +174,9 @@ test('connection closes after possible send: delivery_unknown, never automatic r
   await bridge.close();
   let connections = 0;
   const server = net.createServer(socket => { connections++; socket.once('data', () => socket.destroy()); });
-  await new Promise(resolve => server.listen(record.socketPath, resolve));
+  await new Promise(resolve => { server.listen(record.socketPath, resolve); });
   await fs.chmod(record.socketPath, 0o600);
-  t.after(() => new Promise(resolve => server.close(resolve)));
+  t.after(() => new Promise(resolve => { server.close(resolve); }));
   const result = await sendBridge(record, { sessionId: 'session-1', text: 'ambiguous network', requestId: 'lost-ack' });
   assert.equal(result.error.code, 'delivery_unknown'); assert.equal(result.retrySafe, false); assert.equal(connections, 1);
 });

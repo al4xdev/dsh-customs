@@ -3,12 +3,12 @@ import { fail } from './errors.mjs';
 export const API_VERSION = '1';
 export const ROOT_SCHEMA = {
   type: 'object', properties: {
-    operation: { type: 'string', description: 'help, describe, capabilities, or an exact dotted operation; help lists the branches.' },
-    path: { type: 'string', description: 'Catalog branch or leaf, only for help/describe.' },
-    sessionId: { type: 'string', description: 'Owned session returned by session.open.' },
-    pageId: { type: 'string', description: 'Owned Page id; required if the session contains multiple pages.' },
+    operation: { type: 'string', description: 'help/describe/capabilities or exact dotted operation. Navigate with page.navigate, not page.goto. Start with {operation:"help",args:{}}.' },
+    path: { type: 'string', description: 'Top-level catalog path: branch for help (e.g. page), exact leaf for describe (e.g. page.navigate). Never an executable operation argument.' },
+    sessionId: { type: 'string', description: 'Top-level owned sessionId from session.open refs. Reuse it rather than reopening after an argument error.' },
+    pageId: { type: 'string', description: 'Top-level owned pageId from refs; required with multiple Pages. No current-tab fallback.' },
     catalogRevision: { type: 'string', description: 'Optional revision from describe; not an approval token.' },
-    args: { type: 'object', additionalProperties: true, description: 'Exact operation arguments; describe provides its schema. Unknown fields are rejected before effects.' },
+    args: { type: 'object', additionalProperties: true, description: 'Required object of leaf arguments: e.g. {url:"http://127.0.0.1:8000/"} for page.navigate; {} for describe/session.open. Metadata belongs at top level; applicable nested metadata is safely relocated, conflicting values rejected. Other unknown fields remain forbidden.' },
   }, required: ['operation', 'args'], additionalProperties: false,
 };
 const imageRef = {

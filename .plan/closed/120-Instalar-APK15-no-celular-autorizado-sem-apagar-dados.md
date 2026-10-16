@@ -1,0 +1,7 @@
+# Atualizar Companion no aparelho
+
+Autorização humana específica: `pode instalar voltei`. Instalação apenas; não presumir opt-in/POST_NOTIFICATIONS/registro/envioFCM ou execução de novos goals. Decisão119 de E2E mais ampla continua pendente para essas operações.
+
+Usar goal ativo para guiar execução. Identificar aparelho ADB disponível; se múltiplos ou unauthorized, pedir escolha/desbloqueio/autorizarUSB. Selecionar serial explícito em TODAS operações de aparelho; não tocar emuladores/outrosapps. Verificar binário `.dumps/tasks/dsh-companion-0.15.0-badges-fcm.apk` SHA256a10eaa2bb84f391b21034ee494d3ed5aa88d3542d0dff5aad57889f952fae37d, certificado original1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d. Conferir somente metadados do pacote dev.alex.dsh.companion já instalado; não ler dados privados/cookies/token/contas.
+
+Executar adb install -r no alvo explícito, sem -g, uninstall, clear, downgrade ou reset. Verificar versionCode15/versionName0.15.0-badges-fcm após sucesso. Não iniciar o app automaticamente nem mexer em notificações/login/goals/backend. Preservar dados e signing; se assinatura incompatível, parar sem desinstalar. Não mexer em goal806pausado145, Source99/SDK/HA/Casa/GCP. Coletar job se necessário, registrar resultado mínimo e encerrar instalação/goal quando comprovada.

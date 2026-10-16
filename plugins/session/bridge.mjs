@@ -4,6 +4,7 @@ import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { attachProtocol } from './bridge-transport.mjs';
 import { captureProvenance } from './provenance.mjs';
+import { createProfileHost } from '../session-create/profile-host.mjs';
 import { prepareRoot, processStart, capabilities, failure, sameIdentity, validId, validateSend, verifyGrant } from './bridge-security.mjs';
 
 export const name = 'session-companion-bridge';
@@ -14,6 +15,7 @@ export async function startBridge(ctx, { root } = {}) {
   if (!ctx.agents?.list || !ctx.agents?.get) throw new Error('The public agents registry is required');
   const prepared = await prepareRoot(root);
   const identity = { bridgeId: randomUUID(), pid: process.pid, startTime: await processStart(process.pid) };
+  const profileHost = createProfileHost(ctx, { root: prepared.root, key: prepared.key, identity });
   const socketPath = path.join(prepared.root, 'bridges', `${identity.bridgeId}.sock`);
   if (Buffer.byteLength(socketPath) > 103) throw new Error('Unix socket path is too long');
   const recordPath = path.join(prepared.root, 'bridges', `${identity.bridgeId}.json`);
@@ -21,13 +23,20 @@ export async function startBridge(ctx, { root } = {}) {
   const agentIds = new WeakMap(), requests = new Map(), nonces = new Set();
   let closed = false, chain = Promise.resolve();
   const captures = new Map(), captureResults = new Map();
+  // Provenance is optional: do not turn it into required bridge dependencies,
+  // or access undeclared services through a mounted Cordis plugin proxy.
+  const optional = name => typeof ctx.get === 'function' ? ctx.get(name) : ctx[name];
+  const provenanceContext = () => ({
+    ...Object.fromEntries(['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'profileContext', 'loader', 'tools', 'agentPresets'].map(name => [name, optional(name)])),
+    get: optional,
+  });
   function capture(agent) {
     if (closed || captures.has(agent) || agent.status !== 'idle') return;
-    const pending = Promise.resolve().then(() => captureProvenance(ctx, agent, { root: prepared.root, bridgeIdentity: identity }));
+    const pending = Promise.resolve().then(() => captureProvenance(provenanceContext(), agent, { root: prepared.root, bridgeIdentity: identity })).catch(error => ({ ok: false, reason: error.message }));
     captures.set(agent, pending);
     pending.then(result => captureResults.set(agent.id, result)).finally(() => captures.delete(agent));
   }
-  const unlisten = typeof ctx.on === 'function' && ctx.profileContext ? [
+  const unlisten = typeof ctx.on === 'function' && optional('profileContext') ? [
     ctx.on('agent/status', ({ agent, status }) => { if (status === 'idle') capture(agent); }),
     ctx.on('agent/created', ({ agent }) => { capture(agent); }),
   ] : [];
@@ -39,11 +48,12 @@ export async function startBridge(ctx, { root } = {}) {
   function describe(agent) {
     if (!agentIds.has(agent)) agentIds.set(agent, randomUUID());
     const header = agent.session?.header ?? {};
-    return { sessionId: agent.id, agentIdentity: agentIds.get(agent), status: agent.status ?? 'unknown', state: 'live-confirmed', cwd: typeof header.cwd === 'string' ? header.cwd.slice(0, 2048) : undefined, title: typeof header.title === 'string' ? header.title.slice(0, 256) : undefined };
+    return { sessionId: agent.id, agentIdentity: agentIds.get(agent), status: agent.status ?? 'unknown', state: 'live-confirmed', send: typeof agent.send === 'function', cwd: typeof header.cwd === 'string' ? header.cwd.slice(0, 2048) : undefined, title: typeof header.title === 'string' ? header.title.slice(0, 256) : undefined };
   }
-  function envelope(result) { return { source: 'bridge', observedAt: new Date().toISOString(), capabilities, identity, ...result }; }
-  function handle(request) {
+  function envelope(result) { return { source: 'bridge', observedAt: new Date().toISOString(), identity, ...result, capabilities: { ...capabilities, createProfile: profileHost.capabilities() } }; }
+  async function handle(request) {
     if (closed || !sameIdentity(request?.identity, identity)) return envelope(failure('identity_mismatch', 'Bridge identity changed'));
+    if (request.operation === 'prepare-create' || request.operation === 'create-session') return envelope(await profileHost.handle(request));
     if (request.operation === 'list') {
       if (Object.keys(request).some(key => !['operation', 'identity'].includes(key))) return envelope(failure('invalid_request', 'Unexpected list fields'));
       const agents = ctx.agents.list().filter(agent => validId(agent.id) && live(agent.id) === agent).map(describe);
@@ -90,7 +100,7 @@ export async function startBridge(ctx, { root } = {}) {
     await fs.writeFile(temporary, JSON.stringify(record), { mode: 0o600, flag: 'wx' });
     await fs.rename(temporary, recordPath);
   } catch (error) {
-    disconnect(); if (server.listening) await new Promise(resolve => server.close(resolve));
+    disconnect(); if (server.listening) await new Promise(resolve => { server.close(resolve); });
     await fs.unlink(socketPath).catch(() => {});
     throw error;
   }
@@ -99,8 +109,9 @@ export async function startBridge(ctx, { root } = {}) {
     closed = true; disconnect();
     for (const dispose of unlisten) dispose?.();
     await Promise.all([...captures.values()]);
-    await new Promise(resolve => server.close(resolve));
+    await new Promise(resolve => { server.close(resolve); });
     await chain;
+    await profileHost.close();
     // Only this instance's random paths are removed; no registry locks or other sessions are touched.
     await fs.unlink(recordPath).catch(error => { if (error.code !== 'ENOENT') throw error; });
     await fs.unlink(socketPath).catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -114,6 +125,7 @@ export async function startBridge(ctx, { root } = {}) {
 
 export async function apply(ctx, config = {}) {
   const bridge = await startBridge(ctx, { root: config.root });
-  ctx.on('dispose', () => bridge.close());
-  return bridge;
+  // Return the asynchronous disposer so Cordis owns and awaits socket/handle
+  // shutdown; an ordinary dispose event listener is not a resource lifetime.
+  return () => bridge.close();
 }

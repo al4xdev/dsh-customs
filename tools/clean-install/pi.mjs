@@ -5,6 +5,7 @@ import { cp, lstat, mkdir, readFile, readdir, realpath, symlink, writeFile } fro
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { baselineCodexHash, patchCodexSource } from '../pi-ai-fork/codex-failure-categories.mjs';
+import { generalizeTask38Sources, apis as failureApis, prefixes as failurePrefixes, suffixes as failureSuffixes } from '../pi-ai-fork/generalized-failure-categories.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -102,6 +103,16 @@ export async function preparePi({ sourceRoot, dependencyRoot, seedNodeModules, a
   await writeFile(join(ai, 'src/utils/provider-failure.ts'), helper);
   const indexPath = join(ai, 'src/index.ts');
   await writeFile(indexPath, await readFile(indexPath, 'utf8') + '\nexport * from "./utils/provider-failure.ts";\n');
+  // Reconstruct the reviewed Task38 seam first, then generalize all KnownApi
+  // terminals before compiling. No historical candidate or installed bytes enter
+  // this path; the pure transform verifies every affected source before writes.
+  const failureInputs = [];
+  for (const prefix of failurePrefixes) {
+    const path = prefix.replace(/^dist\//, 'src/') + '.ts';
+    failureInputs.push({ path, content: await readFile(join(ai, path), 'utf8') });
+  }
+  const providerFailures = await generalizeTask38Sources(failureInputs);
+  for (const file of providerFailures.files) if (file.changed) await writeFile(join(ai, file.path), file.content);
   const catalog = join(ai, 'src/providers/data');
   // cp cannot remove obsolete files: the fresh source copy excluded this catalog.
   // Verify names below so any unexpected source catalog refuses rather than hides.
@@ -140,8 +151,11 @@ export async function preparePi({ sourceRoot, dependencyRoot, seedNodeModules, a
   const pack = packResult(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', artifactsRoot], staged), manifest.name);
   const artifact = join(artifactsRoot, pack.filename);
   const fingerprints = {};
-  for (const name of [...oauthSeams, 'dist/index.js', 'dist/api/openai-codex-responses.js', 'dist/utils/provider-failure.js']) fingerprints[name] = sha(await readFile(join(staged, name)));
-  const proof = { source, version: piVersion, observerVersion: 1, compilerVersion: compiler.version, artifact, integrity: pack.integrity, artifactSha256: sha(await readFile(artifact)), catalogDigest: sha(JSON.stringify(contents)), helperSourceHash: sha(helper), compiledFingerprints: fingerprints, telemetrySourceCompiled: true, hostSdkCopied: false };
+  for (const name of [...oauthSeams, ...failurePrefixes.flatMap(prefix => failureSuffixes.map(suffix => prefix + suffix))]) fingerprints[name] = sha(await readFile(join(staged, name)));
+  const proof = { source, version: piVersion, observerVersion: 1, compilerVersion: compiler.version, artifact, integrity: pack.integrity, artifactSha256: sha(await readFile(artifact)), catalogDigest: sha(JSON.stringify(contents)), helperSourceHash: sha(helper), compiledFingerprints: fingerprints,
+    providerFailureApis: [...failureApis], providerFailureSourceDigest: providerFailures.sourceDigest,
+    providerFailureReviewedSourceDigest: providerFailures.reviewedSourceDigest, providerFailureSourceFiles: providerFailures.sourceFiles,
+    telemetrySourceCompiled: true, hostSdkCopied: false };
   await writeFile(join(artifactsRoot, 'provenance.json'), JSON.stringify(proof, null, 2) + '\n', { flag: 'wx' });
   return proof;
 }

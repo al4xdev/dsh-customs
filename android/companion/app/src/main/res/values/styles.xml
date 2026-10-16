@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Companion" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/companion_startup_black</item>
+        <item name="android:windowSplashScreenBackground">@color/companion_startup_black</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_companion_maid</item>
+        <item name="android:statusBarColor">@color/companion_startup_black</item>
+        <item name="android:navigationBarColor">@color/companion_startup_black</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+    </style>
+</resources>

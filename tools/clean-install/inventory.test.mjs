@@ -25,9 +25,9 @@ async function fixture({ fallback = false, duplicatePi = false, missingCode = fa
     if (missingCode && id === 'pi' && path.endsWith('/provider-failure.js')) continue;
     await file(join(roots[id], path), 'public compiled static markers: agent/self-heal subscribeProviderFailures reportCodexFailure retryPolicies convertMessages isThinkingPart retainThoughtSignature');
   }
-  const sources = { tui: fallback ? roots.tui : join(repoRoot, 'tui-source'), antigravity: fallback ? roots.antigravity : join(repoRoot, 'ag-source'), pi: join(repoRoot, 'pi-source'), selfheal: join(repoRoot, 'selfheal-source') };
-  const sourceFiles = { tui: ['src/dsh-adapter/oauth/index.ts', 'src/dsh-adapter/oauth/profiles.ts'], antigravity: ['src/index.ts', 'src/api.ts', 'src/failure.ts', 'src/failure-bridge.ts'], pi: ['packages/ai/src/index.ts', 'packages/ai/src/api/openai-codex-responses.ts'], selfheal: ['index.mjs', 'logic.mjs', 'sanitizer.mjs', 'persistence.mjs', 'lib/index-v2-persistence.mjs'] };
-  for (const [id, paths] of Object.entries(sourceFiles)) for (const path of paths) await file(join(sources[id], path), 'public source assertPersistenceCompatible');
+  const sources = { tui: fallback ? roots.tui : join(repoRoot, 'tui-source'), antigravity: fallback ? roots.antigravity : join(repoRoot, 'ag-source'), pi: join(repoRoot, 'pi-source'), selfheal: join(repoRoot, 'selfheal-source'), resilience: join(repoRoot, 'resilience-source') };
+  const sourceFiles = { tui: ['src/dsh-adapter/oauth/index.ts', 'src/dsh-adapter/oauth/profiles.ts'], antigravity: ['src/index.ts', 'src/api.ts', 'src/failure.ts', 'src/failure-bridge.ts'], pi: ['packages/ai/src/index.ts', 'packages/ai/src/api/openai-codex-responses.ts'], selfheal: ['index.mjs', 'logic.mjs', 'sanitizer.mjs', 'persistence.mjs', 'state-schema.mjs', 'lib/index-v2-persistence.mjs', 'lib/index-v3-resilience.mjs', 'lib/index-v6-unified.mjs', 'lib/index-v6-unified.build.json'], resilience: ['index.mjs', 'policy.mjs', 'controller.mjs', 'main-driver.mjs', 'aux-driver.mjs', 'recovery-accounting.mjs', 'lib/index-v1-resilience.mjs', 'lib/index-v5-unified.mjs', 'lib/index-v5-unified.build.json'] };
+  for (const [id, paths] of Object.entries(sourceFiles)) for (const path of paths) await file(join(sources[id], path), 'public source assertPersistenceCompatible harness warning: llmRecoveryHistory');
   for (const path of ['plugins/common.mjs', 'tools/pi-ai-fork/provider-failure.ts', 'tools/pi-ai-fork/codex-failure-categories.mjs']) await file(join(repoRoot, path), 'public portable recipe');
   await file(join(repoRoot, '.dsh/auth.json'), 'DO_NOT_READ_PRIVATE_AUTH');
   await file(join(repoRoot, '.dumps/session.jsonl'), 'DO_NOT_READ_PRIVATE_HISTORY');
@@ -39,7 +39,7 @@ test('public inventory reads selected metadata/code only and never executes pack
   const result = inventory(await fixture());
   assert.deepEqual(result.blockers, []);
   assert.equal(Object.keys(result.packages).length, 11);
-  assert.equal(Object.keys(result.code).length, 13);
+  assert.equal(Object.keys(result.code).length, 19);
   assert(Object.values(result.identity).every(peer => peer.shared));
   assert(Object.values(result.features).every(Boolean));
   const output = JSON.stringify(result);
@@ -183,4 +183,31 @@ test('CLI uses explicit public source mappings and exclusively creates output', 
   assert.throws(() => runInventoryCommand(args), { code: 'EEXIST' });
   assert.deepEqual(await readFile(output), before);
   assert.equal(runInventoryCommand(['--compare', output, output]).exactPublicParity, true);
+});
+
+test('final history readiness requires the active owner alias and fingerprints the extracted schema/accounting sources', async () => {
+  const input = await fixture(), before = inventory(input);
+  assert(before.sourceCode['selfheal/state-schema.mjs']);
+  assert(before.sourceCode['resilience/recovery-accounting.mjs']);
+  assert.equal(before.features.historyReadinessAlias, true);
+  await file(join(input.sources.selfheal, 'lib/index-v6-unified.mjs'), 'public source assertPersistenceCompatible harness warning:');
+  const after = inventory(input);
+  assert.equal(after.features.historyReadinessAlias, false);
+  assert(after.blockers.some(item => item.item === 'feature:historyReadinessAlias'));
+});
+
+test('controller4 is optional historical provenance; active markers and portable parity use controller5/owner6', async () => {
+  const input = await fixture(), portable = inventory(input);
+  assert.deepEqual(portable.blockers, []); assert.deepEqual(portable.historicalArtifacts, {});
+  for (const suffix of ['mjs', 'build.json']) await file(join(input.sources.resilience, `lib/index-v4-unified.${suffix}`), 'historical harness warning: llmRecoveryHistory');
+  const historical = inventory(input);
+  assert.equal(Object.keys(historical.historicalArtifacts).length, 2);
+  assert.equal(compareInventories(portable, historical).exactPublicParity, true);
+  assert(!Object.keys(historical.code).some(key => key.includes('index-v4-unified')));
+  await file(join(input.sources.resilience, 'lib/index-v5-unified.mjs'), '// no current markers');
+  const invalid = inventory(input);
+  assert.equal(invalid.features.contextualHarnessWarning, false);
+  assert.equal(invalid.features.historyReadinessAlias, false);
+  assert(invalid.code['resilience/lib/index-v1-resilience.mjs']);
+  assert(invalid.code['selfheal/lib/index-v3-resilience.mjs']);
 });

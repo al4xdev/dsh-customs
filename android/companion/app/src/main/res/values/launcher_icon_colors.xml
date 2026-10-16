@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon-only graphite; this resource does not alter the application theme. -->
+    <color name="maid_launcher_background">#0E0E12</color>
+</resources>

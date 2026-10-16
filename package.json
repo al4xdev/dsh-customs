@@ -12,16 +12,21 @@
     "test:lts:contracts": "node --test plugins/apply-patch/apply-patch.test.mjs plugins/list/list.test.mjs plugins/grammar-fix/grammar-fix.test.mjs plugins/grammar-fix/language-alias.test.mjs plugins/trash/trash.test.mjs plugins/clipboard/clipboard.test.mjs plugins/workspace-context/workspace-context.test.mjs && node tools/task10-profile/grammar-config-check.mjs",
     "test:trash": "node --test plugins/trash/trash.test.mjs",
     "test:clipboard": "node --test plugins/clipboard/clipboard.test.mjs",
+    "test:gen-image": "node --test plugins/gen-image/*.test.mjs",
     "test:workspace-context": "node --test plugins/workspace-context/workspace-context.test.mjs",
     "test:list": "node --test plugins/list/list.test.mjs",
     "test:apply-patch": "node --test plugins/apply-patch/apply-patch.test.mjs",
     "test:grammar": "node --test plugins/grammar-fix/grammar-fix.test.mjs plugins/grammar-fix/language-alias.test.mjs && node tools/task10-profile/grammar-config-check.mjs",
     "test:grammar:live": "node plugins/grammar-fix/live-check.mjs",
     "test:project-mcp": "node --test plugins/project-mcp/project-mcp.test.mjs",
+    "test:research": "node --test plugins/research/*.test.mjs tools/research-activation.test.mjs",
+    "research:check": "node tools/research-activation.mjs --check",
+    "research:activate": "node tools/research-activation.mjs --write",
     "test:managed-plans": "node --test plugins/managed-plans/*.test.mjs && node tools/task10-profile/refinements-check.mjs",
     "workshop:doctor": "node tools/workshop/bootstrap.mjs --doctor",
     "test:workshop": "node --test tools/workshop/*.test.mjs",
-    "test:session": "node --test plugins/session/*test.mjs tools/session-companion/*test.mjs"
+    "test:session": "node --test plugins/session/*test.mjs plugins/companion-api/*test.mjs tools/session-companion/*test.mjs",
+    "test:companion-transport": "node --test plugins/companion-transport/*test.mjs tools/session-companion/profile.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

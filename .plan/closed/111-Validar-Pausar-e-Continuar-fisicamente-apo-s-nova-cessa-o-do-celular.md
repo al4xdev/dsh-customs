@@ -1,0 +1,16 @@
+# Teste físico autônomo — aparelho novamente autorizado
+
+Dono **celular contedo todo seu vou tomar um banho**, após110concluída/API901294recuperada e testes649PASS. NovoGoal0d133bca ativo;104decisãoadiamento histórica não é prova física. NÃO pedir que abra conversa/pronto; executar enquanto indisponível. Nenhum APK/código/config alterado por este teste.
+
+## Identificação segura, ramos paralelos
+- ParentúnicoADB5037ZY22F2395W/user0: confirmar device/usuário/focoCompanion; capturas sóapp atual. AbrirCompanion se necessário semoutrosapps/perfiltrabalho. Catálogo/headers permitidos.
+- 6d READONLY: 1companion/listChatsaté20headersprofileCompanion/root; paraessesIDs **session/projections**público não-promotor (formato104publicSDKcomprovado), devolverSÓGoalid/rev/phase/rounds/cap/creationstamp/sourceID, semobjetivo/TODO/corpos/feed/credenciais. Isso permite encontrarGoalexistentePAUSEDouACTIVEdesarmado, nãoalegarcontrole porprojeção. Proibirlegacygoals/get, follow/projeçãohistory ouRootpromotion, Goalmutation/model/restart nesse ramo. SeNativecatalogdeatividade for seguro, metadatafalse/unknownnãoéidleproof.
+- Priorizar goal jáexistente comcaplimitado/inócuo e nãorespondendo; não interromper trabalho activo desconhecido. Root99goal96abCOMPLETE e08aempty e9ebcontextnão são alvos de criação artificial. Não supor SID do print104Goal135.
+
+## UI nativa real
+ParentabreSÓcandidatoespecífico, confirmafullSID/goalId/revision/activation/knowledge/controlpermitpresence viaJDIallowlist(noobjective/TODO/cookies/permits), e painelnativo com objetivodesseúnicoalvo paraavaliartesteinócuo. Metadatacold/projectionnãohabilitaações: esperaradmissão/followjáusadopeloapp eNativeReadgenuíno. LerUiAutomatorenabled+capturas, botõesHUMANdaUIsemforjarRef/Source/incarnation/generation/permit/CAS. SDKreadonlyde6d forneceobservaçõesnãoautoridade.
+
+TestarPausar→PAUSED(revnovo)→Continuar→ACTIVEARMED(revnovo)→Pausarfinal, todosMESMOgoal/Root. Continuar pode disparar rodada modelo, efeitoexplicado aodono nas perguntas anteriores e autorizado pelo novo'todo seu'/pode testar; não outrosenvios/prompts/models. Não deixarlooprodando; segoallegitimamentecompletarantesdePausefinal registrarCOMPLETEsemforçarreplay. Capturasantes/depois/metadata+confirmaçãoSDKreadonlymesmoRootsepreciso. Não dizerPASSsóporbotãoenabled/SDKisolado.
+
+## Limites e recuperação
+NenhumRoot/Goal/promptnovo apenaspara fabricarE2E: preferênciaOwnerexistingpreservada. Se TODOS20headersGoalnull/complete/unsafe, registrarcontagensreaissemvarrerhistóriosenãoinventarprova; relatarpróximaopçãosegura semexigirOwnerolharagora. Nenhumrestartsemcausa; lifecycleCompanionjáautorizadoàvontadeNÃOperguntarnovamente. FalhaNativeAPIdefinitionUnavailable se reaparecer exigefontes/configmetadata+escopoexatoderecuperaçãoseparado, nãorelaxarguarda. Backend901294/frontend841/profilefe6LOW/SDK99/TUI/FirebaseHAintocados; semclear/grant/install/commitpush. SeOwnerretomartelefoneSTOPimediato, limparforwardsJDI, deixardebugOFFsemoutrosgestos. EntregarprovaREALoulimiteconcreto; nãoalterarrecibos110/104históricos.

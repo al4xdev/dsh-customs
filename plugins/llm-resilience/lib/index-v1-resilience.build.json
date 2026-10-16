@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "kind": "observed-legacy-task105-controller-build",
+  "output": "index-v1-resilience.mjs",
+  "sha256": "1090783a3393503c926ad8e015aeee407f46bbd664629fc4d6bba6413a62c8a5",
+  "sourceHashes": {
+    "plugins/common.mjs": "91a3e1d926700c032d5b5216f58168be150698b788f24427a3cad019cbf2d4d1",
+    "plugins/llm-resilience/index.mjs": "e89db28f2b73860699771648cc2076cad5a8438974e7055b6d49a183c9b59ddb",
+    "plugins/llm-resilience/controller.mjs": "5f22c87daba6c5c204b75d15a7e6e2568b2950cf9c13481c88adf6b9aa01e472",
+    "plugins/llm-resilience/policy.mjs": "76b052c41409ed658d276972b0b23ee6a6cccfddbc4075c8f64ca445dd513d0a",
+    "plugins/llm-resilience/main-driver.mjs": "267a0c4186c9282d0d42655264e14bc9e5e0b8e80d2844e1b1fe7fbc91457302",
+    "plugins/llm-resilience/aux-driver.mjs": "7f4e425c0f3cc7e773419ccd4fbbaf02a42d613cc47e325e0790f3633aa3b7d2"
+  },
+  "compilerVersion": "0.28.2",
+  "target": "node24",
+  "sourceObservation": "Task105 own modules as observed before task112 edits. Policy restored from apply_patch recovery original; main reconstructed from exact full initial read; auxiliary preserved before editing. This is not claimed to be a pre-execution filesystem snapshot."
+}

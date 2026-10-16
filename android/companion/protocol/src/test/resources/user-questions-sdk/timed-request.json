@@ -1,0 +1,20 @@
+{
+  "questions": [
+    {
+      "id": "choice",
+      "question": "SYNTHETIC: choose a fixture option",
+      "options": [
+        {
+          "label": "Alpha"
+        },
+        {
+          "label": "Beta"
+        }
+      ]
+    }
+  ],
+  "wait": {
+    "callId": "call-fixture-timed",
+    "timed": true
+  }
+}

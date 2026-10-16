@@ -13,15 +13,4 @@ export function assertPersistenceCompatible() {
   }
 }
 
-const ACTIONS = new Set(['observed', 'reserved', 'observation-admitted', 'retry-requested',
-  'suspended', 'aborted', 'append-failed', 'recovered', 'manual-resumed']);
-
-/** Never turn an unknown owner protocol into a fresh, unspent recovery budget. */
-export function assertAuditReadable(event, stateSchema) {
-  if (event.type !== 'agent/self-heal') return;
-  const data = event.data;
-  if (data?.version !== 1 || !ACTIONS.has(data.action)) {
-    throw new Error('agent-self-heal: unsupported required audit version or action; refusing recovery replay.');
-  }
-  stateSchema.parse(data.state);
-}
+export { assertAuditReadable } from './state-schema.mjs';

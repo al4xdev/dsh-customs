@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- No launcher/deep-link filter. This debug entry ignores all incoming data and extras. -->
+        <activity
+            android:name=".preview.FixtureActivity"
+            android:exported="true"
+            android:label="Companion · prévia local"
+            android:windowSoftInputMode="adjustResize" />
+    </application>
+</manifest>

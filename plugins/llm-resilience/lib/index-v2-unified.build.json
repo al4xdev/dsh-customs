@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "output": "index-v2-unified.mjs",
+  "sha256": "1a851011524dd1270c63e4c99117c1bfd2b3aaebee2aaf115c697394f2fbf12d",
+  "sourceHashes": {
+    "plugins/agent-self-heal/sanitizer.mjs": "d7f75a321771043910b756d3452f43e94972dcbf2691f0d2be3cff8cc7de8e35",
+    "plugins/common.mjs": "91a3e1d926700c032d5b5216f58168be150698b788f24427a3cad019cbf2d4d1",
+    "plugins/llm-resilience/aux-driver.mjs": "ee1d63b80a01543799b4a23c49bb53b6307902c5ed197cd6b072c52a9081fa66",
+    "plugins/llm-resilience/controller.mjs": "c7cedb3f38f5c6545a6436a2fc6e1424115544a2e0812fdf630f6945bd283eba",
+    "plugins/llm-resilience/index.mjs": "69fec2d31dbf86ac777b6274994629c6278aeeb5840735c0aac4e0ce728b8f8d",
+    "plugins/llm-resilience/main-driver.mjs": "73010d71cb842bcbfc4044f7e5159d19b514b1f9a16f96d86d4f7c6eea7d6e94",
+    "plugins/llm-resilience/policy.mjs": "31625bdaacdd541daddeef94001ee875404cdf01481ca38cd90bcab26c14122f",
+    "plugins/llm-resilience/recovery-accounting.mjs": "11f730f4b322140c775f020b15c1521b983dff5400f72b2348c38a29f9f7566d"
+  },
+  "compilerVersion": "0.28.2",
+  "target": "node24",
+  "rollbackSha256": "1090783a3393503c926ad8e015aeee407f46bbd664629fc4d6bba6413a62c8a5"
+}

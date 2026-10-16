@@ -1,11 +1,57 @@
-# Agent self-heal (phase 1, consecutive-episode policy v2)
+# Contextual agent recovery (immutable v6 entry, owner protocol v1)
 
-A public agent-loop recovery middleware, not a synchronous LLM retry engine.
-Source is not activated by this directory: the principal owns reviewed profile
-wiring and rollback. Plugin name: `alex-agent-self-heal`; required services:
-`agents`, `sessionProjections`. Configuration: `{ maxCycles: 3 }`, integer 0..10;
-zero disables observation admission. No model, credential, account, credit,
-permission, output-cap or timeout setting is changed.
+The sole custom main-agent retry owner. Every eligible failed attempt gets a
+safe `harness warning:` before the next freshly prepared request. The native
+`llmRetry` projection is a UI/history mirror, not another retry engine.
+Required services: `agents`, `sessionProjections`, and `llmRecoveryHistory`,
+with both `recoveryVersion: 2` and `recoveryHistoryVersion: 2`. It is provided
+only after the native UI and history2 projections and auxiliary hooks are ready.
+Old controllers providing only `llmResilience` or `llmRecovery` cannot prematurely
+start v6 when profile HMR visits self-heal before the controller. All three aliases
+refer to the same frozen controller; there is no second retry engine.
+Incompatible/standalone wiring fails closed.
+
+The shared controller defaults to **ten additional retries**, doubling from
+7031.25ms to 3600000ms, without jitter: retry9 waits30min, retry10 waits60min.
+Total nominal waiting is7192968.75ms (~1h59m53s), plus request execution time.
+An explicit local `{maxCycles: N}` (0..10) can only narrow this one budget;
+absence inherits the global policy. Route opt-outs remain authoritative.
+No account, provider/model, permission, output-cap or backend setting changes.
+
+Provider settings are sparse overrides, not constrained by the default route's
+retry count: base7/provider9 permits9, and base0/provider2 permits2. The shared
+admission envelope covers all configured routes; each request still uses its
+effective route policy. Explicit legacy `selfHeal.maxCycles` and local caps may
+narrow admission. Existing episodes retain their pinned cap even after reload
+or a provider increase. An explicitly wrapped older controller2 policy remains
+conservative, but the old module alone cannot provide the history2 readiness gate.
+
+## Historical recovery conservation
+
+The derived `llmRecoveryAccounting` projection is **stateVersion2**, forcing a
+full native replay instead of restoring an old v1 checkpoint. The native
+`llmRetry` and `agentSelfHeal` owner schemas remain **stateVersion1**. Production
+recovery reads registered projection state, never scans the Session journal.
+
+Legacy technical spending survives native `step/start` and error/cancel
+`turn/end`, even with no old semantic chain. Cumulative retry ordinals count once
+per provider/policy/id/turn/step; all routes contribute to one historical floor.
+Current UI rows merge by maximum ordinal delta, not by adding that floor again.
+The old smallest cap and first captured schedule stay pinned. Unknown or
+unbounded provenance fails closed. An owner UI mirror is excluded only when an
+accepted reservation matches its exact current position and ordinal as well as
+its provider, policy and retry id.
+
+A new turn, goal continuation, warning, empty completion or durable user label
+never resets spending. A live root RPC insertion/claim/start may produce the
+existing corroborated human-resume receipt, including for a legacy-only floor.
+A valid live healthy-step acknowledgement also clears it. Old technical-only
+history without an owner receipt may clear only after the strict committed,
+nonempty assistant/tool success witness and its correlated completed turn;
+`completed` alone is insufficient. Unified owner chains still require their
+accepted healthy or human receipt. For example, old9 exhausted retries remain
+9/cap9 after error termination and cold reload: autonomous continuation gets no
+fresh credits, while a newly verified human resume starts the new ten budget.
 
 ## Required persistence protocol (local bridge)
 
@@ -35,8 +81,10 @@ Backups and hash-guarded rollback receipts live under
 `--rollback` restores only unchanged patched SDK bytes; it makes these sessions
 unreadable again and must not be used while the self-heal plugin is enabled.
 
-Activated entry: `lib/index-v2-persistence.mjs` (full bundle, no old submodule
-cache reuse). `promote-persistence.mjs` preflights SDK and profile hashes, backs
+The Task50 activated entry was `lib/index-v2-persistence.mjs` (full bundle, no old
+submodule cache reuse); Task105 uses `lib/index-v3-resilience.mjs` after reviewed
+promotion. The original bundle remains untouched for rollback.
+`promote-persistence.mjs` preflights SDK and profile hashes, backs
 up the profile, then atomically replaces its single pointer. It is intentionally
 one-shot. Start a **new DSH process** after installation: existing processes keep
 cached SDK modules, and may fail the new preflight on hot reload. No automatic
@@ -52,19 +100,33 @@ renumbering is needed; other existing sessions are neither migrated nor deleted.
 
 ## Sequence and audit
 
-1. Await downstream `agent/request-error` listeners first. The official retry
-   policy retains priority and its budgets/delays are unchanged.
+1. Classify eligible errors before downstream technical listeners. Once owned,
+   failure/exhaustion/cancellation never delegates to another retry engine.
 2. Require the exact live agent and a public committed `assistant/attempt` end
    frame for the failed turn/step. A failed attempt is already settled; no client
    tool from that failed attempt has been dispatched.
 3. Append `agent/self-heal` with `reserved` state, consuming a repair cycle.
 4. Append a synthetic `user/message` with source `self-heal-observation`,
-   `label: Self-heal`, `form: notice`, and a short fixed summary. It is explicitly
+   `label: Harness warning`, `form: notice`, and a short fixed summary. It is explicitly
    not a new human prompt. Selected error facts are quoted untrusted data, not
    commands, authority or permission to bypass a restriction. Canonical
    `sourceEventSeqs` links the notice to the prior committed failed attempt.
-5. Append `observation-admitted`, then `retry-requested`, check cancellation,
-   and return the public `{ kind: 'retry' }` action.
+5. Append `observation-admitted` and the matching native `llm/retry` UI mirror,
+   wait through the shared scheduler, append `retry-requested`/`llm/retry-started`,
+   check cancellation, and return `{kind: 'retry'}`. Exhausted/invalid-minimum cases
+   append an explicit terminal warning and return no action; the native loop
+   throws its original `LlmError`, so the failure remains visible.
+
+Additive `recoveryOwnership` envelopes drive the derived `llmRecoveryAccounting`
+projection. Historical native spending (all routes) plus semantic spending is
+imported once; exact owner-tagged mirrors are excluded. Old pinned caps remain
+conservative. This requires no synchronous/deprecated Session log scans, new
+required event types, rewritten history or enlarged strict owner-state fields.
+
+`reserved` may carry additive top-level `recoveryWait` metadata (policy, delay,
+scheduled time and not-before time). Required event version/actions and strict
+state remain unchanged and readable by the older bundle. This records a wait,
+not an automatic cross-process wakeup. Aborting a wait never refunds its cycle.
 
 These operations are **not atomic**. Abort or uncertain/failed append prevents
 our replay decision and records `aborted`/`append-failed` when possible. A spent
@@ -123,13 +185,18 @@ activation, wakeup, pause/reschedule/rearm or model call is performed by renewal
 
 - Frozen, validated host `PI_AI_ERROR`: diagnostic summary is fixed; the original
   arbitrary message is **discarded**, not regex-redacted into claimed safety.
-- Repeated `EMPTY_RESPONSE`: occurrences are recorded across official delegated
-  retries. The first occurrence without a prior retry is observed, not replayed.
+  An exact reviewed MTMD signature selects fixed image-input-processing facts
+  and bounded remediation, without changing the error into a transient class.
+  Suffixes, embedded instructions and near-matches stay opaque.
+- `SERVER`, `TRANSPORT`, `TIMEOUT`, `RATE_LIMIT` and the first `EMPTY_RESPONSE`
+  enter the same contextual budget; there is no prerequisite blind retry.
 - `INVALID_REQUEST`: only an exact own Antigravity malformed-function-call marker
   proves the narrow correctable case. Generic invalid request is not eligible.
-- Auth, quota/billing, rate limits, context overflow, cancellation, known policy
-  blocks and other 4xx facts do not receive blind replay. Positive provider wait
-  hints suspend rather than being ignored or starting a second backoff engine.
+- Auth, billing denial, context overflow, cancellation, known policy blocks and
+  other permanent 4xx facts do not receive a generic bypass. Typed408/429 and
+  reviewed AGY reset conditions may use the same finite scheduler. Valid provider
+  minima are honored; invalid/over60min minima terminate explicitly, never start
+  another engine or pretend that a shorter delay meets the minimum.
 
 The observation/audit selects code, fixed summary, validated status/hint, known
 own phase, configured public provider/model family, output cap and nonnegative
@@ -138,16 +205,22 @@ causes, stacks, cookies, URLs, account data or hidden thinking content. Foreign
 or malformed DTOs/accessors are rejected; unknown route labels are omitted.
 Existing upstream logs are not retroactively scrubbed by this plugin.
 
+Other configured routes get process-local ordinal aliases such as
+`configured-route-1`: diagnostics can distinguish repeated failures without
+publishing private provider/model names or maintaining a model whitelist.
+Notices include a fixed diagnostic category/remediation and, where available,
+the already-consumed transient retry count. They never replay completed tools.
+
 ## Limits and suspension
 
-Default repair budget is three cycles per consecutive failure episode,
+Default recovery budget is ten retries per consecutive failure episode,
 independent of other agents. Raising config cannot enlarge an already active
 chain's cap. Exhaustion records `suspended`, then permits the current known host
 termination. The durable objective is not completed, blocked or deleted; its
 activation may be disarmed by the goal driver. This is a recoverable checkpoint
 for an admitted human resume, **not automatic pause/reschedule/rearm**. Proven
-healthy progress closes the episode; the next failure starts at cycle one. Three
-failures without progress still exhaust the original cap. Increasing config,
+healthy progress closes the episode; the next failure starts at cycle one. Ten
+retries without progress exhaust a fresh default episode; legacy caps stay pinned. Increasing config,
 adding self-observations or reloading never renews that episode by itself.
 
 The same failed step's assembly/tools/rendered prompt remain frozen. A model

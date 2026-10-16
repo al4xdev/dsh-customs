@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import { sanitizeFailure, routeFacts, usageFacts } from '../sanitizer.mjs';
 import { observationText } from '../logic.mjs';
 const dto = (code = 'PI_AI_ERROR', extra = {}) => Object.freeze({ code, message: 'unknown', ...extra });
-for (const code of ['AUTH', 'QUOTA', 'QUOTA_EXCEEDED', 'ACCOUNT_QUOTA', 'ABORTED', 'TIMEOUT', 'RATE_LIMIT', 'SERVER', 'CONTEXT_WINDOW_EXCEEDED', 'INVALID_CREDENTIAL', 'UNKNOWN', 'INVALID_REQUEST']) test(`no blind recovery for ${code}`, () => assert.equal(sanitizeFailure(dto(code), 'openai-codex'), undefined));
-for (const status of [99, 600, -1, NaN, Infinity, 401, 402, 403, 429, 400, 404]) test(`reject malformed/permanent status ${status}`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { status })), undefined));
-for (const hint of [-1, Infinity, NaN, 0.5, 2147483648, '120']) test(`reject malformed retry hint ${hint}`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { providerRetryAfterMs: hint })), undefined));
+for (const code of ['AUTH', 'QUOTA', 'QUOTA_EXCEEDED', 'ACCOUNT_QUOTA', 'ABORTED', 'CONTEXT_WINDOW_EXCEEDED', 'INVALID_CREDENTIAL', 'UNKNOWN', 'INVALID_REQUEST']) test(`no blind recovery for ${code}`, () => assert.equal(sanitizeFailure(dto(code), 'openai-codex'), undefined));
+for (const code of ['SERVER', 'TIMEOUT', 'TRANSPORT', 'RATE_LIMIT', 'EMPTY_RESPONSE']) test(`contextual recovery selects ${code}`, () => assert.equal(sanitizeFailure(dto(code)).code, code));
+for (const status of [401, 402, 403, 400, 404]) test(`reject permanent status ${status}`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { status })), undefined));
+for (const status of [99, 600, -1, NaN, Infinity]) test(`malformed status ${status} is terminal, not dropped into blind replay`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { status })).invalidFailureFacts, true));
+for (const status of [408, 429]) test(`allow retryable HTTP status ${status}`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { status })).status, status));
+for (const hint of [-1, Infinity, NaN, 2147483648, '120']) test(`malformed retry hint ${hint} is retained as terminal marker`, () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { providerRetryAfterMs: hint })).invalidFailureFacts, true));
+test('finite fractional minimum is safe numeric information', () => assert.equal(sanitizeFailure(dto('PI_AI_ERROR', { providerRetryAfterMs: .5 })).providerRetryAfterMs, .5));
 test('keep valid numeric facts, not raw code-shaped messages', () => {
   const safe = sanitizeFailure(dto('PI_AI_ERROR', { status: 503, providerRetryAfterMs: 120000, message: 'private-token-aaaa' }), 'openai-codex');
   assert.equal(safe.status, 503); assert.equal(safe.providerRetryAfterMs, 120000); assert.ok(Object.isFrozen(safe));

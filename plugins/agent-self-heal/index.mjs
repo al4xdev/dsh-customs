@@ -1,43 +1,27 @@
 import { resolveHost } from '../common.mjs';
 import { assertPersistenceCompatible, assertAuditReadable } from './persistence.mjs';
-import { sanitizeFailure, own, positiveInteger, routeFacts, usageFacts } from './sanitizer.mjs';
-import { AUDIT_EVENT, PROJECTION_KEY, INITIAL_STATE, POLICY_VERSION, MAX_STEP_CALLS, MAX_HUMAN_GRANTS, validateConfig, decide, transition, chainKey, foldState, observationText, healthyStepProof, recoveredState, manualResumeState } from './logic.mjs';
+import { sanitizeFailure, harnessWarningText, own, positiveInteger, routeFacts, usageFacts } from './sanitizer.mjs';
+import { randomUUID } from 'node:crypto';
+import { ACCOUNTING_KEY, recoveryBudget } from '../llm-resilience/recovery-accounting.mjs';
+import { AUDIT_EVENT, PROJECTION_KEY, INITIAL_STATE, POLICY_VERSION, MAX_CONFIG_CYCLES, MAX_STEP_CALLS, MAX_HUMAN_GRANTS, validateConfig, decide, transition, chainKey, foldState, healthyStepProof, recoveredState, manualResumeState } from './logic.mjs';
 const { createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
-const { z } = await import(resolveHost('zod'));
+import { stateSchema } from './state-schema.mjs';
+export { stateSchema };
 export const name = 'alex-agent-self-heal';
-export const inject = ['agents', 'sessionProjections'];
-const integer = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
-const chainSchema = z.object({ turn: integer, step: integer, cycle: z.number().int().min(0).max(10), maxCycles: z.number().int().min(0).max(10),
-  status: z.enum(['reserved', 'admitted', 'retry-requested', 'suspended', 'aborted', 'append-failed', 'recovered']), attemptSeq: integer,
-  messageId: z.string().min(1).max(128).optional(), observationSeq: integer.optional() }).strict();
-const progressSchema = z.object({ kind: z.literal('healthy-step'), turn: integer, step: integer,
-  startSeq: integer, assistantSeq: integer, stepEndSeq: integer }).strict();
-const manualProgressShape = { kind: z.literal('human-resume'), authority: z.literal('live-root-inbox'),
-  turn: integer, step: integer, inboxSeq: integer, claimSeq: integer, stepStartSeq: integer };
-const candidateSchema = z.object({ turn: integer, step: integer, startSeq: integer, lastSeq: integer, valid: z.boolean(),
-  assistantSeq: integer.optional(), finishKind: z.enum(['stop', 'tool-calls']).optional(), stepEndSeq: integer.optional(),
-  toolCount: z.number().int().min(0).max(MAX_STEP_CALLS), callSeqs: z.array(integer).max(MAX_STEP_CALLS),
-  resultCallSeqs: z.array(integer).max(MAX_STEP_CALLS) }).strict();
-export const stateSchema = z.object({ lastHealthyTurn: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-  policyVersion: z.literal(POLICY_VERSION).optional(), pendingStep: candidateSchema.optional(), lastHealthyStep: progressSchema.optional(),
-  inboxEvidence: z.object({ insertSeqs: z.array(integer).max(MAX_HUMAN_GRANTS), claimSeq: integer.optional() }).strict().optional(),
-  lastManualResume: z.object({ ...manualProgressShape, previousChain: chainSchema.optional() }).strict().optional(),
-  lastCompletedTurn: z.object({ turn: integer, seq: integer }).strict().optional(),
-  seen: z.object({ attemptSeq: integer, emptyCount: z.number().int().min(0).max(2) }).strict().optional(),
-  chain: chainSchema.optional(), lastRecovered: chainSchema.optional() }).strict();
-const STOPPED = Symbol('self-heal-stopped');
-/** Disposal/caller cancellation interrupt this middleware's wait, not upstream I/O. */
-function downstream(next, signal) {
-  if (signal.aborted) return Promise.resolve(STOPPED);
-  return new Promise((resolve, reject) => {
-    const abort = () => { signal.removeEventListener('abort', abort); resolve(STOPPED); };
-    signal.addEventListener('abort', abort, { once: true });
-    Promise.resolve().then(next).then(value => { signal.removeEventListener('abort', abort); resolve(value); },
-      error => { signal.removeEventListener('abort', abort); reject(error); });
-  });
-}
+export const inject = ['agents', 'sessionProjections', 'llmRecoveryHistory'];
 export function apply(ctx, config = {}) {
   const { maxCycles } = validateConfig(config);
+  const resilience = () => ctx.get?.('llmRecoveryHistory');
+  if (resilience()?.recoveryVersion !== 2 || resilience()?.recoveryHistoryVersion !== 2) throw new Error('agent-self-heal: historical recovery controller v2 required');
+  const localCap = Object.hasOwn(config, 'maxCycles') ? maxCycles : MAX_CONFIG_CYCLES;
+  const cycleCap = () => {
+    const shared = resilience()?.config;
+    // The shared admission envelope covers explicit provider overrides; the
+    // budget/plan enforce the actual route's cap. The base is not a ceiling.
+    // Older v2 services remain conservative until their replacement arrives.
+    const cap = shared?.selfHeal?.maxCycles ?? shared?.policy?.maxRetries ?? 0;
+    return Math.min(localCap, cap);
+  };
   assertPersistenceCompatible();
   // Keep checkpoint version 1: the new fields are optional and old spent budgets
   // remain readable without replay, config-driven reset or missing-log inference.
@@ -45,6 +29,11 @@ export function apply(ctx, config = {}) {
     init: () => ({ ...INITIAL_STATE, policyVersion: POLICY_VERSION }),
     apply: (state, event) => { assertAuditReadable(event, stateSchema); return foldState(state, event); } });
   const lifetime = new AbortController(), attempts = new WeakMap(), busy = new WeakSet(), active = new Set();
+  const routeAliases = new Map();
+  const route = (provider, model) => {
+    if (typeof provider === 'string' && provider.length <= 512 && !routeAliases.has(provider) && routeAliases.size < 4096) routeAliases.set(provider, `configured-route-${routeAliases.size + 1}`);
+    return routeFacts(provider, model, routeAliases.get(provider));
+  };
   const turnSignals = new WeakMap(), pendingRecovered = new WeakMap();
   const lastSplices = new WeakMap(), humanGrants = new WeakMap(), claimedHuman = new WeakMap();
   const track = operation => {
@@ -54,10 +43,31 @@ export function apply(ctx, config = {}) {
   };
   const warnAudit = () => { try { ctx.logger?.warn?.('agent-self-heal: audit append failed; no atomic persistence guarantee.'); } catch {} };
   const readState = agent => ctx.sessionProjections.stateOf(agent.session, PROJECTION_KEY);
-  const audit = (agent, action, state, position, causalSeq, facts, progress) => agent.session.append(AUDIT_EVENT, {
+  const historicalSpend = agent => {
+    const history = ctx.sessionProjections.stateOf(agent.session, ACCOUNTING_KEY);
+    return history.unsafe || history.legacyConsumed > 0;
+  };
+  const transientFacts = (agent, provider) => {
+    // This optional diagnostic reads the native ledger without resetting it.
+    // Old standalone fixtures/hosts need not register the shared driver.
+    let ledger;
+    try { ledger = ctx.sessionProjections.stateOf(agent.session, 'llmRetry'); } catch { return {}; }
+    if (!ledger || typeof ledger !== 'object') return {};
+    let count = 0;
+    for (const [key, entry] of Object.entries(ledger)) {
+      let route;
+      try { [route] = JSON.parse(key); } catch { continue; }
+      const retry = own(entry, 'retry');
+      if (route === provider && Number.isSafeInteger(retry) && retry >= 0) count = Math.min(Number.MAX_SAFE_INTEGER, count + retry);
+    }
+    return { transientRetries: count };
+  };
+  const audit = (agent, action, state, position, causalSeq, facts, progress, recoveryWait, recoveryOwnership) => agent.session.append(AUDIT_EVENT, {
     version: 1, action, turn: position.turn, step: position.step, state,
     ...(causalSeq === undefined ? {} : { causalSeq }), ...(facts === undefined ? {} : { facts }),
     ...(progress === undefined ? {} : { progress }),
+    ...(recoveryWait === undefined ? {} : { recoveryWait }),
+    ...(recoveryOwnership === undefined ? {} : { recoveryOwnership }),
   });
   const stops = [];
   const userRpc = message => own(message, 'role') === 'user' && own(own(message, 'source'), 'kind') === 'user'
@@ -66,7 +76,7 @@ export function apply(ctx, config = {}) {
   stops.push(ctx.on('agent/inbox/inserted', ({ agent, message }) => {
     // mutate() emits synchronously after its durable splice, retaining the
     // original caller ALS. Ordinary model/peer tools cannot mint a root grant.
-    if (lifetime.signal.aborted || maxCycles === 0 || ctx.agents.currentInitiator() !== undefined
+    if (lifetime.signal.aborted || cycleCap() === 0 || ctx.agents.currentInitiator() !== undefined
       || ctx.agents.get(agent.id) !== agent || !userRpc(message)) return;
     const splice = lastSplices.get(agent), id = own(message, 'id');
     if (!splice || splice.target !== 'next-turn' || !splice.ids.includes(id)) return;
@@ -92,13 +102,13 @@ export function apply(ctx, config = {}) {
     turnSignals.set(agent, { turn, signal });
     const grant = claimedHuman.get(agent);
     claimedHuman.delete(agent);
-    if (grant && !lifetime.signal.aborted && maxCycles !== 0 && !signal.aborted
+    if (grant && !lifetime.signal.aborted && cycleCap() !== 0 && !signal.aborted
       && grant.turn === turn && ctx.agents.get(agent.id) === agent) {
       const state = readState(agent);
       const progress = { kind: 'human-resume', authority: 'live-root-inbox', turn, step,
         inboxSeq: grant.inboxSeq, claimSeq: grant.claimSeq, stepStartSeq: state.pendingStep?.startSeq };
       const resumed = manualResumeState(state, progress);
-      if (resumed && (state.chain || state.seen?.emptyCount)) {
+      if (resumed && (state.chain || state.seen?.emptyCount || historicalSpend(agent))) {
         try { audit(agent, 'manual-resumed', resumed, progress, progress.claimSeq, undefined, progress); }
         catch { warnAudit(); }
       }
@@ -106,7 +116,7 @@ export function apply(ctx, config = {}) {
     return next();
   }));
   stops.push(ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-    if (lifetime.signal.aborted || maxCycles === 0) return;
+    if (lifetime.signal.aborted || cycleCap() === 0) return;
     const type = own(frame, 'type');
     if (type === 'start') {
       const turn = own(frame, 'turn'), step = own(frame, 'step');
@@ -124,7 +134,7 @@ export function apply(ctx, config = {}) {
     }
   }));
   stops.push(ctx.on('session/event', (session, event) => {
-    if (lifetime.signal.aborted || maxCycles === 0) return;
+    if (lifetime.signal.aborted || cycleCap() === 0) return;
     const agent = ctx.agents.get(session.id);
     if (!agent || agent.session !== session) return;
     if (event.type === 'agent/inbox/spliced') {
@@ -139,7 +149,7 @@ export function apply(ctx, config = {}) {
     // native witness; the live signal must still admit this deferred commit.
     const state = readState(agent);
     const progress = healthyStepProof(state);
-    if (!progress || progress.stepEndSeq !== event.seq || (!state.chain && !state.seen?.emptyCount)) return;
+    if (!progress || progress.stepEndSeq !== event.seq || (!state.chain && !state.seen?.emptyCount && !historicalSpend(agent))) return;
     const ticket = { progress, chain: state.chain ? chainKey(state.chain) : undefined,
       attemptSeq: state.chain?.attemptSeq ?? state.seen?.attemptSeq, cycle: state.chain?.cycle };
     if (pendingRecovered.has(agent)) { pendingRecovered.set(agent, ticket); return; }
@@ -161,20 +171,22 @@ export function apply(ctx, config = {}) {
   }));
   async function recover(payload, next) {
     if (lifetime.signal.aborted || payload.signal.aborted) return;
-    if (maxCycles === 0) return next();
     const signal = AbortSignal.any([lifetime.signal, payload.signal]);
-    const action = await downstream(next, signal);
-    if (action === STOPPED || signal.aborted) return;
     const { agent, turn, step, provider } = payload;
-    if (ctx.agents.get(agent.id) !== agent || busy.has(agent)) return action;
+    const selected = sanitizeFailure(payload.failure, provider);
+    if (!selected) return next();
+    // This owner never delegates a selected failure to an old technical retry.
+    if (ctx.agents.get(agent.id) !== agent || busy.has(agent)) return;
+    const scheduler = resilience();
+    // An explicit route opt-out is not permission for semantic fallback to
+    // bypass the operator's decision by issuing a different kind of replay.
+    if (scheduler?.recoveryVersion !== 2 || scheduler.recoveryHistoryVersion !== 2 || scheduler.signal.aborted) return;
     const attempt = attempts.get(agent);
     // Only the public loop's committed failed attempt admits an observation.
-    if (!attempt || attempt.turn !== turn || attempt.step !== step || !positiveInteger(attempt.seq)) return action;
-    const selected = sanitizeFailure(payload.failure, provider);
-    if (!selected) return action;
-    if (action !== undefined && selected.code !== 'EMPTY_RESPONSE') return action;
+    if (!attempt || attempt.turn !== turn || attempt.step !== step || !positiveInteger(attempt.seq)) return;
     const position = { turn, step };
-    const facts = Object.freeze({ ...selected, ...routeFacts(provider, agent.options.model),
+    const facts = Object.freeze({ ...selected, ...route(provider, agent.options.model),
+      ...(scheduler ? transientFacts(agent, provider) : {}),
       ...(positiveInteger(agent.options.maxTokens) && agent.options.maxTokens <= 1_000_000 ? { outputCap: agent.options.maxTokens } : {}) });
     busy.add(agent);
     let state;
@@ -184,33 +196,70 @@ export function apply(ctx, config = {}) {
       try { audit(agent, status, state, position, attempt.seq, facts); } catch { warnAudit(); }
     };
     try {
-      const decision = decide(readState(agent), position, attempt.seq, facts, maxCycles, action !== undefined);
-      if (decision.kind === 'ignore' || decision.kind === 'duplicate') return action;
+      const current = readState(agent);
+      if (attempt.seq <= (current.seen?.attemptSeq ?? 0)) return;
+      const policy = scheduler.policyFor(provider, payload.retryPolicy);
+      const budget = recoveryBudget(current,
+        ctx.sessionProjections.stateOf(agent.session, ACCOUNTING_KEY),
+        ctx.sessionProjections.stateOf(agent.session, 'llmRetry'), policy, provider, cycleCap());
+      // Import disjoint legacy native/semantic spending once. Subsequent unified
+      // reservations already include this floor and must never add it again.
+      let seeded = current;
+      if (budget.consumed > (current.chain?.cycle ?? 0) || current.chain) seeded = { ...current, chain: {
+        ...(current.chain ?? { turn, step, status: 'reserved', attemptSeq: attempt.seq }),
+        cycle: Math.max(current.chain?.cycle ?? 0, Math.min(budget.consumed, budget.cap)), maxCycles: budget.cap,
+      } };
+      const waitPlan = selected.invalidFailureFacts ? undefined : scheduler.plan({ provider, failure: selected,
+        previousRetry: budget.consumed, registeredPolicy: payload.retryPolicy, policy: budget.policy });
+      const appendWarning = (terminal, retry = budget.consumed) => {
+        const summary = `harness warning: ${terminal ? 'recovery stopped' : `retry ${retry} of ${budget.cap}`}.`;
+        const message = createUserMessage({ source: { kind: 'self-heal-observation', label: 'Harness warning', form: 'notice', summary,
+          ...(state?.chain ? { chain: chainKey(state.chain), cycle: state.chain.cycle } : {}), attemptSeq: attempt.seq },
+          content: [{ type: 'text', text: harnessWarningText(facts, { retry, maxRetries: budget.cap, delayMs: waitPlan?.delayMs, terminal }) }] });
+        const admitted = agent.session.append('user/message', message, { surfaceOp: 'append', sourceEventSeqs: [attempt.seq] });
+        return { message, admitted };
+      };
+      if (!waitPlan) {
+        // A terminal-only legacy takeover has no unified reservation. Its
+        // native floor already lives in history2; copying it into a semantic
+        // chain here would count the same native spending twice on continuation.
+        state = { ...current, seen: { attemptSeq: attempt.seq, emptyCount: selected.code === 'EMPTY_RESPONSE' ? 1 : 0 } };
+        if (state.chain) state = transition(state, 'suspended', { maxCycles: Math.min(state.chain.maxCycles, budget.cap) });
+        audit(agent, state.chain ? 'suspended' : 'observed', state, position, attempt.seq, facts);
+        if (!signal.aborted) appendWarning(true);
+        return; // Native loop throws the original LlmError; never call another retry owner.
+      }
+      const decision = decide(seeded, position, attempt.seq, facts, budget.cap, false, true);
+      if (decision.kind !== 'heal') return;
       state = decision.state;
-      if (decision.kind === 'observed') { audit(agent, 'observed', state, position, attempt.seq, facts); return action; }
-      if (decision.kind === 'suspended') { audit(agent, 'suspended', state, position, attempt.seq, facts); return; }
-      // Reservation first. Reloads or partial append failures never grant a new
-      // cycle for the same failed attempt. These appends are deliberately non-atomic.
-      audit(agent, 'reserved', state, position, attempt.seq, facts);
-      if (signal.aborted) { markStopped('aborted'); return; }
-      const summary = `Model request recovery: cycle ${state.chain.cycle} of ${state.chain.maxCycles}.`;
-      const message = createUserMessage({ source: { kind: 'self-heal-observation', label: 'Self-heal', form: 'notice', summary,
-        chain: chainKey(state.chain), cycle: state.chain.cycle, attemptSeq: attempt.seq },
-        content: [{ type: 'text', text: observationText(facts, position, state.chain, attempt.usage) }] });
-      const admitted = agent.session.append('user/message', message, { surfaceOp: 'append', sourceEventSeqs: [attempt.seq] });
+      const retryId = budget.retryId ?? randomUUID();
+      const ownership = { version: 1, kind: 'unified-agent-warning', origin: { turn: state.chain.turn, step: state.chain.step },
+        provider, retryId, policyKey: waitPlan.policyKey, retry: state.chain.cycle,
+        legacyNativeConsumed: budget.legacyNativeConsumed, legacySemanticConsumed: budget.legacySemanticConsumed, importedConsumed: budget.importedConsumed };
+      const scheduledAtMs = Date.now();
+      const recoveryWait = { version: 1, phase: 'contextual-recovery', retry: waitPlan.retry, delayMs: waitPlan.delayMs,
+        policyKey: waitPlan.policyKey, scheduledAtMs, notBeforeMs: scheduledAtMs + waitPlan.delayMs };
+      // Reserve before warning/UI appends: any partial failure consumes this credit.
+      audit(agent, 'reserved', state, position, attempt.seq, facts, undefined, recoveryWait, ownership);
+      if (signal.aborted || lifetime.signal.aborted) { markStopped('aborted'); return; }
+      const { message, admitted } = appendWarning(false, state.chain.cycle);
       state = transition(state, 'admitted', { messageId: message.id, observationSeq: admitted.seq });
-      if (signal.aborted) { markStopped('aborted'); return; }
       audit(agent, 'observation-admitted', state, position, attempt.seq, facts);
-      if (signal.aborted) { markStopped('aborted'); return; }
+      if (signal.aborted || scheduler.signal.aborted) { markStopped('aborted'); return; }
+      agent.session.append('llm/retry', { retryId, turn, step, provider, mode: 'normal', policyKey: waitPlan.policyKey,
+        retry: state.chain.cycle, maxRetries: budget.cap, delayMs: waitPlan.delayMs, failure: payload.failure });
+      if (!await scheduler.wait(waitPlan, signal)) { markStopped('aborted'); return; }
+      if (signal.aborted || scheduler.signal.aborted || ctx.agents.get(agent.id) !== agent) { markStopped('aborted'); return; }
       state = transition(state, 'retry-requested');
       audit(agent, 'retry-requested', state, position, attempt.seq, facts);
       if (signal.aborted) { markStopped('aborted'); return; }
+      agent.session.append('llm/retry-started', { retryId, turn, step, retry: state.chain.cycle });
       return { kind: 'retry' };
     } catch {
       // Never include append/callback exception text, never refund the cycle, and
       // never authorize replay after uncertain settlement/admission.
       markStopped('append-failed');
-      return action;
+      return;
     } finally { busy.delete(agent); }
   }
   stops.push(ctx.on('agent/request-error', (payload, next) => {

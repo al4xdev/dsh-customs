@@ -1,0 +1,5 @@
+# Aviso de conexão no catálogo nativo
+
+Print autorizado pelo proprietário mostra lista Conversas com status Conectado e aviso Conexão interrompida. Código confirma: back fecha stream por design e define connected=false/selectedId=null, mas preserva status antigo; UI mostra aviso com authenticated&&!connected sem exigir chat selecionado. Catálogo usa RPC e não exige websocket.
+
+Corrigir somente apresentação e status: aviso exige chat selecionado e conexão do chat interrompida; voltar/lista atualizando usa estado de catálogo, não Conectado herdado. Preservar connected e Send guards reais, noRetry, ledger/generation, approvals e cookies. Adicionar fixtures JVM/Compose sem dados pessoais, rodar app unit/lint/build. Não clicar Reconectar no chat real, enviar turnos, reiniciar PC/DSH ou alterar backend/TTL. Não instalar APK novo sem autorização separada, sobretudo com turnos/entrega incerta.

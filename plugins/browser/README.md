@@ -51,6 +51,22 @@ Os blocos abaixo são **argumentos JSON para a tool `browser`**, não comandos s
 
 Help lista apenas filhos imediatos, com limites/cursor; describe retorna uma operação. `path` é apenas de discovery; execução usa `operation` dotted. Metadados não fazem launch/install. `session.list/status` e `media.video/trace.status` consultam somente um worker já conectado quando a policy permite; sem worker/read-only retornam `LAST_KNOWN_STATUS`, sem afirmar que uma ação continua possível. Capture metadata não cria attachments nem entrega frames em chamadas de discovery. `catalogRevision` opcional detecta drift, **não** é token de aprovação.
 
+### Recuperação de erros de envelope
+
+Cada item do help traz `nextCall` completo: `help` para uma branch e `describe` para uma leaf. O help raiz traz `quickStart` com abrir → navegar → observar → screenshot. Describe inclui campos obrigatórios, não só defaults. Exemplos são **templates não executados**: substitua placeholders, URL, nomes e coordenadas por valores pretendidos e refs reais. Aprovação, disponibilidade e ownership continuam sendo verificados na execução.
+
+A forma preferida continua sendo metacampos **no topo**, como nos exemplos. Para evitar loops por erro de posicionamento, o validator aceita também `args.path` apenas em help/describe, `args.sessionId` apenas quando a operação requer sessão, `args.pageId` apenas quando usa Page e `args.catalogRevision`. Eles são relocados antes dos mesmos checks, sem alterar o input original. Duplicatas idênticas são coalescidas; valores conflitantes falham **antes de efeitos**, sem escolher uma precedência.
+
+Assim, esta chamada também funciona com refs válidas:
+
+```json
+{"operation":"page.navigate","args":{"sessionId":"bs_retornado","pageId":"bp_retornado","url":"http://127.0.0.1:8888/index.html"}}
+```
+
+Não há flatten genérico, coerção, seleção de sessão/aba ou alias executável. `page.goto` continua inválido, mas o erro ensina `page.navigate`. Describe sem path ou com uma branch ensina uma chamada completa de recuperação. Erros de args apontam para o describe correto no próprio texto, porque o erro nativo não preserva todos os details. Campos desconhecidos, código, IDs estrangeiros/stale, URLs proibidas, paths arbitrários de screenshot e ações sem aprovação continuam negados. **Não abra outra sessão só para corrigir o lugar dos IDs**: reutilize os retornados por `session.open`.
+
+Na composição padrão, alterações no código `.mjs` entram ao **reabrir o DSH**; `/reload` da TUI só recarrega preferências, não esta implementação. Faça isso quando o agente estiver ocioso, sem parar o servidor do modelo. Após a reabertura, crie uma nova sessão browser: os handles do processo anterior não são restaurados pelo journal.
+
 ### Desktop e navegação
 
 ```json

@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as observerSource from '../pi-ai-fork/provider-failure.ts';
-import { main, smoke, syntheticPersistence, syntheticObserver } from './smoke.mjs';
+import * as policySource from '../../plugins/llm-resilience/policy.mjs';
+import { main, smoke, syntheticPersistence, syntheticObserver, syntheticRecoveryPolicy } from './smoke.mjs';
 
 function syntheticSdk() {
   return { validateStoredEvents(header, events) {
@@ -20,9 +21,16 @@ test('persistence fixture requires both known acceptance and unknown rejection',
   assert.throws(() => syntheticPersistence({ validateStoredEvents() { throw new Error('unsupported'); } }), /unsupported/);
 });
 
-test('observer checks pure source categories, callback disposal and policy metadata', () => {
+test('observer checks pure source categories and callback disposal without selecting a retry authority', () => {
   syntheticObserver(observerSource);
   assert.throws(() => syntheticObserver({ ...observerSource, PROVIDER_FAILURE_OBSERVER_VERSION: 0 }));
+});
+
+test('current harness metadata uses ten contextual retries rather than historical SDK retry defaults', () => {
+  const result = syntheticRecoveryPolicy(policySource);
+  assert.equal(result.maxRetries, 10); assert.equal(result.nominalDelaysMs[9], 3600000);
+  assert.equal(result.legacySdkMetadataIsAuthority, false);
+  assert.throws(() => syntheticRecoveryPolicy({ ...policySource, DEFAULT_POLICY: { ...policySource.DEFAULT_POLICY, maxRetries: 9 } }));
 });
 
 test('default/help and malformed CLI remain inert', async () => {
@@ -42,7 +50,7 @@ test('host guard runs before metadata, imports or filesystem root inspection', a
   assert.equal(touched, false);
 });
 
-test('DI smoke imports exactly validator, observer helper and compatibility helper, not boot/providers', async t => {
+test('DI smoke imports only validators, observer helper and pure current policy, not boot/providers', async t => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-offline-smoke-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const runtimeRoot = join(root, 'runtime'), repoRoot = join(root, 'repo');
@@ -57,14 +65,16 @@ test('DI smoke imports exactly validator, observer helper and compatibility help
       if (path.endsWith('dsh-session-persistence/lib/index.js')) return syntheticSdk();
       if (path.endsWith('pi-ai/dist/utils/provider-failure.js')) return observerSource;
       if (path.endsWith('agent-self-heal/persistence.mjs')) return { assertPersistenceCompatible() { compatibility = true; } };
+      if (path.endsWith('llm-resilience/policy.mjs')) return policySource;
       throw new Error('Unexpected import: ' + path);
     },
   });
-  assert.equal(imports.length, 3);
+  assert.equal(imports.length, 4);
   assert(imports.every(path => !/dsh-app-boot|api\/|oauth|credentials/.test(path)));
   assert.equal(compatibility, true);
   assert.equal(result.sdk50SyntheticRoundtrip, true);
   assert.equal(result.observer38Synthetic, true);
+  assert.equal(result.unifiedRecoveryPolicy.maxRetries, 10);
   assert.equal(result.modelCalls, 0);
   assert.equal(result.credentialsRead, false);
   assert.equal(result.cliBooted, false);

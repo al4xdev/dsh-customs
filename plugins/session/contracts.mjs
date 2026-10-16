@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { READ_OPERATIONS, parseReadRequest, usesReadRouter, validReadId } from './read-contracts.mjs';
 
-export const OPERATIONS = ['help', 'list', 'inspect', 'read', 'send', 'resume'];
+export const OPERATIONS = ['help', 'list', 'inspect', 'read', ...READ_OPERATIONS, 'send', 'resume'];
 export const DEFAULT_BYTES = 8192;
 export const MAX_BYTES = 32768;
 export const MAX_TEXT = 16384;
@@ -10,22 +11,28 @@ export const MAX_ROWS = 100;
 export const WRITER_STATES = ['held', 'not-observed', 'unknown'];
 const keys = {
   help: [], list: ['project', 'state', 'writer', 'cursor', 'limit', 'maxBytes'],
-  inspect: ['sessionId', 'limit', 'maxBytes'],
-  read: ['sessionId', 'cursor', 'revision', 'limit', 'maxBytes'],
+  inspect: ['sessionId', 'view', 'limit', 'maxBytes'],
+  read: ['sessionId', 'offset', 'textOffset', 'textLimit', 'cursor', 'revision', 'limit', 'maxBytes'],
   send: ['sessionId', 'text'], resume: ['sessionId', 'text'],
 };
 export function validId(id) {
   return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id);
 }
 export function parseRequest(input) {
+  if (usesReadRouter(input)) return parseReadRequest(input);
   if (!input || typeof input !== 'object' || Array.isArray(input) || !OPERATIONS.includes(input.operation)) throw new Error('invalid operation');
   const { operation } = input;
   for (const key of Object.keys(input)) if (key !== 'operation' && !keys[operation].includes(key)) throw new Error(`unexpected argument: ${key}`);
-  if (['inspect', 'read', 'send', 'resume'].includes(operation) && !validId(input.sessionId)) throw new Error('invalid sessionId');
+  if (['inspect', 'read'].includes(operation) && !validReadId(input.sessionId)) throw new Error('invalid sessionId');
+  if (['send', 'resume'].includes(operation) && !validId(input.sessionId)) throw new Error('invalid sessionId');
   if (['send', 'resume'].includes(operation) && (typeof input.text !== 'string' || !input.text.trim() || Buffer.byteLength(input.text) > MAX_TEXT)) throw new Error('text must be nonempty and at most 16 KiB');
   for (const key of ['project', 'cursor', 'revision']) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > 2048)) throw new Error(`invalid ${key}`);
   if (input.state !== undefined && !['alive', 'ended', 'waiting', 'unknown'].includes(input.state)) throw new Error('invalid state');
   if (input.writer !== undefined && !WRITER_STATES.includes(input.writer)) throw new Error('invalid writer');
+  if (input.view !== undefined && !['head', 'tail'].includes(input.view)) throw new Error('invalid view');
+  for (const key of ['offset', 'textOffset']) if (input[key] !== undefined && (!Number.isSafeInteger(input[key]) || input[key] < 0)) throw new Error(`invalid ${key}`);
+  if (input.offset !== undefined && (input.cursor !== undefined || input.revision !== undefined)) throw new Error('offset cannot be combined with cursor or revision');
+  if (input.textLimit !== undefined && (!Number.isSafeInteger(input.textLimit) || input.textLimit < 1 || input.textLimit > 4096)) throw new Error('textLimit must be 1..4096');
   const limit = input.limit ?? (operation === 'inspect' ? DEFAULT_INSPECT_LIMIT : DEFAULT_LIST_LIMIT);
   const maxBytes = input.maxBytes ?? DEFAULT_BYTES;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_ROWS) throw new Error(`limit must be 1..${MAX_ROWS}`);
@@ -85,14 +92,21 @@ export function boundedPage(base, rows, field, maxBytes, makeCursor) {
 }
 // Only text previews are exposed: no tool arguments/results, request headers,
 // reasoning streams, attachment bodies or credential files cross this face.
-export function previewEvent(event) {
+export function previewEvent(event, { textOffset = 0, textLimit = 512 } = {}) {
   const out = { seq: event.seq, time: event.time, type: event.type };
   const data = event.data ?? {};
   if (event.type === 'user/message' || event.type === 'assistant/message') {
     const message = event.type === 'user/message' ? data : data.message;
     const text = (message?.content ?? []).filter(block => block.type === 'text').map(block => block.text).join('\n');
-    out.text = redact(text).slice(0, 512);
-    out.contentTruncated = text.length > 512;
+    // Redact before slicing so a credential spanning excerpt boundaries cannot leak.
+    const safe = redact(text);
+    out.text = safe.slice(textOffset, textOffset + textLimit);
+    out.contentTruncated = textOffset > 0 || safe.length > textOffset + textLimit;
+    if (textOffset > 0 || textLimit !== 512 || out.contentTruncated) {
+      out.textOffset = textOffset;
+      out.textLength = safe.length;
+      out.nextTextOffset = textOffset + out.text.length < safe.length ? textOffset + out.text.length : null;
+    }
   }
   if (event.type === 'turn/end') {
     out.reason = data.reason?.kind;

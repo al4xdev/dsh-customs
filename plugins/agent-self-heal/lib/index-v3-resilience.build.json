@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "output": "index-v3-resilience.mjs",
+  "sha256": "ced946bae33b28e43d2169283181ee407fe495c293cc57582ebff6d388100fe7",
+  "sourceHashes": {
+    "plugins/common.mjs": "91a3e1d926700c032d5b5216f58168be150698b788f24427a3cad019cbf2d4d1",
+    "plugins/agent-self-heal/index.mjs": "dcfe37e359ec5496e76e49252ac0873a31342893500adcb67c3177b27f91068a",
+    "plugins/agent-self-heal/logic.mjs": "1c5516c876e3813a18a5cc42a528814f5243e8e4b858962e061549db155eaaf7",
+    "plugins/agent-self-heal/sanitizer.mjs": "212104fc74c612f090a8179de7ee4e64247035324a1b50c8cfda1810eedbe143",
+    "plugins/agent-self-heal/persistence.mjs": "193a165a94f1212bb177402683a61f40a6506d2bbbb1b95ccb3de21ddacb2042"
+  },
+  "compilerVersion": "0.28.2",
+  "target": "node24",
+  "rollbackSha256": "9a31e0138a65c03e1f922076f22a87b4f9d9d8ca62ef9225d84f43bbf2410e43"
+}

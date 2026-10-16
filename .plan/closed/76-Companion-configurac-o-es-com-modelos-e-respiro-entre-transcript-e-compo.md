@@ -1,0 +1,14 @@
+# Companion: configurações/modelos e borda inferior do chat
+
+## Pedido direto complementar à tarefa75
+Proprietário pediu estudar/implementar, se suportado, seletor de modelos numa tela simples de configuração, substituindo Sair no catálogo por Configurações e movendo Sair para dentro. Pediu antes um print atual ADB para conferir bolha/painel de mensagem no máximo do scroll. Print único capturado por autorização expressa em .dumps/tasks/task75-owner-chat-layout.png e inspecionado localmente; contém conversa privada, NÃO publicar nem usar como fixture.
+
+## Implementação
+- Inspecionar catálogo/model selection e default model públicos do SDK, autenticação/escopo/provider permitido. UI lista modelos realmente disponíveis, label claro para aplicação (conversa atual versus novas conversas/default); sem inventar catálogo ou confundir efeito local/global. Nunca exibir chaves/credenciais; não trocar modelo real durante teste, apenas usuário escolhe na UI e confirma a intenção.
+- Configurações simples nativa, engrenagem CDConfigurações no lugar do Sair do catálogo, Voltar acessível; Sair dentro conserva latch/proteção de busy/SENDING/UNKNOWN/draft e cofre. Carregamento/erro honesto para catálogo indisponível; seleção disabled até metadata válida, sem retry automático de mutação ou reexecução após entrega incerta. Model atual configurado gpt-6-sol/openai-codex/low permanece até escolha explícita.
+- Se SDK só permitir seleção por sessão, informar isso claramente e não prometer default novo-chat; implementar default pelo contrato público se existir. Qualquer adaptação só no repo/perfil dedicado, SDK readonly. Testar com fixtures de catálogo/resposta sem real model switch ou OAuth changes.
+- Corrigir borda inferior da lista: print mostrou última bolha tocando divisor do compositor, sem margem final; reservar padding de conteúdo inferior e corrigir follow-bottom com afterContentPadding/viewport/IME para card alto. Não sobrepor composer nem inflar viewport artificialmente, preservar scroll manual/seleção e teclado.
+- Coordenar arquivos compartilhados com75 (motion no header/routes, tools no renderer); manter mesmos IDs/cadência/preservações mídia e segurança.
+
+## Verificação
+Contract/JVM e Compose para catálogo/modelos disponíveis/erro/seleção-intenção/disabled/unknown/logout; transcript no fim com margem positiva, mensagens altas, IME/reducedmotion e scrollmanual. Testes sintéticos isolados/emuladorADB5039 e lint. Não repetir captura privada, tocar aparelho, instalar/reiniciar serviço ou alterar modelo atual enquanto proprietário sai. Screenshot privado fica local gitignored, evidência reproduzida com conteúdo sintético. Entregar APK integrado75/76 validado para proprietário testar no retorno.

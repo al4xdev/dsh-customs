@@ -63,7 +63,7 @@ function add(operation, description, inputSchema = empty, outputSchema = data(),
   });
 }
 
-add('help', 'List only the immediate catalog children; discover schemas with describe.', object({ query: string(128), limit: integer(1, 30), cursor: string(2048), availability: enumeration(['all', 'verified', 'disabled', 'unsupported']) }), data({ path: string(160), items: array(data(), 30), hasMore: boolean, cursor: string(2048), catalogRevision: string(80) }, ['path', 'items', 'hasMore', 'catalogRevision']), { defaults: { limit: 12, availability: 'all' }, effects: ['discovery'], requiresSession: false });
+add('help', 'List immediate children with next-call examples. Use top-level path for a branch; describe a leaf for its exact schema.', object({ query: string(128), limit: integer(1, 30), cursor: string(2048), availability: enumeration(['all', 'verified', 'disabled', 'unsupported']) }), data({ path: string(160), items: array(data(), 30), hasMore: boolean, cursor: string(2048), catalogRevision: string(80) }, ['path', 'items', 'hasMore', 'catalogRevision']), { defaults: { limit: 12, availability: 'all' }, effects: ['discovery'], requiresSession: false });
 add('describe', 'Return the exact schema, effects and limits for one operation.', empty, data({ operation: string(160), inputSchema: data(), outputSchema: data(), defaults: data(), effects: array(string(64)), availability: string(32), catalogRevision: string(80) }, ['operation', 'inputSchema', 'outputSchema', 'defaults', 'effects', 'availability', 'catalogRevision']), { effects: ['discovery'], requiresSession: false });
 add('capabilities', 'Report local declarations, runtime readiness and current policy without launching a browser.', empty, data(), { effects: ['discovery'], requiresSession: false });
 
@@ -167,6 +167,40 @@ export function operationDefaults(descriptor, config = DEFAULT_CONFIG) {
   return defaults;
 }
 
+/** Templates stay local and inert; required fields must not disappear behind defaults. */
+function exampleValue(schema, key) {
+  if (schema === TARGET_SCHEMA) return { kind: 'role', role: 'button', name: '<exact accessible name>', exact: true };
+  if (schema.const !== undefined) return schema.const;
+  if (schema.enum) return schema.enum[0];
+  if (schema.oneOf) return exampleValue(schema.oneOf[0], key);
+  if (schema.type === 'object') return Object.fromEntries((schema.required ?? []).map(field => [field, exampleValue(schema.properties[field], field)]));
+  if (schema.type === 'array') return [exampleValue(schema.items, key)];
+  if (['integer', 'number'].includes(schema.type)) return schema.minimum ?? 0;
+  if (schema.type === 'boolean') return false;
+  return `<required-${key}>`;
+}
+
+export function operationExample(descriptor, config = DEFAULT_CONFIG) {
+  const args = operationDefaults(descriptor, config);
+  for (const key of descriptor.inputSchema.required ?? []) {
+    if (!Object.hasOwn(args, key)) args[key] = exampleValue(descriptor.inputSchema.properties[key], key);
+  }
+  // These schemas require a choice even without a top-level required list.
+  const choices = {
+    'page.navigate': { url: 'http://127.0.0.1:8000/' },
+    'page.wait': { fonts: true }, 'interact.scroll': { deltaY: 300 },
+    'interact.press': { key: 'Enter' }, 'mobile.tap': { point: { x: 0, y: 0 } },
+    'emulate.media': { reducedMotion: 'reduce' },
+  };
+  return {
+    operation: descriptor.operation,
+    ...(descriptor.operation === 'help' ? { path: 'session' } : descriptor.operation === 'describe' ? { path: 'page.navigate' } : {}),
+    ...(descriptor.requiresSession ? { sessionId: '<refs.sessionId>' } : {}),
+    ...(descriptor.usesPage ? { pageId: '<refs.pageId>' } : {}),
+    args: { ...args, ...choices[descriptor.operation] },
+  };
+}
+
 export function operationAvailability(descriptor, config = DEFAULT_CONFIG) {
   if (descriptor.availability !== 'verified') return { state: descriptor.availability, reason: descriptor.description };
   if (descriptor.effects.every(effect => effect === 'discovery')) return { state: 'verified' };
@@ -228,6 +262,7 @@ export function helpCatalog({ path = '', query = '', limit = 12, cursor, availab
     return {
       operation, kind: leaf ? 'operation' : 'branch', description: leaf?.description ?? branchSummaries[operation] ?? `${operation.split('.').at(-1)} operations.`,
       availability: state, effects: leaf?.effects ?? [...new Set(children.flatMap(child => child.effects))],
+      nextCall: { operation: leaf ? 'describe' : 'help', path: operation, args: {} },
     };
   }).filter(item => (availability === 'all' || item.availability === availability) && (!query || `${item.operation} ${item.description}`.toLowerCase().includes(query.toLowerCase()))).sort((a, b) => a.operation.localeCompare(b.operation));
   let offset = 0;
@@ -240,7 +275,18 @@ export function helpCatalog({ path = '', query = '', limit = 12, cursor, availab
     offset = previous.offset;
   }
   const page = items.slice(offset, offset + limit);
-  const result = { path, items: page, hasMore: offset + page.length < items.length, catalogRevision: revision };
+  const result = {
+    path, items: page, hasMore: offset + page.length < items.length, catalogRevision: revision,
+    usage: {
+      envelope: 'Put path (help/describe), sessionId, pageId and catalogRevision at the top level; args contains leaf arguments. Applicable metadata inside args is also accepted when it does not conflict. args is required.',
+      branches: 'Use help for branches (session, page, media); describe requires an exact leaf such as page.navigate.',
+      ...(lookup.has(path) ? { nextCall: { operation: 'describe', path, args: {} } } : {}),
+    },
+    ...(path === '' ? { quickStart: {
+      note: 'These are templates, not executed actions. Replace URL and placeholders with your intended URL and IDs returned in session.open refs. Existing owned IDs can be reused; do not reopen to fix argument placement. Multiple Pages require explicit pageId.',
+      calls: ['session.open', 'page.navigate', 'observe.snapshot', 'media.screenshot'].map(operation => operationExample(lookup.get(operation), config)),
+    } } : {}),
+  };
   if (result.hasMore) result.cursor = encodeCursor({ revision, policy: policyRevision, path, query, availability, owner: scope, offset: offset + page.length, expires: Date.now() + 900000 });
   if (Buffer.byteLength(JSON.stringify(result)) > 8192) fail('LIMIT_EXCEEDED', 'Catalog response exceeds its budget; lower limit or narrow the branch.');
   return result;
@@ -258,7 +304,8 @@ export function describeOperation(path, config = DEFAULT_CONFIG) {
     availability: availability.state, ...(availability.reason ? { availabilityReason: availability.reason } : {}),
     catalogRevision: catalogRevision(config), schemaHash: createHash('sha256').update(JSON.stringify({ input: descriptor.inputSchema, output: descriptor.outputSchema })).digest('hex'),
     limits: config.limits,
-    example: { operation: descriptor.operation, ...(descriptor.requiresSession ? { sessionId: '<owned-session>' } : {}), ...(descriptor.usesPage ? { pageId: '<owned-page>' } : {}), args: operationDefaults(descriptor, config) },
+    example: operationExample(descriptor, config),
+    exampleNote: 'Template only: replace placeholders, names, coordinates and URL with your intended values and owned refs. Approval and ownership checks still apply; this metadata executes nothing.',
   };
   if (Buffer.byteLength(JSON.stringify(result)) > 16384) fail('LIMIT_EXCEEDED', 'Operation schema exceeds the describe budget.');
   return result;

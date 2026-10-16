@@ -3,7 +3,8 @@ import { mkdir, lstat, readFile, readdir, realpath, symlink, writeFile } from 'n
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { filterPreset } from '../task10-profile/promotion.mjs';
-import { longCodexRetryConfig } from '../pi-ai-fork/long-retry-policy.mjs';
+import { DEFAULT_POLICY } from '../../plugins/llm-resilience/policy.mjs';
+import { migrateResilienceProfile } from '../resilience/profile.mjs';
 
 export function profilePackage() {
   return { name: 'dsh-profile-dsh-tui', private: true, dependencies: { '@deepseek-ai/dsh-base': '0.2.0-rc.2', '@deepseek-harness-tui/dsh-tui': '0.14.0', yaml: '2.9.1' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-harness-tui/dsh-tui'] } } };
@@ -20,9 +21,6 @@ export function assertPublicSeed(value) {
 
 export function publicProfilePatch(base, presets, profile) {
   let patch = base.trimEnd() + '\n- id: dsh-tui\n  config:\n    lang: en\n';
-  patch += '- id: dsh-tui-auth\n  config:\n    retryPolicies:\n      openai-codex:\n';
-  const policy = longCodexRetryConfig;
-  patch += `        mode: ${policy.mode}\n        maxRetries: ${policy.maxRetries}\n        backoff:\n          initialDelayMs: ${policy.backoff.initialDelayMs}\n          maxDelayMs: ${policy.backoff.maxDelayMs}\n          jitterRatio: ${policy.backoff.jitterRatio}\n`;
   patch += '- insert:\n';
   for (const preset of presets.filter(item => !item.untouched)) {
     patch += `    - id: preset-${preset.id}\n      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: ${preset.id}\n        order: ${preset.order}\n        plugins:\n          - id: ${preset.id}-managed-plugins\n            name: '@deepseek-ai/cordis-plugin-include'\n            config:\n              path: ${JSON.stringify(join(profile, 'presets', preset.id + '.yml'))}\n`;
@@ -49,7 +47,7 @@ export async function seedProfile({ home, installRoot, repo }, { run } = {}) {
   const pkg = profilePackage();
   assertPublicSeed(pkg);
   const base = await readFile(join(repo, 'tools/task10-profile/cordis.patch.yml'), 'utf8');
-  const patch = publicProfilePatch(base, presets, profile);
+  const patch = migrateResilienceProfile(publicProfilePatch(base, presets, profile), { repoRoot: repo, profile: 'dsh-tui' }).candidate;
   const parsed = YAML.parseDocument(patch);
   assert.equal(parsed.errors.length, 0, 'Public profile patch must parse');
   assertPublicSeed(parsed.toJS());
@@ -65,7 +63,8 @@ export async function seedProfile({ home, installRoot, repo }, { run } = {}) {
   await run(process.execPath, [join(repo, 'tools/activate.mjs'), '--check', '--profile', 'dsh-tui', '--root', repo], repo);
   const finalManifest = JSON.parse(await readFile(join(repo, 'plugins/activation.json'), 'utf8'));
   const selfheal = finalManifest.plugins.find(plugin => plugin.id === 'alex-agent-self-heal');
-  assert.equal(selfheal?.module, 'agent-self-heal/lib/index-v2-persistence.mjs', 'Required persistence self-heal activation missing');
+  assert.equal(selfheal?.module, 'agent-self-heal/lib/index-v6-unified.mjs', 'Unified contextual self-heal activation missing');
+  assert.equal(finalManifest.plugins.find(plugin => plugin.id === 'alex-llm-resilience')?.module, 'llm-resilience/lib/index-v5-unified.mjs', 'Immutable unified recovery controller activation missing');
   assert.equal(await realpath(join(profile, 'node_modules')), await realpath(join(installRoot, 'node_modules')));
-  return { profile, bundles: pkg.dsh.profile.bundles, publicRetryPolicy: longCodexRetryConfig, planning: 'Native root/preset planning removed; minimal unchanged', sharedPhysicalModules: true, credentialsSeeded: false, booted: false };
+  return { profile, bundles: pkg.dsh.profile.bundles, publicRetryPolicy: DEFAULT_POLICY, retryAuthority: 'alex-llm-resilience', recoveryVersion: 2, planning: 'Native root/preset planning removed; minimal unchanged', sharedPhysicalModules: true, credentialsSeeded: false, booted: false };
 }

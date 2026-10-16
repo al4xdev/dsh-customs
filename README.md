@@ -102,6 +102,27 @@ TUI/patch históricos acima; o checkout tem mudanças não publicadas. Não aleg
 reprodução da configuração atual só com o doctor/baseline portátil. Candidato e
 receipts de validação/promoção são separados, sem reempacotar artefatos antigos.
 
+A tarefa112 unifica a recuperação introduzida pela105 em
+[`alex-llm-resilience`](plugins/llm-resilience/README.md): uma política finita
+para qualquer provider nativo/pi-ai, dez retries adicionais exponenciais de
+7,03125s até60min, sem jitter por padrão; retry9=30min e10=60min.
+As esperas somam cerca de1h59min53s, além das requisições. O self-heal é o único
+proprietário do orçamento principal: acrescenta `harness warning:` com diagnóstico
+seguro e devolve uma preparação nova, sem encadear outro orçamento técnico.
+O manifesto declara controller, classificador tipado e self-heal nos cinco
+perfis, inclusive Companion. O retry nativo e o fork antigo não podem concorrer;
+a extensão tipada de reset AGY continua no mesmo orçamento e teto60min; um mínimo
+do servidor acima desse teto suspende a recuperação em vez de tentar cedo demais.
+Compaction/títulos usam o mesmo scheduler e contexto diagnóstico, com replay
+seguro e descarte de tentativas falhas. Créditos legados consumidos e limites
+explícitos permanecem conservados; ferramentas locais concluídas não se repetem.
+Controller5/self-heal6 são os alvos imutáveis atuais; a tarefa124 corrige no controller5
+os defaults implícitos do schema que desativavam a recuperação. Owner6 e protocolos
+permanecem inalterados; controller4 é preservado historicamente. Os bundles fechados evitam folhas ESM
+antigas em cache. SDK, perfis e bundles têm promoção/backup próprios; módulos SDK em processos
+já abertos continuam em cache até uma abertura nova, sem restart automático.
+Isso não altera os pins históricos acima nem prova saúde/inferência ao vivo.
+
 A tarefa 33 acrescenta usage ao fork Antigravity local: `/antigravity-usage`
 mostra percentuais reportados por modelo, reset e janela desconhecida;
 `/antigravity-usage --refresh` ignora o cache de 60s. É metadata sob demanda,

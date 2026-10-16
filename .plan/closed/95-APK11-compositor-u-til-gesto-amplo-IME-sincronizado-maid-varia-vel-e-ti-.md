@@ -1,0 +1,21 @@
+# APK11 — próxima rodada de front autorizada
+
+## Pedido fresco
+Dono autorizou: aproveitar espaço morto mantendo tamanho aceito; gesto lateral até um pouco antes de metade; subagente paralelo corrigindo atraso da última mensagem ao abrir IME no final; alternar aleatoriamente TODAS animações maid originais disponíveis; subtítulo literal `i use arch btw`; bugrefreshcatálogo que apaga títulos recuperados ao abrir conversa. Owner confirmou ter testado features físicasAPK10; não extrapolar FPS ou casos não relatados.
+
+## Design e invariantes
+Manter preto#000000, tiers#121212/#1B1B1D, hairline#2B2B30, texto#D6D6DB, accent#AAA5C4; tipografia/seleção/boundedlazy/motion/authority/linkimage/gestos de crianças aceitos. Mudanças mínimas, NÃO redesenhar tema/cartões/tabelas/ícone. Campo aproveita área inferior hoje reservada à linha de ações, sem aumentar altura aceita nem truncar draft; send48dp e stop preservam gates/queue e nativeediting. Avaliar overlay/área text útil sem caret/text sobbotões, fontes grandes/IME/reducedmotion.
+Gesto lateral proporcional até45% da largura(viewport), nunca invadir metade; preservar axis-lock/slop/velocity/cancel/once/backing e exclusões childmedia/código/tabela/editor/seleção/IME. Nenhuma headerlane invisível.
+
+## Propriedade paralela
+- Parent: CompanionScreen/compositor/slogan, WorkspaceGesturePolicy/PremiumWorkspace/gestos, buildversion11/README/evidência, testes próprios relativos. Nenhuma versão física nova automaticamente.
+- ChildIME exclusivo: auditar/editar TranscriptList +auxiliares follow/viewport e seus testes, SEM CompanionScreen/UIContract/VM/Maid/Theme/catálogo. Investigar viewport/IME-inset/motionlazy: sincronizar last-message-follow comresize, sem esperar keyboard finish/incremental frame delays ou tweenreiniciado. Leitura manual/selection/preview/abertura meios permanece parada. Teste authoredbottom e beginning/middle, sem runtime/build/ADB.
+- ChildTitles exclusivo: CompanionViewModel +helpers state catalogue/title e testes JVM próprios; SEM MainActivity/UiContract/CompanionScreen/transcript/Maid. Mesclar título nativo confirmado ao refresh que omite dados sem preservar título de outra encarnação/id/createdAt; se registro novo trás título válido, ele prevalece. Cancel/generation/auth/lease/source/deletion fences intactos, refresh não carrega históricos de todasconversas. Investigar origem backendreadonly se preciso, não editarbackend.
+- ChildMaid exclusivo: MaidLoader e assetmanifest/loader/packer +testes; SEM MainActivity/VM/UiContract/StartupScreen/Icon/fonttheme. Reusar TODAS animações originais existentes(assetinventory), não gerar/repaint/alterar ícone estático aceito. Random por ciclo/animação inteira, evitar repetir imediata com>=2, permitir deterministicseed nos testes; respeitar duraçõesoriginais, scale0/reducedmotion frozen, cancel/dispose/resourcebudgets e decodeoffmain/noallframeswarm. Não inventar estados/status.
+Cadachild envia causa/prova/testes/sourcefrozen; Parent centralbuild e adb SOMENTE depoisfreeze, sem concorrência de arquivos ou compilação.
+
+## Validação e entrega
+Artefatosfixtures autorais/private: testunit protocol/app, lint/Werror, assembleapp/testAPK, allAndroid em emulador privado5039 dedicado. AproveitarinvocationJDKSerialGC/noClassUnloading/CDSoff de90 sem alterarflagsglobais. Capturas sófixtures; nenhuma novaPhonecapture nesta tarefa. Versão11/0.11.0 com nome adequado, cert/package/API34iguais. Verificar hash/signature/limits/cores/input48/back/media+selection precedence/follow/refresh/newtitles/reducedmotion. Entregar APK11 e evidência, instalação física somente novo consentimento/condição segura. Não fechar se teste realfalha.
+
+## Limites
+Fontefechada90 pode ser revisada neste novoescopo, sem reescrever evidências históricas. Investigar imagem real e integração backend em planos separados, não ampliar autoridades de imagem aqui. Sem SDK/TUI/HA/OAuth/global/profile/model/grants/project/realprompts/realdeletion/commit/push/publicação. Perguntas/dados faltantes não virar suposições.

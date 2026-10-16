@@ -1,5 +1,7 @@
 .dumps/
 node_modules/
+__pycache__/
+*.pyc
 
 # Mutable plan registry stays local; only reviewed Markdown artifacts are source.
 .plan/.state/

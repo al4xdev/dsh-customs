@@ -1,0 +1,130 @@
+{
+  "thinking": [
+    {
+      "dur": 220,
+      "file": "00.png"
+    },
+    {
+      "dur": 220,
+      "file": "01.png"
+    },
+    {
+      "dur": 260,
+      "file": "02.png"
+    },
+    {
+      "dur": 260,
+      "file": "03.png"
+    },
+    {
+      "dur": 260,
+      "file": "04.png"
+    },
+    {
+      "dur": 300,
+      "file": "05.png"
+    },
+    {
+      "dur": 170,
+      "file": "06.png"
+    },
+    {
+      "dur": 170,
+      "file": "07.png"
+    },
+    {
+      "dur": 170,
+      "file": "08.png"
+    },
+    {
+      "dur": 170,
+      "file": "09.png"
+    },
+    {
+      "dur": 170,
+      "file": "10.png"
+    },
+    {
+      "dur": 170,
+      "file": "11.png"
+    },
+    {
+      "dur": 90,
+      "file": "12.png"
+    },
+    {
+      "dur": 110,
+      "file": "13.png"
+    },
+    {
+      "dur": 200,
+      "file": "14.png"
+    },
+    {
+      "dur": 200,
+      "file": "15.png"
+    },
+    {
+      "dur": 260,
+      "file": "16.png"
+    }
+  ],
+  "typing": [
+    {
+      "dur": 150,
+      "file": "00.png"
+    },
+    {
+      "dur": 170,
+      "file": "01.png"
+    },
+    {
+      "dur": 150,
+      "file": "02.png"
+    },
+    {
+      "dur": 170,
+      "file": "03.png"
+    },
+    {
+      "dur": 150,
+      "file": "04.png"
+    },
+    {
+      "dur": 170,
+      "file": "05.png"
+    },
+    {
+      "dur": 210,
+      "file": "06.png"
+    },
+    {
+      "dur": 150,
+      "file": "07.png"
+    },
+    {
+      "dur": 170,
+      "file": "08.png"
+    },
+    {
+      "dur": 150,
+      "file": "09.png"
+    },
+    {
+      "dur": 170,
+      "file": "10.png"
+    },
+    {
+      "dur": 150,
+      "file": "11.png"
+    },
+    {
+      "dur": 170,
+      "file": "12.png"
+    },
+    {
+      "dur": 210,
+      "file": "13.png"
+    }
+  ]
+}

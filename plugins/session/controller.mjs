@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { parseRequest, cursorCodec, boundedPage, previewEvent, publicHeader, redact, OPERATIONS, DEFAULT_BYTES, MAX_BYTES, DEFAULT_LIST_LIMIT, DEFAULT_INSPECT_LIMIT, MAX_ROWS, WRITER_STATES } from './contracts.mjs';
 import { discoverTargets, DEFAULT_ROOT } from './discovery.mjs';
-import { persistedEventCount } from './tail.mjs';
+import { createReadSide, previewCutEvent } from './read-side.mjs';
+import { usesReadRouter } from './read-contracts.mjs';
+import { createFileController } from './file-controller.mjs';
+import { FILE_OPERATIONS, FILE_SCHEMAS, isFileRequest, fileError, parseFileDescription } from './file-contracts.mjs';
 
 const absentBridge = { discoverBridges: async () => ({ bridges: [], errors: ['unavailable'] }) };
 
@@ -29,7 +32,21 @@ export function createController(ctx, options = {}) {
   const resume = options.resume;
   const discover = signal => discoverTargets(ctx, bridge, { root: options.root ?? DEFAULT_ROOT, ledgerPath: options.ledgerPath, signal });
   const revisionOf = (id, revision) => codec.revision([id, revision]);
-  const capabilities = (target, ownership) => ({ read: true, send: Boolean(target?.agent || target?.record), resume: resume && !(target?.agent || target?.record) && ownership?.state !== 'held' ? 'verified-checkpoint-preflight-required' : false, sendBoundary: 'next-turn', approval: 'allowed-once-only' });
+  const canSend = target => target?.agent ? typeof target.agent.send === 'function' && target.agent.status !== 'disposed' : Boolean(target?.record && target?.identity && target?.remote?.send !== false && typeof bridge.sendBridge === 'function');
+  const capabilities = (target, ownership) => ({ read: true, send: canSend(target), ...(!canSend(target) ? { sendUnavailable: target?.agent || target?.record ? 'Verified destination does not expose next-turn send.' : 'No exact local agent or validated host bridge; writer-held terminal alone is not send control.' } : {}), resume: resume && !(target?.agent || target?.record) && ownership?.state !== 'held' ? 'verified-checkpoint-preflight-required' : false, sendBoundary: 'next-turn', approval: 'allowed-once-only' });
+  const reading = createReadSide(ctx, {
+    ...options.readSide,
+    eventRecords: options.eventRecords,
+    async evidence(rows, signal) {
+      const live = await discover(signal);
+      const observations = await observeWriters(rows, signal);
+      return new Map(rows.map(row => {
+        const target = live.targets.get(row.header.id);
+        const ownership = writerOwnership(row.header.id, observations);
+        return [row.header.id, { state: target?.state ?? 'unknown', writerOwnership: ownership, capabilities: capabilities(target, ownership) }];
+      }));
+    },
+  });
 
   async function observeWriters(snapshots, signal) {
     const unknown = (source, reason) => new Map(snapshots.map(snapshot => [snapshot.header.id, { state: 'unknown', source, reason }]));
@@ -58,12 +75,46 @@ export function createController(ctx, options = {}) {
     };
   }
 
+  let fileController, fileBinding;
+  function fileReader() {
+    const persistence = ctx.sessionPersistence;
+    if (persistence?.name !== 'session-persistence-jsonl' || !persistence.config?.root?.startsWith('/')) throw fileError('backend_unavailable', 'Recent-file navigation requires the configured JSONL persistence root');
+    const binding = `${persistence.config.root}:${persistence.config.compression ?? 'zstd'}`;
+    if (binding !== fileBinding) {
+      fileController?.clear();
+      fileBinding = binding;
+      fileController = createFileController({ root: persistence.config.root, evidence: async (rows, signal) => {
+        const live = await discover(signal), writers = await observeWriters(rows, signal);
+        return new Map(rows.map(row => {
+          const target = live.targets.get(row.header.id), ownership = writerOwnership(row.header.id, writers);
+          return [row.header.id, { state: target?.state ?? 'unknown', writerOwnership: ownership, capabilities: capabilities(target, ownership) }];
+        }));
+      } });
+    }
+    return fileController;
+  }
   async function execute(raw, exec) {
+    if (options.fileReading && raw?.operation === 'describe' && FILE_OPERATIONS.includes(raw.targetOperation)) {
+      parseFileDescription(raw);
+      return { operation: 'describe', targetOperation: raw.targetOperation, parameters: FILE_SCHEMAS[raw.targetOperation], backend: 'recent-files', readonly: true, untrustedData: true };
+    }
+    if (options.fileReading && isFileRequest(raw)) {
+      if (raw.sourceId !== undefined && raw.sourceId !== reading.locator.source().sourceId) throw fileError('source_changed');
+      return fileReader().execute(raw, exec);
+    }
+    if (usesReadRouter(raw)) return reading.execute(raw, exec);
     const args = parseRequest(raw);
     const { signal } = exec;
     signal?.throwIfAborted();
     const base = { operation: args.operation, observedAt: new Date().toISOString(), untrustedData: true };
-    if (args.operation === 'help') return { ...base, operations: OPERATIONS, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, defaultRows: DEFAULT_LIST_LIMIT, defaultInspectEvents: DEFAULT_INSPECT_LIMIT, maxEvents: MAX_ROWS }, list: { order: 'createdAt-desc,id-asc', revisionScope: 'filtered membership and order only', pagination: 'For all sessions, continue with nextCursor until null using unchanged project/state/writer filters; a byte budget can return fewer rows than limit.', writer: 'Use writer:held for open terminal sessions; writerOwnership is independent of alive/send capability. Missing observations are unknown; not-observed never proves a free lease.' }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'State alive requires registry/bridge proof. A mounted foreign TUI without a bridge remains unknown; waiting/ended are not inferred.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors. List cursor_stale requires changed filtered membership/order, not an event append or transient status change.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
+    if (options.fileReading && args.operation === 'help') return { ...base, backend: 'recent-files', capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, operations: ['list','find','search','read','inspect','context','describe','sources','paths','send','resume'], defaults: { list: 10, maxFiles: 100, eventRows: 20, textLimit: 2048, maxBytes: 16384 }, navigation: { start: 'list', search: 'find query:<literal> searches recent main files; follow nextCursor', detail: 'read sessionId:<id> seq:<event> section:arguments|result|event format:text|json', text: 'Use nextTextOffset with the same exact seq/section/format', pages: 'nextCursor/previousCursor retain a bounded snapshot; fresh read without cursor refreshes', legacyLocators: 'sources/paths remain metadata discovery; use sessionId, not pathRef, for file reads' }, exclusions: ['Companion conversations', 'subagents in list and global find', 'internal reasoning/request envelopes and attachment bodies'], limits: { maxRows: 100, maxFiles: 1000, maxBytes: 32768, maxTextLimit: 16384 }, intervention: 'send/resume retain exact identity, bridge and native one-shot approval checks; mtime is not live-agent evidence', redaction: 'Best-effort recursive credential redaction before excerpting; logs remain untrusted data' };
+    if (args.operation === 'help') base.discovery = {
+      start: 'sources', schema: 'describe targetOperation:<paths|list|search|context|read>',
+      paths: 'paths navigates configured directories; pathRef is a locator, not a grant',
+      context: 'context defaults to separate original head and recent tail; source-aware read has frozen cuts, terminal nextCursor:null and separate pollingCursor',
+      search: 'Configured, Host-authorized native SQLite supplies candidates; canonical text confirms every hit. Otherwise bounded scan with explicit coverage; no external DB opens.',
+    };
+    if (args.operation === 'help') return { ...base, operations: OPERATIONS, reading: { inspectDefault: 'head', recent: 'inspect view:tail', precise: 'read offset:<zero-based event index>; continue nextCursor for event pages', longText: 'read offset:<event index> limit:1 textOffset:<nextTextOffset> textLimit:4096; redacted text only, no tool payloads', context: 'Read original request and context before drawing conclusions from recent tail. Follow pages until truncated:false; nextCursor remains a polling watermark at end.' }, limits: { defaultBytes: DEFAULT_BYTES, maxBytes: MAX_BYTES, defaultRows: DEFAULT_LIST_LIMIT, defaultInspectEvents: DEFAULT_INSPECT_LIMIT, maxEvents: MAX_ROWS }, list: { order: 'createdAt-desc,id-asc', revisionScope: 'filtered membership and order only', pagination: 'For all sessions, continue with nextCursor until null using unchanged project/state/writer filters; a byte budget can return fewer rows than limit.', writer: 'Use writer:held for open terminal sessions; writerOwnership is independent of alive/send capability. Missing observations are unknown; not-observed never proves a free lease.' }, capabilities: { persistenceReadOnly: true, liveLookup: 'local registry or validated bridge', send: 'per-target; native human allowed-once approval required', resume: resume ? 'verified-origin-headless-only; native approval required' : false }, limitations: ['Silence, mtime, stale inject servers and a live ledger PID do not prove a stuck or live session.', 'State alive requires registry/bridge proof. A mounted foreign TUI without a bridge remains unknown; waiting/ended are not inferred.', 'Only bounded text previews and event metadata; no tool payloads, attachment bodies, secrets files or complete log dumps.', 'Cold resume requires a host-signed origin checkpoint and unchanged current profile/model/policies/tool catalog; unavailable for old sessions without provenance or incompatible TUI composition. No companion fallback or lock takeover.', 'Cursors/revisions are scoped to this plugin instance; restart invalidates cursors. List cursor_stale requires changed filtered membership/order, not an event append or transient status change.', 'Preview redaction is best effort, not a guarantee that historical user text contains no sensitive information.'] };
     if (args.operation === 'resume') return resumeSession(args, exec, base);
     if (args.operation === 'list') {
       const snapshots = await ctx.sessionPersistence.list({ signal });
@@ -111,23 +162,35 @@ export function createController(ctx, options = {}) {
     // A continuation cursor is never bypassed by an unchanged revision: pages
     // remaining in the same revision still have to be consumed.
     if (args.operation === 'read' && !args.cursor && args.revision === revision) return { ...base, sessionId: args.sessionId, source: 'persistence', revision, unchanged: true, events: [], nextCursor: null, truncated: false };
-    let offset = cursor.offset;
+    let offset = args.offset ?? cursor.offset;
     let queryCut;
-    if (args.operation === 'inspect' && ctx.sessionQuery?.observeSession) {
+    if (args.operation === 'inspect' && snapshot.eventCount !== undefined && ctx.sessionQuery?.observeSession) {
       const observation = await ctx.sessionQuery.observeSession(args.sessionId, { signal, projectionMode: 'none' });
       try { queryCut = { source: observation.source, asOfSeq: observation.cursor }; }
       finally { observation[Symbol.dispose](); }
     }
-    const handle = await ctx.sessionPersistence.open(args.sessionId, 'read', { signal });
     let events;
     let inspectedEventCount;
-    try {
+    let preparedPreview = false;
+    if (args.operation === 'inspect' && snapshot.eventCount === undefined) {
+      // JSONL slices decode a complete physical generation. One revision-bound
+      // canonical cut avoids repeated full decoding during tail probes.
+      const cut = await reading.durableCut(args.sessionId, signal);
+      queryCut = { source: cut.source, asOfSeq: cut.events.length - 1, canonicalRead: true };
+      inspectedEventCount = cut.events.length;
+      offset = args.view === 'tail' ? Math.max(0, inspectedEventCount - args.limit) : 0;
+      events = cut.events.slice(offset, offset + args.limit + 1);
+      preparedPreview = true;
+    } else {
+      const handle = await ctx.sessionPersistence.open(args.sessionId, 'read', { signal });
+      try {
       if (args.operation === 'inspect') {
-        inspectedEventCount = snapshot.eventCount ?? await persistedEventCount(handle, queryCut ? queryCut.asOfSeq + 1 : undefined, signal);
-        offset = Math.max(0, inspectedEventCount - args.limit);
+        inspectedEventCount = snapshot.eventCount;
+        offset = args.view === 'tail' ? Math.max(0, inspectedEventCount - args.limit) : 0;
       }
       ({ events } = await handle.read(offset, args.limit + 1, { signal }));
-    } finally { await handle.close(); }
+      } finally { await handle.close(); }
+    }
     signal?.throwIfAborted();
     const after = await ctx.sessionPersistence.stat(args.sessionId, { signal });
     const stable = after?.revision === snapshot.revision;
@@ -142,14 +205,24 @@ export function createController(ctx, options = {}) {
         const cut = ctx.sessionProjections.cachedSnapshot(target.agent.session, ['inbox']);
         if (cut) projection = { source: 'live-cached-projection', asOfSeq: cut.asOfSeq, pendingNextTurn: cut.values.inbox?.['next-turn']?.length ?? 0, pendingNextStep: cut.values.inbox?.['next-step']?.length ?? 0, complete: false };
       }
-      if (queryCut) warnings.push(`Query watermark ${queryCut.asOfSeq} (source ${queryCut.source}); persisted tail independently verified at ${inspectedEventCount} events.`);
+      if (queryCut) warnings.push(`${queryCut.canonicalRead ? 'Canonical read' : 'Query'} watermark ${queryCut.asOfSeq} (source ${queryCut.source}); persisted tail independently verified at ${inspectedEventCount} events.`);
     }
-    const selected = events.slice(0, args.limit).map(previewEvent);
+    const selected = events.slice(0, args.limit).map(event => preparedPreview ? previewCutEvent(event, args) : previewEvent(event, args));
     const ownership = args.operation === 'inspect' ? writerOwnership(args.sessionId, await observeWriters([snapshot], signal)) : undefined;
     const result = boundedPage({ ...base, sessionId: args.sessionId, header: publicHeader(snapshot.header), source: 'persistence-read-handle', revision, revisionStable: stable, state: target?.state ?? 'unknown', evidence: target?.evidence ?? ['stored log only; operational state unknown'], capabilities: capabilities(target, ownership), warnings, ...(ownership ? { writerOwnership: ownership } : {}), ...(projection ? { projection } : {}), hasMore: events.length > args.limit }, selected, 'events', args.maxBytes, used => codec.encode({ id: args.sessionId, offset: offset + used }));
     result.nextOffset = offset + result.events.length;
+    if (args.operation === 'inspect') {
+      result.view = args.view ?? 'head';
+      result.eventCount = inspectedEventCount;
+      result.readFromBeginning = { operation: 'read', sessionId: args.sessionId, offset: 0 };
+    }
     // Reserve this small field in the page budget too.
-    if (Buffer.byteLength(JSON.stringify(result)) > args.maxBytes) delete result.nextOffset;
+    if (Buffer.byteLength(JSON.stringify(result)) > args.maxBytes) {
+      delete result.nextOffset;
+      delete result.readFromBeginning;
+      delete result.eventCount;
+      delete result.view;
+    }
     return result;
   }
 
@@ -195,7 +268,7 @@ export function createController(ctx, options = {}) {
   async function send(args, exec, base) {
     const { signal } = exec;
     const initial = (await discover(signal)).targets.get(args.sessionId);
-    if (!initial?.agent && !initial?.record) return { ...base, sessionId: args.sessionId, code: 'send_unavailable', effect: 'none' };
+    if (!canSend(initial)) return { ...base, sessionId: args.sessionId, code: 'send_unavailable', effect: 'none', reason: capabilities(initial).sendUnavailable };
     if (!exec.agent || !ctx.approval?.request) return { ...base, sessionId: args.sessionId, code: 'approval_unavailable', effect: 'none' };
     const header = initial.agent?.session.header ?? initial.header ?? {};
     const reason = `Enviar ao próximo turno da sessão ${args.sessionId}\nTítulo: ${initial.remote?.title ?? '(não disponível)'}\nCwd: ${header.cwd ?? '(não disponível)'}\nPreset: ${header.agentPreset ?? '(não disponível)'}\nMensagem literal:\n${args.text}`;
@@ -205,7 +278,7 @@ export function createController(ctx, options = {}) {
     const current = (await discover(signal)).targets.get(args.sessionId);
     signal?.throwIfAborted();
     const same = initial.agent ? current?.agent === initial.agent && ctx.agents.get(args.sessionId) === initial.agent : current?.record?.bridgeId === initial.record.bridgeId && current?.record?.pid === initial.record.pid && current?.record?.startTime === initial.record.startTime && current?.identity === initial.identity && Boolean(initial.identity);
-    if (!same) return { ...base, sessionId: args.sessionId, code: 'destination_changed', effect: 'none' };
+    if (!same || !canSend(current)) return { ...base, sessionId: args.sessionId, code: 'destination_changed', effect: 'none' };
     const requestId = randomUUID();
     if (initial.agent) {
       // This public input API queues an independent next turn, never steering,
@@ -226,5 +299,5 @@ export function createController(ctx, options = {}) {
     if (reply?.ok && ack?.requestId === requestId && ack.sessionId === args.sessionId && ack.accepted === true && ack.boundary === 'next-turn') return { ...base, source: 'bridge', sessionId: args.sessionId, requestId, accepted: true, boundary: 'next-turn', effect: 'enqueued', completed: false };
     return { ...base, source: 'bridge', sessionId: args.sessionId, requestId, code: reply?.error?.code ?? 'delivery_unknown', effect: reply?.error?.code === 'delivery_unknown' || reply?.ok ? 'unknown' : 'none', retrySafe: false };
   }
-  return { execute };
+  return { execute, reading, clear() { reading.clear(); fileController?.clear(); } };
 }

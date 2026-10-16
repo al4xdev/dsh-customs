@@ -1,0 +1,1 @@
+{"version":1,"profile":"companion","current":{"provider":"synthetic","model":"new","reasoningEffort":"high"},"scope":"all-companion-conversations","applied":[{"sessionId":"chat-a","createdAt":10}],"failed":[{"sessionId":"chat-b","createdAt":10,"code":"model-unavailable"}],"cold":"on-next-user-send"}

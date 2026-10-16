@@ -66,6 +66,76 @@ test('only discovery accepts path; only declared descriptors accept session/page
   await assert.rejects(validateCall(request('media.video.stop', { captureId: 'capture-owned' }, { pageId: 'page-owned' })), { code: 'INVALID_ARGS' });
 });
 
+test('ney misplaced metadata is safely relocated without mutation and normalization is idempotent', async () => {
+  for (const input of [
+    { operation: 'help', args: { path: 'session' } },
+    { operation: 'describe', args: { path: 'page.navigate' } },
+    { operation: 'page.navigate', args: { sessionId: 'session-owned', pageId: 'page-owned', url: 'http://127.0.0.1:8888/index.html' } },
+    { operation: 'page.navigate', args: { sessionId: 'session-owned', url: 'about:blank' } },
+    { operation: 'help', args: { catalogRevision: CATALOG_REVISION } },
+  ]) {
+    const saved = structuredClone(input);
+    const { request: normalized } = await validateCall(input);
+    assert.deepEqual(input, saved);
+    for (const key of ['path', 'sessionId', 'pageId', 'catalogRevision']) {
+      if (Object.hasOwn(saved.args, key)) {
+        assert.equal(normalized[key], saved.args[key]);
+        assert.equal(Object.hasOwn(normalized.args, key), false);
+      }
+    }
+    assert.deepEqual((await validateCall(normalized)).request, normalized);
+    const canonical = { ...saved, args: { ...saved.args } };
+    for (const key of ['path', 'sessionId', 'pageId', 'catalogRevision']) {
+      if (Object.hasOwn(canonical.args, key)) { canonical[key] = canonical.args[key]; delete canonical.args[key]; }
+    }
+    assert.deepEqual((await validateCall(canonical)).request, normalized);
+  }
+});
+
+test('duplicate metadata coalesces only identical values; conflicts fail closed', async () => {
+  for (const [operation, key, value, args] of [
+    ['help', 'path', 'session', {}],
+    ['page.navigate', 'sessionId', 'session-owned', { url: 'about:blank' }],
+    ['page.navigate', 'pageId', 'page-owned', { sessionId: 'session-owned', url: 'about:blank' }],
+    ['help', 'catalogRevision', CATALOG_REVISION, {}],
+  ]) {
+    const actual = await validateCall({ operation, [key]: value, args: { ...args, [key]: value } });
+    assert.equal(actual.request[key], value); assert.equal(Object.hasOwn(actual.request.args, key), false);
+    await assert.rejects(validateCall({ operation, [key]: value, args: { ...args, [key]: 'different' } }), error => error.code === 'INVALID_ENVELOPE' && error.message.includes(`Conflicting ${key}`));
+  }
+});
+
+test('metadata tolerance preserves type/id/revision/field/policy guards', async () => {
+  for (const value of [null, 1, {}, [], '', 'bad id', 'bad\0id', 'x'.repeat(161)]) {
+    await assert.rejects(validateCall({ operation: 'page.navigate', args: { url: 'about:blank', sessionId: value } }), { code: 'INVALID_ENVELOPE' });
+  }
+  await assert.rejects(validateCall({ operation: 'help', args: { catalogRevision: 'stale' } }), { code: 'CATALOG_CHANGED' });
+  await assert.rejects(validateCall({ operation: 'help', args: { path: 'session', code: 'unsafe' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'help', args: { path: 'session', ownerId: 'forged' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'help', args: { sessionId: 'session-owned' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'capabilities', args: { path: 'session' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'session.open', args: { sessionId: 'session-owned' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'session.status', args: { sessionId: 'session-owned', pageId: 'page-owned' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'media.screenshot', args: { sessionId: 'session-owned', path: '/tmp/arbitrary' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'page.navigate', args: { sessionId: 'session-owned', url: 'javascript:alert(1)' } }), { code: 'INVALID_ARGS' });
+  await assert.rejects(validateCall({ operation: 'interact.click', args: { sessionId: 'session-owned', target: { kind: 'css', value: '#not-approved' } } }), { code: 'POLICY_DENIED' });
+  let invoked = false;
+  const args = { url: 'about:blank' };
+  Object.defineProperty(args, 'sessionId', { enumerable: true, get() { invoked = true; return 'session-owned'; } });
+  await assert.rejects(validateCall({ operation: 'page.navigate', args }), { code: 'INVALID_ENVELOPE' });
+  assert.equal(invoked, false);
+});
+
+test('recovery hints are visible in error messages, not only discarded native details', async () => {
+  for (const [input, code, hint] of [
+    [{ operation: 'describe', args: {} }, 'INVALID_ARGS', '"path":"page.navigate"'],
+    [{ operation: 'describe', args: { path: 'session' } }, 'UNKNOWN_OPERATION', '"operation":"help"'],
+    [{ operation: 'page.goto', args: {} }, 'UNKNOWN_OPERATION', 'page.navigate'],
+    [{ operation: 'page.navigate', args: { url: 'about:blank' } }, 'INVALID_ARGS', '"operation":"session.open"'],
+    [{ operation: 'page.navigate', args: { sessionId: 'session-owned' } }, 'INVALID_ARGS', '"path":"page.navigate"'],
+  ]) await assert.rejects(validateCall(input), error => error.code === code && error.message.includes(hint));
+});
+
 test('catalog revision includes effective public policy, never private cache paths', async () => {
   const changed = normalizeConfig({}, { limits: { tabs: 1 } });
   assert.notEqual(catalogRevision(changed), CATALOG_REVISION);

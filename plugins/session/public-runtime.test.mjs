@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { createController } from './controller.mjs';
 
 // Intentionally exercise the approved installation, never its private internals
 // or a dependency copy installed beside this plugin.
-const host = '/home/alex/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh/package.json';
+const host = join(homedir(), '.local/share/dsh-cli/package.json');
 const require = createRequire(host);
 const load = id => import(require.resolve(`@deepseek-ai/${id}`));
 
@@ -24,7 +25,7 @@ test('installed public JSONL API: bounded reader works while writer remains excl
     const id = sessions.SessionId('synthetic-read-only');
     const header = { version: sessions.SESSION_FORMAT_VERSION, id, createdAt: Date.now(), isSeeded: false, cwd: root, agentPreset: 'original-fixture' };
     writer = await ctx.sessionPersistence.create(header);
-    await writer.append(Array.from({ length: 40 }, (_, seq) => ({
+    await writer.append(Array.from(Array(40).keys(), seq => ({
       seq: sessions.SessionSeq(seq), time: Date.now(),
       type: seq % 2 ? 'turn/end' : 'turn/start',
       data: seq % 2 ? { turn: Math.floor(seq / 2) + 1, reason: { kind: 'completed' } } : { turn: Math.floor(seq / 2) + 1 },
@@ -38,7 +39,7 @@ test('installed public JSONL API: bounded reader works while writer remains excl
     assert.equal(next.events[0].type, 'turn/end'); assert.equal(next.events[0].reason, 'completed');
     assert.ok(Buffer.byteLength(JSON.stringify(first)) <= 8192);
     assert.equal((await ctx.sessionPersistence.stat(id)).eventCount, undefined);
-    const tail = await controller.execute({ operation: 'inspect', sessionId: id, limit: 4 }, exec);
+    const tail = await controller.execute({ operation: 'inspect', sessionId: id, view: 'tail', limit: 4 }, exec);
     assert.deepEqual(tail.events.map(event => event.seq), [36, 37, 38, 39]);
     assert.equal(tail.nextOffset, 40);
     assert.ok(tail.warnings.some(message => message.includes('persisted tail independently verified at 40 events')));
@@ -65,7 +66,8 @@ test('installed tool registry: session registration stays in companion scope; di
     assert.throws(() => plugin.apply(ctx, { profile: 'companion' }), /preset scope/);
     // Installation is deliberately direct: this test isolates registration
     // and schema enforcement without manufacturing an LLM or mutation service.
-    await companion.ctx.plugin({ name: 'fixture-companion-session', inject: ['systemPrompt', 'tools'], apply: plugin.apply }, { profile: 'companion' });
+    assert.equal(plugin.inject.includes('systemPrompt'), false);
+    await companion.ctx.plugin({ name: 'fixture-companion-session', inject: ['tools'], apply: plugin.apply }, { profile: 'companion' });
     assert.equal(ctx.tools.schemas(ordinary).some(row => row.name === 'session'), false);
     assert.equal(ctx.tools.schemas(companion).filter(row => row.name === 'session').length, 1);
     const help = await ctx.tools.execute({ name: 'session', callId: llm.ToolCallId('help-fixture'), arguments: { operation: 'help' }, agent: companion, signal: new AbortController().signal });

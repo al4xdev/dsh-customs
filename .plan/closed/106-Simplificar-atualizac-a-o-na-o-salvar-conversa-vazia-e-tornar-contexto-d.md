@@ -1,0 +1,16 @@
+# Pedidos adicionais do dono durante Task104
+
+Goal8c2c23c6r2 guia a execução. Task104r1 continua aprovado e válido para executor exclusivo6d corrigir/ativar o host e provar APIs; não substituir sua revisão nem interromper seu ramo. Dono reafirmou reiniciar Companion à vontade; não repetir confirmação de lifecycle.
+
+## Ajustes Android para o APK13 ainda não instalado
+1. **Atualizar**: remover botão rotineiro do painel; atualização automática continua por eventos + reconciliação periódica. Oferecer **Tentar novamente** somente em erro/estado não confirmado que precise recuperação, com estado disconnected/pending correto. Cópias de erro devem orientar sem depender de botão inexistente.
+2. **Conversa vazia**: investigar criação atual e preferir rascunho local/criação adiada até primeiro envio, sem criar sessão durável ao só abrir/voltar. Não apagar sessões existentes nem decidir vazio por página parcial/título; não ignorar concorrência com outro produtor. Manter texto digitado/fluxos de admissão e submit fences/stop/approve/IME/voltar. Provar zero create/submit ao abrir/voltar vazio e exatamente uma criação/submissão no primeiro envio, preservando texto em cancelamento/falha e sem reenvio automático de resultado incerto.
+3. **Contexto debug**: preferência local persistente **Mostrar contexto do modelo**, padrão desligado. Exibir/ocultar somente contexto inicial/model-facing reconhecido por tipos/metadados nativos, não substring do conteúdo. Opção afeta projeção local, sem mudar os eventos/journal enviados ao modelo ou buscar históricos fora do alvo. Manter avisos de segurança/erros/assistant/humanos/ferramentas/anexos e comando goal humano visíveis. Continuation automática de goal_round positivo permanece oculta mesmo com debug ligado. Snapshot/live/replay/prepend e cache de projeção precisam respeitar preferência imediatamente; não ressuscitar contextos antigos por cache.
+
+## Ownership
+- Renderer88b (após GO específico): apenas políticas/projeções/TranscriptPresentation/TranscriptPresenter/fixtures/tests de contexto, sem VM/UiContract/preferences/Settings/Gradle/ADB/nativeGoal.
+- Investigador de conversa vazia: readonly VM/fluxo/protocolo/SDK antes de desenho acordado; eventual implementação por fronteira comunicada para não colidir.
+- Parent: preference/UiContract/Settings/VM/GoalPanel/integração final e build/test/README/emulador. Executor6d e D ativos em backend watched; não tocar seus arquivos.
+
+## Provas/entrega
+Manter package/cert/API34/fontes/AMOLED/maid/Stop/IME e build version13 ainda não publicado. Rodar regressões unit/protocolo/instrumentadas/lint após novos edits (primeira versão13 Task104 já passou88+431 JVM e192 Android; essa evidência não é automaticamente prova dos novos pedidos). Evidência visual sintética para contexto off/on, goal sem Atualizar normal e vazio sem persistência. Nenhuma nova instalação física, cloud/Firebase/globalSDK/Source99/outros históricos, commits/push. Entregar APK13 atualizado junto com resultado real da Task104 e limitações explícitas; não afirmar E2E humano em goal real se apenas fixture foi exercitada.

@@ -32,6 +32,31 @@ test('strict operation contracts reject model confirmation, traversal and out-of
   for (const args of [{ operation: 'send', sessionId: '../secret', text: 'x' }, { operation: 'send', sessionId: 'target-1', text: 'x', confirmed: true }, { operation: 'read', sessionId: 'target-1', maxBytes: 32769 }, { operation: 'list', limit: 101 }, { operation: 'list', writer: 'free' }, { operation: 'inspect', sessionId: header.id, writer: 'held' }, { operation: 'help', text: 'inject' }]) assert.throws(() => parseRequest(args));
   for (const writer of ['held', 'not-observed', 'unknown']) assert.equal(parseRequest({ operation: 'list', writer }).writer, writer);
 });
+test('head context is default; precise event and long-text excerpts remain bounded and redacted', async () => {
+  const f = fixture();
+  const head = await f.controller.execute({ operation: 'inspect', sessionId: header.id, limit: 2 }, f.exec);
+  assert.deepEqual(head.events.map(row => row.seq), [0, 1]);
+  assert.equal(head.view, 'head'); assert.equal(head.eventCount, 70);
+  const precise = await f.controller.execute({ operation: 'read', sessionId: header.id, offset: 35, limit: 1, textOffset: 512, textLimit: 4096 }, f.exec);
+  assert.equal(precise.events[0].seq, 35); assert.equal(precise.events[0].textOffset, 512);
+  assert.equal(precise.events[0].nextTextOffset, null);
+  assert.equal(precise.events[0].text, previewEvent(events[35], { textLimit: 4096 }).text.slice(512));
+  const secret = { seq: 0, type: 'user/message', data: { content: [{ type: 'text', text: 'token=synthetic-sensitive-value '.repeat(60) }] } };
+  assert.ok(!previewEvent(secret, { textOffset: 8, textLimit: 4096 }).text.includes('synthetic-sensitive'));
+  for (const args of [{ offset: -1 }, { offset: 0, cursor: 'x' }, { offset: 0, revision: 'x' }, { textOffset: 1.5 }, { textLimit: 4097 }]) assert.throws(() => parseRequest({ operation: 'read', sessionId: header.id, ...args }));
+  assert.throws(() => parseRequest({ operation: 'inspect', sessionId: header.id, view: 'all' }));
+});
+
+test('registry without public send is observable but never approved for sending', async () => {
+  const f = fixture(); delete f.agent.send;
+  const list = await f.controller.execute({ operation: 'list' }, f.exec);
+  assert.equal(list.sessions[0].state, 'alive'); assert.equal(list.sessions[0].capabilities.send, false);
+  const result = await f.controller.execute({ operation: 'send', sessionId: header.id, text: 'no side effect' }, f.exec);
+  assert.equal(result.code, 'send_unavailable'); assert.equal(result.effect, 'none'); assert.equal(f.calls.approvals.length, 0);
+  f.agent.status = 'disposed';
+  assert.equal((await f.controller.execute({ operation: 'list' }, f.exec)).sessions[0].state, 'unknown');
+});
+
 test('cursors are authenticated, target-bound and runtime-local', () => {
   const codec = cursorCodec(); const token = codec.encode({ id: 'target-1', offset: 3 });
   assert.equal(codec.decode(token, 'target-1').offset, 3);
@@ -59,7 +84,7 @@ test('read failures release handle; inspect selects cheap tail without taking ow
   const failing = fixture({ failRead: true });
   await assert.rejects(failing.controller.execute({ operation: 'read', sessionId: header.id }, failing.exec));
   assert.equal(failing.calls.closed, 1);
-  const f = fixture(); const result = await f.controller.execute({ operation: 'inspect', sessionId: header.id, limit: 2 }, f.exec);
+  const f = fixture(); const result = await f.controller.execute({ operation: 'inspect', sessionId: header.id, view: 'tail', limit: 2 }, f.exec);
   assert.equal(f.calls.reads[0][0], 68); assert.equal(result.state, 'alive');
   assert.equal(result.projection.pendingNextTurn, 0); assert.equal(f.calls.queryDisposed, true); assert.ok(!JSON.stringify(result).includes('stuck'));
 });

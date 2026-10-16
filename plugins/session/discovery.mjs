@@ -33,7 +33,10 @@ export async function mountHints({ path = join(homedir(), '.dsh-tui/session-moun
 export async function discoverTargets(ctx, bridge, { root = DEFAULT_ROOT, signal, ledgerPath } = {}) {
   signal?.throwIfAborted();
   const targets = new Map();
-  for (const agent of ctx.agents.list()) targets.set(agent.id, { sessionId: agent.id, source: 'local-agent', state: 'alive', agent, status: agent.status, evidence: ['exact live process-local registry entry'], header: agent.session.header });
+  for (const agent of ctx.agents.list()) {
+    if (!validId(agent.id) || agent.status === 'disposed' || ctx.agents.get(agent.id) !== agent) continue;
+    targets.set(agent.id, { sessionId: agent.id, source: 'local-agent', state: 'alive', agent, status: agent.status, evidence: ['exact live process-local registry entry'], header: agent.session.header });
+  }
   const warnings = [];
   let discovered;
   try { discovered = await bridge.discoverBridges({ root, signal }); }

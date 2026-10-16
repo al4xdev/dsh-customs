@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { profilePackage, assertPublicSeed, publicProfilePatch } from './profile.mjs';
+import { migrateResilienceProfile } from '../resilience/profile.mjs';
+import { DEFAULT_POLICY } from '../../plugins/llm-resilience/policy.mjs';
 
 test('profile manifest uses ordered base and TUI bundles without provider secrets', () => {
   const pkg = profilePackage();
@@ -23,9 +25,17 @@ test('preset wrappers preserve public filtered YAML via include and leave minima
     { id: 'cordis', order: 3, content: 'public !!js expression' },
     { id: 'minimal', untouched: true },
   ], '/home/alex/.dsh/profiles/dsh-tui');
-  assert.match(patch, /dsh-tui-auth/);
-  assert.match(patch, /maxRetries: 9/);
-  assert.match(patch, /maxDelayMs: 1200000/);
+  assert.doesNotMatch(patch, /dsh-tui-auth|retryPolicies|maxRetries|maxDelayMs/);
+  const candidate = migrateResilienceProfile(patch, { repoRoot: '/fixture/repo', profile: 'dsh-tui' }).candidate;
+  for (const id of ['alex-llm-resilience', 'alex-codex-transient-close', 'alex-agent-self-heal']) assert.equal(candidate.split('id: ' + id).length, 2);
+  assert.match(candidate, /id: llm-retry\n  disabled: true/);
+  assert.match(candidate, /agent-self-heal\/lib\/index-v6-unified\.mjs/);
+  assert.match(candidate, /llm-resilience\/lib\/index-v5-unified\.mjs/);
+  assert.doesNotMatch(candidate, /retryPolicies|maxRetries|maxDelayMs|antigravity-quota-retry/);
+  assert.equal(DEFAULT_POLICY.maxRetries, 10);
+  assert.equal(DEFAULT_POLICY.initialDelayMs, 7031.25);
+  assert.equal(DEFAULT_POLICY.maxDelayMs, 3600000);
+  assert.equal(DEFAULT_POLICY.jitterRatio, 0);
   assert.match(patch, /presets\/standard.yml/);
   assert.doesNotMatch(patch, /preset-minimal|credential|secret|account|public !!js/);
   assert.match(patch, /session-title-llm\n  disabled: true/);

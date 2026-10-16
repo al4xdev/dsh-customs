@@ -8,6 +8,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { INITIAL_STATE, POLICY_VERSION, PROJECTION_KEY, AUDIT_EVENT, decide, foldState, transition } from '../logic.mjs';
+import { createController } from '../../llm-resilience/controller.mjs';
+import { installMainDriver } from '../../llm-resilience/main-driver.mjs';
+import { policyKey } from '../../llm-resilience/policy.mjs';
+import { ACCOUNTING_KEY, recoveryBudget } from '../../llm-resilience/recovery-accounting.mjs';
 
 // Pin the backend and its dependencies to the installation the bridge patches.
 const hostRequire = createRequire('/home/alex/.local/share/dsh-cli/package.json');
@@ -39,31 +43,46 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 
 function installOwner(ctx) {
   // Detached restores never emit live agent events, so no agent/provider is needed.
+  const controller = createController();
+  installMainDriver(ctx, controller);
+  ctx.provide('llmResilience', controller);
+  ctx.provide('llmRecovery', controller);
+  ctx.provide('llmRecoveryHistory', controller);
+  ctx.effect(() => () => controller.dispose());
   selfHeal.apply(ctx, { maxCycles: 10 });
+  return controller;
 }
 
 function fixture(kind) {
+  const reservedOnly = kind.endsWith('reserved');
+  const unified = kind === 'unified-reserved';
   const id = randomUUID();
   const session = Session.create(id, undefined, { version: 4, id, createdAt: 0, isSeeded: false });
   session.append('turn/start', { turn: 1 });
   session.append('step/start', position);
   let state = initial();
   const audit = (action, next, attemptSeq) => {
-    session.append(AUDIT_EVENT, { version: 1, action, ...position, causalSeq: attemptSeq, state: next });
+    const ownership = unified && action === 'reserved' ? {
+      version: 1, kind: 'unified-agent-warning', origin: position, provider: 'fixture', retryId: 'unified-fixture',
+      policyKey: policyKey({ ...createController().policyFor('fixture'), maxRetries: 3 }), retry: next.chain.cycle,
+      legacyNativeConsumed: 0, legacySemanticConsumed: 0, importedConsumed: 0,
+    } : undefined;
+    session.append(AUDIT_EVENT, { version: 1, action, ...position, causalSeq: attemptSeq, state: next,
+      ...(ownership ? { recoveryOwnership: ownership } : {}) });
     state = next;
   };
-  for (let cycle = 1; cycle <= (kind === 'reserved' ? 1 : 3); cycle++) {
+  for (let cycle = 1; cycle <= (reservedOnly ? 1 : 3); cycle++) {
     const attempt = session.append('assistant/attempt', { ...position, stream: [] });
     const decision = decide(state, position, attempt.seq, facts, 3);
     assert.equal(decision.kind, 'heal');
     audit('reserved', decision.state, attempt.seq);
-    if (kind === 'reserved') break;
+    if (reservedOnly) break;
     const message = session.append('user/message', { id: randomUUID(), role: 'user', source: { kind: 'self-heal-observation' },
       content: [{ type: 'text', text: `fixture cycle ${cycle}` }] }, { surfaceOp: 'append', sourceEventSeqs: [attempt.seq] });
     audit('observation-admitted', transition(state, 'admitted', { messageId: message.data.id, observationSeq: message.seq }), attempt.seq);
     audit('retry-requested', transition(state, 'retry-requested'), attempt.seq);
   }
-  if (kind !== 'reserved') {
+  if (!reservedOnly) {
     const attempt = session.append('assistant/attempt', { ...position, stream: [] });
     const decision = decide(state, position, attempt.seq, facts, 3);
     assert.equal(decision.kind, 'suspended');
@@ -82,6 +101,8 @@ async function freshReader(input) {
 }
 
 async function readInFreshProcess(input) {
+  globalThis.fetch = () => { throw new Error('Network forbidden in cold reader'); };
+  globalThis.WebSocket = class { constructor() { throw new Error('Network forbidden in cold reader'); } };
   const ctx = new Context();
   let handle;
   try {
@@ -103,7 +124,7 @@ async function readInFreshProcess(input) {
     const beforeOwner = slice.events.filter(event => event.type === AUDIT_EVENT).length;
     const session = Session.fromRestore(input.id, slice.events, handle.header, handle.inheritedEventCount, slice.eventState);
     assert.equal(ctx.sessionProjections.stateOf(session, PROJECTION_KEY), undefined);
-    installOwner(ctx);
+    const controller = installOwner(ctx);
     const state = ctx.sessionProjections.stateOf(session, PROJECTION_KEY);
     const expected = slice.events.reduce((value, event) => {
       assertAuditReadable(event, selfHeal.stateSchema);
@@ -115,10 +136,14 @@ async function readInFreshProcess(input) {
     // Restoring a detached Session may add an in-memory end-seed marker. The
     // original durable prefix must nevertheless remain exactly unchanged.
     assert.deepEqual(session.snapshotEvents(0, slice.events.length), slice.events);
+    const accounting = ctx.sessionProjections.stateOf(session, ACCOUNTING_KEY);
+    const provider = input.provider ?? 'fixture';
+    const budget = recoveryBudget(state, accounting, ctx.sessionProjections.stateOf(session, 'llmRetry'), controller.policyFor(provider), provider);
     return { count: slice.events.length, auditCount: beforeOwner, eventHash: digest(JSON.stringify(slice.events)),
       state, dedupe: state.seen ? decide(state, position, state.seen.attemptSeq, facts, 10).kind : undefined,
       next: decide(state, { turn: 99, step: 1 }, slice.events.length + 100, facts, 10).kind,
-      access: handle.access };
+      access: handle.access, accounting, budget,
+      unifiedCanRetry: Boolean(controller.plan({ provider, failure: { code: 'SERVER' }, previousRetry: budget.consumed, policy: budget.policy })) };
   } finally {
     await handle?.close();
     await ctx.fiber.dispose();
@@ -142,6 +167,7 @@ if (process.argv[2] === '--self-heal-original-guard') {
   assert.throws(assertPersistenceCompatible, /cannot reopen required agent\/self-heal/);
   let registrations = 0;
   const untouched = {
+    get() { return { recoveryVersion: 2, recoveryHistoryVersion: 2 }; },
     sessionProjections: { register() { registrations++; } },
     on() { registrations++; }, effect() { registrations++; },
   };
@@ -202,7 +228,7 @@ if (process.argv[2] === '--self-heal-original-guard') {
     }
   });
 
-  for (const compression of ['none', 'zstd']) for (const kind of ['reserved', 'exhausted']) {
+  for (const compression of ['none', 'zstd']) for (const kind of ['reserved', 'exhausted', 'unified-reserved']) {
     test(`${compression}: real filesystem ${kind} roundtrip across fresh process and absent/late owner`, async () => {
       await mkdir(scratch, { recursive: true });
       const root = await mkdtemp(join(scratch, `${compression}-${kind}-`));
@@ -228,13 +254,14 @@ if (process.argv[2] === '--self-heal-original-guard') {
       const loaded = await freshReader({ root, compression, id: source.header.id });
       assert.equal(loaded.access, 'read');
       assert.equal(loaded.count, source.events.length);
-      assert.equal(loaded.auditCount, kind === 'reserved' ? 1 : 10);
+      assert.equal(loaded.auditCount, kind.endsWith('reserved') ? 1 : 10);
       assert.equal(loaded.eventHash, digest(JSON.stringify(source.events)), 'all audits, messages and causal sequences survive');
       assert.deepEqual(loaded.state, source.state);
       assert.equal(loaded.dedupe, 'duplicate');
       assert.equal(loaded.state.chain.maxCycles, 3);
-      assert.equal(loaded.state.chain.cycle, kind === 'reserved' ? 1 : 3);
-      assert.equal(loaded.next, kind === 'reserved' ? 'heal' : 'suspended', 'config10 must not refund cap3');
+      assert.equal(loaded.state.chain.cycle, kind.endsWith('reserved') ? 1 : 3);
+      assert.equal(loaded.next, kind.endsWith('reserved') ? 'heal' : 'suspended', 'config10 must not refund cap3');
+      if (kind === 'unified-reserved') assert.equal(loaded.accounting.ownership.retryId, 'unified-fixture', 'additive ownership survives real stored replay');
       assert.equal(digest(await readFile(path)), before);
     });
   }

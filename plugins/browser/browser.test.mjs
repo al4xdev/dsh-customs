@@ -85,6 +85,32 @@ test('read-only is metadata-only, approval missing denies sensitive operation be
   } finally { await f.close(); }
 });
 
+test('native hook and execute agree on misplaced metadata; errors teach recovery without starting a worker', async () => {
+  const f = await fixture();
+  try {
+    const help = ok(await f.call('help', { path: 'session' }));
+    assert.ok(help.data.items.some(item => item.operation === 'session.open'));
+    const described = ok(await f.call('describe', { path: 'page.navigate' }));
+    assert.equal(described.data.operation, 'page.navigate');
+    assert.ok(described.data.example.args.url);
+    const branch = await f.call('describe', { path: 'session' });
+    assert.equal(branch.isError, true); assert.match(branch.error.message, /help/);
+    const conflict = await f.call('help', { path: 'session' }, { path: 'page' });
+    assert.equal(conflict.isError, true); assert.equal(conflict.error.info.code, 'INVALID_ENVELOPE');
+    const foreign = await f.call('page.navigate', { sessionId: 'bs_foreign', pageId: 'bp_foreign', url: 'about:blank' });
+    assert.equal(foreign.isError, true); assert.equal(foreign.error.info.code, 'SESSION_NOT_FOUND');
+    const missing = await f.call('page.navigate', { url: 'about:blank' });
+    assert.equal(missing.isError, true); assert.match(missing.error.message, /session.open/);
+    const sensitive = await f.call('media.trace.start', { sessionId: 'bs_foreign' });
+    assert.equal(sensitive.isError, true);
+    assert.equal(f.broker.owner(f.owner).slot, null);
+    policy.setSandboxMode(f.owner.session, 'read-only');
+    const denied = await f.call('page.navigate', { sessionId: 'bs_foreign', url: 'about:blank' });
+    assert.equal(denied.isError, true); assert.equal(denied.error.info.code, 'POLICY_DENIED');
+    assert.equal(f.broker.owner(f.owner).slot, null);
+  } finally { await f.close(); }
+});
+
 test('real native managed SDK worker targets owned Pages and delivers native screenshot image', { timeout: 90000 }, async () => {
   const f = await fixture();
   const html = '<!doctype html><title>Same fixture</title><h1>Owned fixture</h1><button onclick="window.count++;document.querySelector(\'output\').textContent=window.count">Increment</button><output>0</output><script>window.count=0</script>';
@@ -97,10 +123,14 @@ test('real native managed SDK worker targets owned Pages and delivers native scr
     const pages = ok(await f.call('page.list', {}, { sessionId })).data.pages;
     assert.equal(pages.length, 1);
     const pageId = pages[0].pageId;
-    ok(await f.call('page.navigate', { url }, { sessionId, pageId }));
+    ok(await f.call('page.navigate', { url, sessionId, pageId }));
+    const foreignOwner = f.agent();
+    const foreign = await f.call('page.navigate', { url, sessionId, pageId }, {}, foreignOwner);
+    assert.equal(foreign.isError, true); assert.equal(foreign.error.info.code, 'SESSION_NOT_FOUND');
+    assert.equal(f.broker.owner(foreignOwner).slot, null);
     const another = ok(await f.call('page.create', { url }, { sessionId }));
     const secondId = another.data.pageId;
-    const ambiguous = await f.call('interact.click', { target: { kind: 'role', role: 'button', name: 'Increment', exact: true } }, { sessionId });
+    const ambiguous = await f.call('interact.click', { target: { kind: 'role', role: 'button', name: 'Increment', exact: true }, sessionId });
     assert.equal(ambiguous.isError, true);
     ok(await f.call('interact.click', { target: { kind: 'role', role: 'button', name: 'Increment', exact: true } }, { sessionId, pageId }));
     const snapshot = ok(await f.call('observe.snapshot', {}, { sessionId, pageId }));
@@ -108,7 +138,7 @@ test('real native managed SDK worker targets owned Pages and delivers native scr
     const second = ok(await f.call('observe.snapshot', {}, { sessionId, pageId: secondId }));
     assert.ok(second.data.snapshot.includes('0'));
     const deliveryStarted = Date.now();
-    const shot = ok(await f.call('media.screenshot', { mode: 'viewport', format: 'png', scale: 'css' }, { sessionId, pageId }));
+    const shot = ok(await f.call('media.screenshot', { mode: 'viewport', format: 'png', scale: 'css', sessionId, pageId }));
     assert.equal(shot.imageRefs.length, 1);
     assert.ok(shot.artifacts[0].bytes > 0);
     const retentionMs = f.broker.owner(f.owner).config.deliveryRetentionMs;

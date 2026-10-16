@@ -1,0 +1,23 @@
+{
+  "active": [
+    {
+      "callId": "call-fixture-timed",
+      "questions": [
+        {
+          "id": "choice",
+          "question": "SYNTHETIC: choose a fixture option",
+          "options": [
+            {
+              "label": "Alpha"
+            },
+            {
+              "label": "Beta"
+            }
+          ]
+        }
+      ],
+      "state": "open"
+    }
+  ],
+  "settled": []
+}

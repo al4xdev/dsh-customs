@@ -1,0 +1,19 @@
+# Companion: estados reais e lista por atividade
+
+## Pedido e goal
+Dono testou APK15 em duas conversas simultâneas, uma deepsearch; viu verde mas não spinner. Outra sessão pediu permissão/pergunta e travou turno sem badge/possível ausência de UI. Lista fica por criação, não resposta recente. Goal83e6d20f engloba estas correções e115modelos paralelos. Tool disponível não prova UI; verde é unread, não finalizado. Não repetir declaração de resolvido baseada sófixtures.
+
+## Diagnóstico e prova atual
+Parent source-only confirmou plugins/companion-api/catalog.mjs48 ordena por createdAt,49–50 fixa cursor/revision em criação. VM1079–1122 consulta nativeGoals/catalog do viewport a cada10s; backend-native-goals/source.mjs56–62/118–120 exige raiz/preset/scope e agent.status idle/running. Precisam evidência de estados realmente usados pelo SDK e sessões atuais, não inferir ausência como idle. Auditorf56772d5 segue aprovações e ask_user_question até UI.
+
+## Implementação prevista após diagnóstico preciso
+- Investigar spinner com RPCs reais readonly de metadados das sessõesowned da lista, retornando sóIDopaco/knowledge/responding/pending types/timestamps; sem corpos/objetivos/credenciais. Validar pipeline snapshot/event/VM/viewport/lifecycle/codec e SDKpublicagentstatus. Corrigir fonte/classificação, não transformar goalarmed em working.
+- Estado aguardando você para permissão/pergunta PENDENTE com evidência canônica. Badge/semântica PT distinta de spinner/verde e prioridadeespera>working>unread preservando unread; unknown nenhum estado inventado. Pending tools não equivalem a concluído. Traçar toolperguntas (incluindo escolhas/multiseleção/texto se suportados) e permissões, renderizar UI/controles corretos em sessão certa, replay/reconnect/expiração/decision CAS e cancelamento sem resposta automática/reenvio/decidiroutra sessão.
+- Catálogo por atividade/mensagem recente, incluindo recebida, não criação. Usar timestamp/ordem canônica só para recência, NUNCA como prova de unread/ACK. Garantir descoberta de recência offscreen sem body scans/Agent promotion/pollingBG. Desenhar contrato/paginação coerente, tie-break estável, snapshotcursor/refresh/reordenação sem duplicação/perda e preservar scroll/seleção/viewportleased. Se metadataSDKnãooferece isso, relatarlimite antes de inventar.
+- Arquivos previstos: companion-api/catalog/contracts/tests e nova projeção metadata pública se necessária; backend-native-goals/source/contracts/host; Android protocol/native activity/journal/VM/catalog domain/UI/interaction panels e testes. Parent aprova diff preciso antes de writes watched/perfil; subagentes audit-only semownership código atédelegação explícita. Plano ajustado antes de ampliar alvo sem evidência.
+
+## Segurança e publicação
+Conversas reais ATIVAS: nenhum stop/restart/cancelagent/sendprompt/goalcontrol/decidirpermissão/pergunta para testar. Readonly agora; patches/testes em mirror/.dumps. Não hoteditar código watched. Publicação somente após fim comprovado ou janela coordenada expressamente com dono; freshCURRENT CAS/backup e disponibilidade restaurada, nunca restaurar perfil histórico sobre112. Sem SDK/Source99/global/TUI/Casa/HA/FCM/paidmodelcalls. Não expor privateprofile/token/cookie/chave ou texto conversas em ferramentas/logs. FCM119 permanece pendente; instalação120concluída não autoriza instalar APK novo automaticamente.
+
+## Aceite
+RegressõesNode/Kotlin/UI e prova INTEGRADA real das duas sessões para estados e ordem, sem induzir trabalho pago/artificial ou responder usuário indevidamente. Cobrir provider busy/toolwaiting/permission/question/idle/unknown/armedonly, aguardando fora sessão selecionada, resposta stale e reconexão, ordenação porreply e paginação concorrente, noACKporreordenação, STOPsemwork. Distinguir inspeção fonte, fixture, metadados reais e UI mobile; entregarAPKse exigido com assinatura original e permissão de instalar solicitada quando pronto.

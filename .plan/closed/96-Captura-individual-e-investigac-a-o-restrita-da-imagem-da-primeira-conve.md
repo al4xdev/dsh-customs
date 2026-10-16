@@ -1,0 +1,9 @@
+# Imagem Markdown real — captura e rastreio autorizado de UMA conversa
+
+Dono pediu **Tira um print, a primeira conversa tem ID e título para você rastrear**. Esta autorização nova permite uma captura atual e investigação readonly limitada à conversa identificada e ao trecho/recibo relevante para placeholderTesteHarness jámostrado, nãohistórico global.
+
+1. Capturar UMA tela atual explicitamenteZY22F2395W adb5037 em novo .dumps/tasks/owner-apk10-screen-20261014-3.png (verificar nãoexiste). Semtouch/navegar/abrircard/scroll/UIXML/segundacaptura.
+2. read_image nativo para identificarprimeirocard/title/id. Não publicarPNG/conteúdo/título/IDs em resposta, não usarOwnerarte comofixture. SeIDtruncado/ambíguo, resolver sómetadadoscandidatos ou pedirIDcompleto; nãoadivinhar.
+3. Readonly da fontecanônica de UMA conversa identificada autorizada, usandoAPI pública leitorSDK/parsers existentes e limitesbounded/trechos no worker. Não criar índices/ALTER/managedloader legacy/canonicalmodify nem importarSDKprodcomboot/model/network. Acesso somente registros necessários ao pedidoimagem/Markdownfinal/toolreceipt anterior e lifecycleidentity; cortar demaisconteúdosprivados da evidência. Semcofre/cookies/token/headers/logsoutroschats. Se semrefevidence, pedirinfo, nãoampliarURIloader.
+4. Diagnóstico exato: destinoMarkdown literal, ferramentarelevante/status/typedreceipt/provenance/order e subset87. Não abrir URI/rede/filepathreferenced para 'fazer funcionar'. Semgenimage/models/submits/exportsprivados. Reportar causa com evidência redigida, fix apenas sobnovoescopoapproved95revisionouplano específico sebugprodprovado.
+5. Registrar privadamente .dumps/tasksevidence redigida e fechar sóquandoinvestigaçãoatingirevidência ou explicitar dado faltante. Nenhuma captura extra física, navegação, instalação/SDK/TUI/profile/global/backendrestart/config change nesseplano.

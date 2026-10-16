@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { companionMetadata, createSessionCatalog } from './session-catalog.mjs';
+import { proxyTicketDownload } from '../../../plugins/companion-download/proxy.mjs';
 
 export const BACKEND = 'http://127.0.0.1:3081';
 export const PUBLIC_ORIGIN = 'https://dsh.tail37b3d7.ts.net:8443';
@@ -13,6 +14,7 @@ const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-au
 const MIME = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 const bootPresent = text => /(?:window|globalThis)\s*(?:\.__DSH_BOOT__|\[\s*["']__DSH_BOOT__["']\s*\])\s*=/.test(text);
 const failure = (status, code) => Object.assign(new Error(code), { status, code });
+const downloadPath = raw => typeof raw === 'string' && (raw === '/companion-download' || raw.startsWith('/companion-download/'));
 
 function cleanHeaders(headers) {
   const blocked = new Set([...HOP, ...String(headers.connection ?? '').toLowerCase().split(',').map(value => value.trim())]);
@@ -133,6 +135,9 @@ export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = 
   async function handle(req, res) {
     const { headers, local, url } = validate(req);
     if (closing) throw failure(503, 'closing');
+    // Inspect the RAW prefix before normalized pathname routing: traversal/query
+    // variants must fail in the ticket helper, never fall through into /api.
+    if (downloadPath(req.url)) return proxyTicketDownload(req, res, { backend: target.origin, publicOrigin: PUBLIC_ORIGIN });
     if (url.pathname === '/__test/login') {
       if (!allowTestLogin || !local || req.method !== 'GET') throw failure(404, 'not_found');
       const link = JSON.parse(await readFile(connectionFile, 'utf8'));
@@ -219,6 +224,11 @@ export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = 
   }
   const server = http.createServer((req, res) => handle(req, res).catch(error => {
     if (res.headersSent) { res.destroy(); return; }
+    if (downloadPath(req.url)) {
+      // The ticket is a bearer secret. Never reflect an arbitrary code/stack/URL.
+      const status = [400, 403, 404, 405, 416, 429, 503].includes(error?.status) ? error.status : 502;
+      json(res, status, { error: { code: 'download_unavailable', message: 'Download unavailable.' } }); return;
+    }
     json(res, error.status ?? 502, { error: { code: error.code ?? 'upstream_unavailable', message: 'Request could not be completed.' } });
   }));
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });

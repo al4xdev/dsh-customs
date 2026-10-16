@@ -1,0 +1,16 @@
+{
+  "active": [],
+  "settled": [
+    {
+      "callId": "call-fixture-timed",
+      "answers": [
+        {
+          "id": "choice",
+          "selected": [
+            "Alpha"
+          ]
+        }
+      ]
+    }
+  ]
+}
