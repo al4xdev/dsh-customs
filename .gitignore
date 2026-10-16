@@ -1,5 +1,6 @@
 .dumps/
-node_modules/
+# No trailing slash: host/Docker installs make the root node_modules a symlink.
+node_modules
 __pycache__/
 *.pyc
 

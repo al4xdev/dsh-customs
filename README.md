@@ -27,6 +27,41 @@ e os básicos offline passaram; evidências e limites estão documentados no lin
 `tools/clean-install/` usa os forks atuais e as melhorias de persistência/Codex.
 `tools/workshop/` permanece uma baseline histórica, não a receita do host atual.
 
+## Instalação no host (máquina nova com dotfiles)
+
+Caminho para instalar só o `dsh-tui` e seus plugins numa máquina cujo `~/.dsh` já
+veio do dotfiles, sem Companion, web ou systemd. É a mesma receita pinada do Docker
+(`tools/clean-install/host.mjs` compõe as etapas exportadas de `install.mjs`), com
+Node ≥24 ativo (nvm serve; o runtime roda nele), headers do node-pty desse Node e
+sem seed de perfil. Ver a [tarefa 130](.plan/tasks/130-Instalar-dsh-tui-sem-companion-em-maquina-nova-e-portabilidade-de-home.md).
+
+```fish
+# Pré-requisitos: dotfiles restaurado, Node ≥24, git, g++/make/python3, rede (npm/GitHub)
+git clone https://github.com/al4xdev/dsh-customs.git ~/git/my/dsh-customs
+cd ~/git/my/dsh-customs
+node tools/clean-install/host.mjs --fresh
+dsh   # função fish do dotfiles → local-model-launch.mjs → --profile dsh-tui
+```
+
+O `--fresh` recusa runtime/build já existentes. Além do runtime em
+`~/.local/share/dsh-cli`, ele cria só o que o dotfiles não carrega, e só onde falta:
+checkouts de dev `frontend/dsh-tui` (`custom`) e `plugins/dsh-antigravity` (`main`),
+links `~/.dsh/profiles/{,dsh-tui/}node_modules` → runtime e o launcher
+`tools/dsh-launcher/local-model-launch.mjs` copiado para o runtime. Login OAuth é
+manual na TUI; a primeira abertura mostra o guia de boas-vindas (`Esc` pula).
+
+**Perfis portáveis.** O DSH ancora o `baseUrl` do loader no diretório do perfil, e
+`name:`/`path:` começando com `./` ou `../` resolvem a partir dele. Por isso o perfil
+`dsh-tui` usa caminhos relativos (`../../../git/my/dsh-customs/plugins/...`) e vale
+em qualquer HOME com o mesmo layout. `node tools/profile-portable.mjs --profile NOME
+[--from-home DIR] [--write]` converte um perfil com caminhos absolutos, com prova
+estrutural de equivalência e renomeação em cascata dos `alex-research-<hash>.yml`.
+Os perfis `web`, `headless`, `tui` e `companion` do lab ainda têm `/home/alex`.
+
+**Configuração só desta máquina** (providers corporativos, modelo padrão) vai em
+`~/.dsh/cordis.patch.yml`: camada do DSH aplicada depois do perfil e ignorada pelo
+dotfiles, para não levar dados de uma máquina ao git nem quebrar a outra.
+
 ## Mapa do repositório
 
 - `plugins/`: plugins locais. `plugins/activation.json` é a lista única de ativação.
@@ -36,6 +71,9 @@ e os básicos offline passaram; evidências e limites estão documentados no lin
 - `tools/pi-ai-fork/`: build/validação da correção pi-ai; ferramentas antigas de promoção
   têm escopo desta máquina, não são instaladores universais.
 - `tools/activate.mjs`: gera somente os blocos gerenciados `alex-*` nos perfis.
+- `tools/clean-install/host.mjs`: instalação no host (acima); `install.mjs` é a do Docker.
+- `tools/profile-portable.mjs` + `tools/profile-paths.mjs`: caminhos relativos ao perfil.
+- `tools/dsh-launcher/local-model-launch.mjs`: launcher que o `dsh.fish` do dotfiles chama.
 - `frontend/dsh-tui/` e `plugins/dsh-antigravity/`: checkouts locais separados, gitignored.
 - `.plan/`: histórico de tarefas. `.dumps/`: evidência/fixtures locais, gitignored.
 
@@ -201,7 +239,9 @@ node tools/activate.mjs --check --profile dsh-tui
 node tools/activate.mjs --write --profile dsh-tui
 ```
 
-A geração resolve caminhos pelo checkout atual e preserva os bytes dos blocos
+A geração resolve caminhos pelo checkout atual e os escreve **relativos ao
+diretório do perfil** (o overlay do repositório continua absoluto, porque linhas
+de `--patch` ancoram no perfil), preservando os bytes dos blocos
 não gerenciados, incluindo comentários/configs por máquina. Não clona forks,
 compila, instala bundles nem cria automaticamente perfis ausentes. A dependência
 `yaml` é local e fixada no lock deste repositório; não depende de um antigo npx.
@@ -209,7 +249,10 @@ compila, instala bundles nem cria automaticamente perfis ausentes. A dependênci
 Opções: `--profile NAME` (repetível), `--root DIR`, `--json`, `--check`, `--write`.
 Sem `--profile`, o sync também pode atualizar o overlay do repositório.
 Manifestos inválidos, módulos ausentes e múltiplos blocos gerenciados separados
-são reportados; não se tenta adivinhar a configuração.
+são reportados; não se tenta adivinhar a configuração. O `dsh-tui` atual tem três
+runs `alex-*` (bloco principal, `alex-llm-resilience` e o bloco research), então o
+`activate` recusa esse perfil até ele ser normalizado; ele foi composto pelo
+migrador de resilience e pelo `research-activation`.
 
 ## Estado da consolidação desta máquina
 

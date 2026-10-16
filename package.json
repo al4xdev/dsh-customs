@@ -26,7 +26,11 @@
     "workshop:doctor": "node tools/workshop/bootstrap.mjs --doctor",
     "test:workshop": "node --test tools/workshop/*.test.mjs",
     "test:session": "node --test plugins/session/*test.mjs plugins/companion-api/*test.mjs tools/session-companion/*test.mjs",
-    "test:companion-transport": "node --test plugins/companion-transport/*test.mjs tools/session-companion/profile.test.mjs"
+    "test:companion-transport": "node --test plugins/companion-transport/*test.mjs tools/session-companion/profile.test.mjs",
+    "host:install": "node tools/clean-install/host.mjs --fresh",
+    "profile:portable": "node tools/profile-portable.mjs",
+    "test:clean-install": "node --test tools/clean-install/*.test.mjs",
+    "test:portable": "node --test tools/profile-portable.test.mjs tools/activate.test.mjs tools/resilience/profile.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

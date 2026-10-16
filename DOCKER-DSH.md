@@ -2,6 +2,20 @@
 
 Build limpo concluído e básicos offline aprovados. Imagem `alex-dsh-clean:20261013-current`, construída do commit central `98f3882356767c6d010824633ba459d316e9b814`. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
 
+## Mudanças na receita depois do commit validado (2026-10-16)
+
+O build acima é do `98f3882`; **o Docker não foi refeito depois destas mudanças**,
+que a instalação no host (`tools/clean-install/host.mjs`, mesma receita) exercitou:
+
+- `096bd6f` fazia `install.mjs` quebrar já no import numa máquina limpa (`profile.mjs`
+  → `tools/resilience/profile.mjs` carrega `yaml` no load). Agora `profile.mjs` é
+  importado só no passo de seed, quando o runtime já tem `yaml`.
+- `@deepseek-ai/cordis` 4.0.5 saiu depois do build: o `dsh` (`~4.0.4`) aninhava uma
+  segunda cópia e o `sharedGraph` recusava. O runtime agora fixa `cordis` 4.0.4 por
+  override, a versão exata que o Antigravity exige e a mesma do lab.
+- Pin do TUI: `ebea5d7` → `4d0b808` (branch `custom` do lab: + favoritas globais e
+  ownership de questions), compilado e com `verify:oauth` aprovado no host.
+
 ## Compilação
 
 - TUI: fork `al4xdev/dsh-TUI`, commit `ebea5d738481bbc7c35006410ad9ce1a998dc883`, submodule fixo e build de fonte com pnpm11.21.0.
