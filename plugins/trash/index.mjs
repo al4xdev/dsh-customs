@@ -5,7 +5,8 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { defineTool, stringOutput, cwdOf, assertActive, resolveHost } from '../common.mjs';
-const dshPackage = '/home/alex/.local/share/dsh-cli/package.json';
+// Same runtime location rule as the fish `dsh` launcher: XDG_DATA_HOME, else ~/.local/share.
+const dshPackage = join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'dsh-cli/package.json');
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
 export const name = 'alex-trash';
 export const inject = ['tools', 'sandboxPolicy'];

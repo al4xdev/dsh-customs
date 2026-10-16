@@ -2,11 +2,12 @@
 import assert from 'node:assert/strict';
 import { mkdir, lstat, readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const profileFiles = Object.freeze(['cordis.yml', 'cordis.patch.yml', 'standard-managed-plugins.yml']);
-const yaml = createRequire('/home/alex/.local/share/dsh-cli/package.json')('yaml');
+const yaml = createRequire(join(homedir(), '.local/share/dsh-cli/package.json'))('yaml');
 const secretKeys = /^(?:api[-_]?key|password|passwd|secret|client[-_]?secret|client[-_]?id|device[-_]?id|authorization|proxy[-_]?authorization|cookie|set[-_]?cookie|credentials?(?:file|path|store)?|access[-_]?token|refresh[-_]?token|id[-_]?token|token|bearer|private[-_]?key)$/i;
 const secretLiteral = /(?:gh[pousr]_[A-Za-z0-9]{24,}|github_pat_[A-Za-z0-9_]{30,}|sk-[A-Za-z0-9_-]{24,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|\bBearer\s+[A-Za-z0-9._~-]{8,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/;
 const credentialPath = /(?:\.codex\/auth\.json|\.dsh\/dsh-auth(?:\/|$)|\bcredentials?\.json\b|\bdevice-id\b)/i;

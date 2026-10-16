@@ -392,3 +392,21 @@ for (const prefix of ['', 'file://']) test(`controller4 input ${prefix || 'absol
   assertRefuses(before.replace('index-v4-unified.mjs', 'index-v4-unified.mjs?alias'), 'foreign-owned-module');
   assertRefuses(before.replace('id: alex-llm-resilience', 'id: renamed-controller'), 'foreign-retry-engine-id');
 });
+
+test('a profile directory makes owned rows profile-relative and accepts them back unchanged', () => {
+  const profileDir = '/verified/home/.dsh/profiles/dsh-tui';
+  const relative = suffix => `../../../../repo/plugins/${suffix}`;
+  const migrateIn = source => migrateResilienceProfile(source, { repoRoot: root, profile: 'dsh-tui', profileDir });
+  const first = migrateIn('[]\n');
+  assert.equal(find(first.candidate, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v5-unified.mjs'));
+  assert.equal(find(first.candidate, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(first.candidate, 'alex-codex-transient-close').name, relative('codex-transient-close/index.mjs'));
+  assert.equal(migrateIn(first.candidate).changed, false);
+  // Existing absolute rows stay owned; versioned controller/self-heal names are
+  // rewritten to the portable form (activate re-renders the rest of its run).
+  const upgraded = migrateIn(migrate('[]\n').candidate).candidate;
+  assert.equal(find(upgraded, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v5-unified.mjs'));
+  assert.equal(find(upgraded, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(upgraded, 'alex-codex-transient-close').name, modulePath('codex-transient-close/index.mjs'));
+  assert.throws(() => migrateResilienceProfile('[]\n', { repoRoot: root, profile: 'dsh-tui', profileDir: 'relative/dir' }), TypeError);
+});

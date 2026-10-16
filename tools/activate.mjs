@@ -15,7 +15,10 @@
 //   unrelated config and comments outside those owned ranges remain untouched.
 //
 // Paths are resolved against wherever this repo actually lives, so a fresh
-// machine only needs `git clone` + `node tools/activate.mjs --write`.
+// machine only needs `git clone` + `node tools/activate.mjs --write`. Profile
+// rows are written relative to the profile directory, so the same dotfiles copy
+// stays valid under another HOME with the same layout; the repo overlay keeps
+// absolute names because `--patch` rows are anchored at the profile, not at it.
 //
 // Usage:
 //   node tools/activate.mjs                  # check for drift (default, read-only)
@@ -28,6 +31,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appliesToProfile } from './activation-selection.mjs';
+import { profileRelative } from './profile-paths.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT_DEFAULT = dirname(HERE);
@@ -112,12 +116,17 @@ function scalar(value) {
 
 // Generic overlays retain historical inclusion unless explicitly opted out.
 // Isolated replacements must opt out to avoid conflicting with native plugins.
+function moduleName(repoRoot, profile, module) {
+  const path = resolve(repoRoot, 'plugins', module);
+  return profile === null ? path : profileRelative(join(PROFILES_DIR, profile), path);
+}
+
 function desiredEntries(manifest, profile, repoRoot) {
   return manifest.plugins
     .filter(plugin => appliesToProfile(plugin, profile, manifest))
     .map(plugin => ({
       id: plugin.id,
-      name: resolve(repoRoot, 'plugins', plugin.module),
+      name: moduleName(repoRoot, profile, plugin.module),
       config: plugin.config ?? null,
     }));
 }
@@ -361,9 +370,9 @@ async function syncProfile(profile, options, YAML, manifest) {
         ['alex-codex-transient-close', 'codex-transient-close/index.mjs'],
         ['alex-agent-self-heal', RESILIENCE_MODULES['alex-agent-self-heal']],
       ]) {
-        if (!entries.some(entry => entry.id === id)) entries.push({ id, name: resolve(options.repoRoot, 'plugins', module), config: {} });
+        if (!entries.some(entry => entry.id === id)) entries.push({ id, name: moduleName(options.repoRoot, profile, module), config: {} });
       }
-      migrate = source => migrateResilienceProfile(source, { repoRoot: options.repoRoot, profile });
+      migrate = source => migrateResilienceProfile(source, { repoRoot: options.repoRoot, profile, profileDir: join(PROFILES_DIR, profile) });
     }
   }
   return syncFile(

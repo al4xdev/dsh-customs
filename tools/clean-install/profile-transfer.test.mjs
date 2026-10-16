@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, symlink, lstat, realpath, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { exportProfile, sanitizeYaml, main } from './profile-transfer.mjs';
-const YAML = createRequire('/home/alex/.local/share/dsh-cli/package.json')('yaml');
+const YAML = createRequire(join(homedir(), '.local/share/dsh-cli/package.json'))('yaml');
 const options = { sourceProfile: '/home/alex/.dsh/profiles/dsh-tui', targetProfile: '/home/alex/.dsh/profiles/host-test', repoRoot: '/home/alex/git/my/dsh-customs', pathRemaps: { '/home/alex/git/my/dsh-customs/plugins/dsh-antigravity': '/home/alex/.local/share/dsh-build/sources/antigravity' } };
 
 test('preserves ordered provider/model IDs policies JS tags and include remapping without evaluation', () => {

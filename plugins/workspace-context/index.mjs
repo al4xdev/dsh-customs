@@ -1,9 +1,10 @@
 import { realpathSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 export const name = 'alex-workspace-context';
 export const inject = ['systemPrompt'];
-export const machineEnvironment = 'Machine environment: the user\'s interactive shell is fish, so commands handed to the user use fish syntax; the bash tool runs `bash -c`, so commands executed there use bash syntax. Python projects use uv; the virtual environment convention is `.venv/` (not every project has one), activated in fish with `source .venv/bin/activate.fish`. Installed utilities: uv, jq, az. Home: /home/alex; projects: /home/alex/git/my.';
+export const machineEnvironment = 'Machine environment: the user\'s interactive shell is fish, so commands handed to the user use fish syntax; the bash tool runs `bash -c`, so commands executed there use bash syntax. Python projects use uv; the virtual environment convention is `.venv/` (not every project has one), activated in fish with `source .venv/bin/activate.fish`. Installed utilities: uv, jq, az. Home: ' + homedir() + '; projects: ' + join(homedir(), 'git/my') + '.';
 const reasons = { ENOENT: 'working directory not found', ENOTDIR: 'working directory is not a directory', EACCES: 'permission denied', EPERM: 'permission denied', ELOOP: 'symbolic link loop' };
 function gitRoot(dir) {
   // Git owns discovery (including gitfiles, ceilings, ownership and environment).

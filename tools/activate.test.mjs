@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { YAML } from './session-companion/profile.mjs';
 import { RESILIENCE_PROFILES, RESILIENCE_MODULES } from './resilience/profile.mjs';
 
 const script = fileURLToPath(new URL('./activate.mjs', import.meta.url));
-const yamlRoot = dirname(createRequire('/home/alex/.local/share/dsh-cli/package.json').resolve('yaml/package.json'));
+const yamlRoot = dirname(createRequire(join(homedir(), '.local/share/dsh-cli/package.json')).resolve('yaml/package.json'));
 const write = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, value); };
 const parse = source => { const doc = YAML.parseDocument(source); assert.deepEqual(doc.errors, []); return doc.toJS(); };
 const inserted = source => parse(source).flatMap(row => row.insert ?? []);
@@ -123,6 +123,7 @@ test('a controller-free manifest leaves native engines/custom policies untouched
   const copied = join(f.root, 'tools/activate.mjs');
   write(copied, readFileSync(script, 'utf8'));
   write(join(f.root, 'tools/activation-selection.mjs'), readFileSync(new URL('./activation-selection.mjs', import.meta.url), 'utf8'));
+  write(join(f.root, 'tools/profile-paths.mjs'), readFileSync(new URL('./profile-paths.mjs', import.meta.url), 'utf8'));
   const original = f.text('web');
   assert.equal(f.run(['--write', '--profile', 'web'], copied).status, 0);
   const final = f.text('web');
@@ -207,4 +208,29 @@ test('manifest disagreement with an existing explicit central cap is refused rat
   const before = f.text('web'), result = f.run(['--write', '--profile', 'web']);
   assert.equal(result.status, 3); assert.equal(f.text('web'), before);
   assert.match(result.report.reports[0].note, /conflicting-activation-recovery-config/);
+});
+
+test('profile rows are written relative to the profile, so another HOME with the same layout stays current', () => {
+  const { root, home, text, run } = fixture({ profiles: ['web'], source: root => `- insert:
+    - id: alex-llm-resilience
+      name: ${root}/plugins/llm-resilience/lib/index-v5-unified.mjs
+      config: {}
+    - id: alex-codex-transient-close
+      name: ${root}/plugins/codex-transient-close/index.mjs
+    - id: alex-agent-self-heal
+      name: ${root}/plugins/agent-self-heal/lib/index-v6-unified.mjs
+      config: {}
+` });
+  assert.equal(run(['--write']).status, 0);
+  const profileDir = join(home, 'profiles/web');
+  const rows = inserted(text('web')).filter(row => row.id.startsWith('alex-'));
+  assert.equal(rows.length, 3);
+  for (const row of rows) {
+    assert(row.name.startsWith('../'), row.name);
+    assert(resolve(profileDir, row.name).startsWith(join(root, 'plugins') + '/'), row.name);
+  }
+  assert.equal(rows.find(row => row.id === 'alex-llm-resilience').name, '../../../repo/plugins/llm-resilience/lib/index-v5-unified.mjs');
+  const second = run(['--check']);
+  assert.equal(second.status, 0);
+  assert(second.report.reports.every(report => !report.changed), JSON.stringify(second.report.reports));
 });

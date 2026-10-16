@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { QUOTA_CODE, RECOVERY_CODES, resolveConfig } from '../../plugins/llm-resilience/policy.mjs';
+import { profileRelative } from '../profile-paths.mjs';
 
 // Match existing repository tooling's dependency resolution without importing a
 // profile writer or depending on a running host's private registration tables.
@@ -84,9 +85,10 @@ function isKnownBaseline(node, path) {
  * sourceSha256 before any recoverable, allowlisted publication. Change offsets
  * are UTF-16 string indices (YAML CST), explicitly not UTF-8 Buffer byte offsets.
  */
-export function migrateResilienceProfile(sourceText, { repoRoot, profile } = {}) {
+export function migrateResilienceProfile(sourceText, { repoRoot, profile, profileDir } = {}) {
   if (typeof sourceText !== 'string') throw new TypeError('sourceText must be a string');
   if (typeof repoRoot !== 'string' || !isAbsolute(repoRoot)) throw new TypeError('repoRoot must be absolute');
+  if (profileDir !== undefined && (typeof profileDir !== 'string' || !isAbsolute(profileDir))) throw new TypeError('profileDir must be absolute');
   if (!RESILIENCE_PROFILES.includes(profile)) refuse('unsupported-profile', 'profile');
   const root = resolve(repoRoot);
   const paths = {
@@ -96,7 +98,10 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile } = {})
   const acceptedPaths = Object.fromEntries(Object.entries(paths).map(([id, module]) => [id, [module,
     ...(id === 'alex-llm-resilience' ? ['index.mjs', 'lib/index-v2-unified.mjs', 'lib/index-v3-unified.mjs', 'lib/index-v4-unified.mjs'].map(name => join(root, 'plugins/llm-resilience', name)) : []),
     ...(id === 'alex-agent-self-heal' ? ['index-v2-persistence.mjs', 'index-v3-resilience.mjs', 'index-v4-unified.mjs', 'index-v5-unified.mjs'].map(name => join(root, 'plugins/agent-self-heal/lib', name)) : []),
-  ].flatMap(path => [path, pathToFileURL(path).href])]));
+  ].flatMap(path => [path, pathToFileURL(path).href, ...(profileDir ? [profileRelative(profileDir, path)] : [])])]));
+  // With a profile directory, owned rows are emitted relative to it so the same
+  // profile text resolves under any HOME; without one, legacy absolute output.
+  const emitted = Object.fromEntries(Object.entries(paths).map(([id, path]) => [id, profileDir ? profileRelative(profileDir, path) : path]));
   const ownedModuleIds = new Map(Object.entries(acceptedPaths).flatMap(([id, modules]) => modules.map(module => [module, id])));
   const newline = sourceText.includes('\r\n') ? '\r\n' : '\n';
   const doc = YAML.parseDocument(sourceText, { keepSourceTokens: true, uniqueKeys: true });
@@ -240,7 +245,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile } = {})
   const controllerRow = seen.get('alex-llm-resilience');
   if (controllerRow) {
     const name = child(controllerRow.node, 'name');
-    if (name.value !== paths['alex-llm-resilience']) edit(name.range[0], name.range[1], scalar(paths['alex-llm-resilience']), `${controllerRow.location}.name`, 'upgrade-managed-controller-module');
+    if (name.value !== emitted['alex-llm-resilience']) edit(name.range[0], name.range[1], scalar(emitted['alex-llm-resilience']), `${controllerRow.location}.name`, 'upgrade-managed-controller-module');
   }
   const existingConfigNode = controllerRow && child(controllerRow.node, 'config');
   const existingConfig = existingConfigNode ? plain(mapping(existingConfigNode, 'alex-llm-resilience.config'), 'alex-llm-resilience.config') : {};
@@ -294,7 +299,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile } = {})
   const heal = seen.get('alex-agent-self-heal');
   if (heal) {
     const name = child(heal.node, 'name');
-    if (name.value !== paths['alex-agent-self-heal']) edit(name.range[0], name.range[1], scalar(paths['alex-agent-self-heal']), `${heal.location}.name`, 'upgrade-managed-self-heal-module');
+    if (name.value !== emitted['alex-agent-self-heal']) edit(name.range[0], name.range[1], scalar(emitted['alex-agent-self-heal']), `${heal.location}.name`, 'upgrade-managed-self-heal-module');
     const configNode = child(heal.node, 'config');
     const config = configNode ? plain(mapping(configNode, 'alex-agent-self-heal.config'), 'alex-agent-self-heal.config') : {};
     exactKeys(config, ['maxCycles'], 'alex-agent-self-heal.config');
@@ -305,7 +310,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile } = {})
   }
   const missingEntries = [];
   for (const id of ['alex-llm-resilience', 'alex-codex-transient-close', 'alex-agent-self-heal']) {
-    if (!seen.has(id)) missingEntries.push({ id, name: paths[id], config: id === 'alex-llm-resilience' ? candidateConfig : {} });
+    if (!seen.has(id)) missingEntries.push({ id, name: emitted[id], config: id === 'alex-llm-resilience' ? candidateConfig : {} });
   }
   for (const [map, { values, path, reason }] of appends) {
     if (map.flow) {
