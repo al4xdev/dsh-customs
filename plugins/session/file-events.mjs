@@ -1,8 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
-import { createZstdDecompress } from 'node:zlib';
+import { decodeZstdFrames } from './zstd-frames.mjs';
 
 export const FILE_EVENT_DEFAULTS = Object.freeze({ maxDecodedBytes: 64 * 1024 * 1024, maxLineBytes: 8 * 1024 * 1024, cacheBytes: 32 * 1024 * 1024 });
 const SECRET = /(?:password|passwd|token|apikey|authorization|cookies?|clientsecret|privatekey|secret)$/i;
@@ -197,12 +196,15 @@ export function createFileEventReader({ root, maxDecodedBytes = FILE_EVENT_DEFAU
           yield buffer.subarray(0, bytesRead);
         }
       }
-      const input = Readable.from(encoded());
-      const stream = candidate.encoding === 'zstd' ? input.pipe(createZstdDecompress()) : input;
-      const onError = error => stream.destroy(error);
-      if (stream !== input) input.on('error', onError);
-      const onAbort = () => { input.destroy(signal.reason); stream.destroy(signal.reason); };
-      signal?.addEventListener('abort', onAbort, { once: true });
+      // Per-frame decoding (see zstd-frames.mjs): a single streaming decoder
+      // returns only the first frame of the SDK's concatenated container. The
+      // generators are consumed directly, without a Readable's read-ahead, so
+      // the decode budget seen by the next frame is always current.
+      const stream = candidate.encoding === 'zstd'
+        ? decodeZstdFrames(encoded(), { budget: () => maxDecodedBytes - snapshot.counters.decodedBytes, onTornTail: () => warn('incomplete zstd tail'), onBudgetExceeded: () => { warn('maxDecodedBytes'); stopped = true; } })
+        : encoded();
+      // No abort listener: a pending fd read finishes on its own, and both
+      // encoded() and the loop below check the signal between reads.
       try {
         outer: for await (const chunk of stream) {
           abort(signal);
@@ -221,13 +223,11 @@ export function createFileEventReader({ root, maxDecodedBytes = FILE_EVENT_DEFAU
         }
       } catch (error) {
         abort(signal);
-        // Only an incomplete final frame is recoverable. Malformed frames and
-        // checksums are corruption, not successful partial reads.
-        if (candidate.encoding === 'zstd' && error.code === 'Z_BUF_ERROR' && /unexpected end/i.test(error.message)) warn('incomplete zstd tail');
-        else throw error;
+        // Only an incomplete final frame is recoverable, and the frame decoder
+        // reports it as a warning. Malformed frames and checksums are corruption.
+        throw error;
       } finally {
-        signal?.removeEventListener('abort', onAbort);
-        input.destroy(); stream.destroy();
+        await stream.return?.();
       }
       if (!snapshot.header) throw new Error('missing complete session header');
       if (pending.length && !stopped) warn('incomplete JSONL tail');

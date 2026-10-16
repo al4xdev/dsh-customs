@@ -1,16 +1,11 @@
-import { createRequire } from 'node:module';
 import { assertMount, bashDecision, guardReason, GUARDED_TOOLS } from './guard-policy.mjs';
+import { resolveInstalled } from '../session/host-paths.mjs';
 
 export const name = 'companion-workspace';
 export const inject = ['tools', 'sandboxPolicy', 'sandbox', 'shell'];
 
 async function hostScopeOf() {
-  for (const base of [process.argv[1], '/home/alex/.local/share/dsh-cli/package.json']) {
-    let target;
-    try { target = createRequire(base).resolve('@deepseek-ai/dsh-scope'); } catch { continue; }
-    return (await import(target)).scopeOf;
-  }
-  throw new Error('companion-workspace native scope service unavailable');
+  return (await import(resolveInstalled('@deepseek-ai/dsh-scope', 'companion-workspace native scope service unavailable'))).scopeOf;
 }
 
 export async function apply(ctx, config = {}) {

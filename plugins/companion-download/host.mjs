@@ -1,6 +1,9 @@
+import { realpathSync } from 'node:fs';
 import { isAbsolute, posix } from 'node:path';
 import { sdk } from './sdk.mjs';
 import { createSnapshotRegistry, MAX_BYTES, refuse } from './registry.mjs';
+import { inlineForApproval, literalForApproval } from '../session/approval-text.mjs';
+import { DSH_HOME } from '../session/host-paths.mjs';
 import { createDownloadRoute } from './route.mjs';
 import { pinFiber, fiberCurrent } from './lifetime.mjs';
 import DownloadRedactedWebServer from './webserver.mjs';
@@ -15,11 +18,60 @@ const services = ['connection', 'agents', 'agentPresets', 'approval', 'webServer
 function safePath(path) {
   if (typeof path !== 'string' || !path.length || path.length > 4096 || /[\u0000-\u001f\u007f\\]/u.test(path) || /^[a-z][a-z\d+.-]*:/iu.test(path) || path.startsWith('//')) refuse('invalid-path');
 }
-function sensitivePath(path) {
-  // This first slice denies known credential stores, pseudo filesystems and profiles,
-  // even if the general read provider is broader. Consent cannot widen this policy.
-  return /^\/(?:proc|sys|dev)(?:\/|$)/u.test(path) || /\/(?:\.ssh|\.gnupg|\.dsh|\.aws|\.azure)(?:\/|$)/u.test(path) ||
-    /(?:^|\/)(?:\.env(?:\..*)?|credentials?(?:\.[^/]*)?|cookies?(?:\.[^/]*)?|[^/]*service[-_]?account[^/]*|[^/]*\.pem|[^/]*\.key)$/iu.test(path);
+// Every file below these directories is a credential store, key ring, private
+// profile or browser profile (cookies, saved logins), wherever the home is.
+const SENSITIVE_DIRECTORIES = [
+  '.ssh', '.gnupg', '.dsh', '.aws', '.azure', '.kube', '.docker', '.claude', '.android', '.terraform.d', '.password-store', '.mozilla', '.thunderbird',
+  '.config/gcloud', '.config/gh', '.config/hub', '.config/op', '.config/rclone', '.config/sops', '.config/mozilla', '.config/google-chrome', '.config/chromium',
+  '.config/BraveSoftware', '.config/microsoft-edge', '.local/share/keyrings', '.local/share/kwalletd', '.gnome2/keyrings',
+  'etc/ssl/private', 'etc/wireguard',
+];
+// The DSH home holds launch tokens, credentials and the bridge key even when
+// DSH_HOME moves it away from ~/.dsh; refuse it by location, symlinks resolved.
+const dshHomes = (() => { const homes = [DSH_HOME]; try { homes.push(realpathSync(DSH_HOME)); } catch { /* Not created yet. */ } return [...new Set(homes)]; })();
+const sensitiveDirectory = new RegExp(`/(?:${SENSITIVE_DIRECTORIES.map(dir => dir.replace(/[.]/gu, '\\.')).join('|')})(?:/|$)`, 'u');
+// Leaf names: dotenv, credential/secret/cookie files, CLI token files (netrc,
+// git-credentials, npm/yarn/pypi), database passwords, shell/REPL histories,
+// fish universal variables, private keys and key containers. Public keys and
+// merely encrypted files stay shareable.
+const sensitiveFile = new RegExp('(?:^|/)(?:' + [
+  '\\.env(?:\\..*)?', '\\.?credentials?(?:\\.[^/]*)?', '\\.?secrets?(?:\\.[^/]*)?', 'cookies?(?:\\.[^/]*)?', '[^/]*service[-_]?account[^/]*',
+  '[._]netrc', '\\.git-credentials', '\\.npmrc', '\\.yarnrc(?:\\.yml)?', '\\.pypirc', '\\.pgpass', '\\.my\\.cnf', '\\.vault-token', '\\.boto', '\\.s3cfg', '\\.htpasswd',
+  '[^/]*_history', '\\.history', '\\.lesshst', '\\.viminfo', 'fish_variables', 'adbkey', 'id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?',
+  'logins\\.json', 'key[34]\\.db', 'login data', 'ssh_host_[a-z0-9]+_key',
+  '[^/]*\\.(?:pem|key|p12|pfx|kdbx|keychain(?:-db)?|jks|keystore|ppk|ovpn)',
+].join('|') + ')$', 'iu');
+/** Exported for tests. Consent cannot widen this policy, even if the read provider is broader. */
+export function sensitivePath(path) {
+  return /^\/(?:proc|sys|dev)(?:\/|$)/u.test(path) || /^\/etc\/g?shadow-?$/u.test(path) || sensitiveDirectory.test(path) || sensitiveFile.test(path) ||
+    dshHomes.some(home => path === home || path.startsWith(`${home}/`));
+}
+/**
+ * Same mount check for every verification. A transient acquireScope failure
+ * refuses only THIS snapshot (its reservation is revoked by the caller); it no
+ * longer closes the whole host. A different live mount is a real authority
+ * change for this actor and still closes it.
+ */
+export async function verifyMountScope({ valid, presets, mount, closeHost }) {
+  valid();
+  let lease;
+  try { lease = await presets.acquireScope('companion'); }
+  catch { refuse('source-changed'); }
+  try {
+    valid();
+    if (lease.key !== mount.key) { closeHost(); refuse('source-changed'); }
+  } finally { await lease[Symbol.asyncDispose](); }
+}
+/** Exported for tests. The path is escaped (bidi/invisible names cannot disguise it) and bound by size and digest. */
+export function approvalReason(canonical, size) {
+  const path = literalForApproval(canonical);
+  return [
+    'file-share: Create one private browser download snapshot (maximum 20 MiB, expires 5 minutes after it is created) of the file below. This link can be used by anyone who receives it.',
+    `File: ${inlineForApproval(canonical)}`,
+    ...(path.hidden ? [`WARNING: the path contains ${path.hidden} invisible or control character(s), shown escaped (\\uXXXX).`] : []),
+    `Path: ${path.bytes} bytes UTF-8, sha256 ${path.sha256}`,
+    `Size: ${Number.isSafeInteger(size) ? `${size} bytes` : 'unknown'}`,
+  ].join('\n');
 }
 export class CompanionFileDownloads extends Service {
   static inject = inject;
@@ -95,16 +147,7 @@ export class CompanionFileDownloads extends Service {
             identity(agent.ctx.get('fs')) !== identity(fs) || identity(toolCtx.get('fs')) !== identity(fs) || !fiberCurrent(fsPin, identity(fs)?.ctx?.fiber) ||
             identity(agent.ctx.get('approval')) !== identity(approval) || identity(toolCtx.get('companionFileDownloads')) !== identity(this)) refuse('actor-required');
       };
-      const verify = async () => {
-        valid();
-        let lease;
-        try { lease = await presets.acquireScope('companion'); }
-        catch { this.close(); refuse('source-changed'); }
-        try {
-          valid();
-          if (lease.key !== mount.key) { this.close(); refuse('source-changed'); }
-        } finally { await lease[Symbol.asyncDispose](); }
-      };
+      const verify = () => verifyMountScope({ valid, presets, mount, closeHost: () => this.close() });
       valid();
       const reservation = registry.reserve(valid, verify, agent.session);
       const signal = AbortSignal.any([exec.signal, reservation.signal]);
@@ -124,8 +167,7 @@ export class CompanionFileDownloads extends Service {
         await verify(); signal.throwIfAborted();
         // Scoped read access and exporting bytes are separate permissions. Always ask
         // the actual native one-shot approval service; model arguments cannot grant it.
-        const outcome = await approval.request({ agent, toolName: 'download_file', callId: exec.callId,
-          reason: `file-share: Create one private browser download snapshot (maximum 20 MiB, expires in 5 minutes) of ${canonical}. This link can be used by anyone who receives it.`, signal });
+        const outcome = await approval.request({ agent, toolName: 'download_file', callId: exec.callId, reason: approvalReason(canonical, before.size), signal });
         await verify(); signal.throwIfAborted();
         if (outcome !== 'allowed-once') refuse('consent-required');
         bytes = await fs.readBytes(target, signal, MAX_BYTES); valid(); signal.throwIfAborted();

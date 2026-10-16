@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
+import { normalizeNewlines, refusedCharacter } from '../session/approval-text.mjs';
+import { COMPANION_WORKSPACE_ROOT } from '../session/host-paths.mjs';
 
-export const DEDICATED_ROOT = '/home/alex/git/my/dsh-companion-workspace';
+/** The dedicated Companion workspace root (~/git/my/dsh-companion-workspace); its projects/ children are the only session_create targets. */
+export const DEDICATED_ROOT = COMPANION_WORKSPACE_ROOT;
 export const MAX_TEXT_BYTES = 16 * 1024;
 export class CreateError extends Error {
   constructor(code, message = code) { super(message); this.code = code; }
@@ -25,6 +28,11 @@ function text(value, limit, controlFree = false) {
   if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(value) > limit || value.includes('\0') || (controlFree && /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(value))) fail('invalid_text');
   // Unpaired UTF-16 would be replaced during UTF-8 transport, violating literal/hash binding.
   if ([...value].some(character => { const point = character.codePointAt(0); return point >= 0xd800 && point <= 0xdfff; })) fail('invalid_unicode');
+  // Tags, bidi controls, private use, CR and other controls would hide or
+  // reorder what the owner (human) approves, while the destination agent still
+  // reads them. Plain line breaks and tabs stay valid in delivered text.
+  const refused = refusedCharacter(value);
+  if (refused) fail('invalid_text', `Text contains ${refused}, an invisible, bidirectional or control character the owner (human) cannot review; remove it and retry.`);
   return value;
 }
 export function projectName(value) {
@@ -46,11 +54,16 @@ export function parseArgs(args) {
   record(request, ['version', 'owner_intent', 'delivery', 'target', 'preset', 'model', 'idempotency_key'], ['version', 'owner_intent']);
   if (request.version !== 1) fail('unsupported_version');
   text(request.owner_intent, 4096, true);
-  const delivery = request.delivery === undefined ? { mode: 'empty' } : request.delivery;
+  let delivery = request.delivery === undefined ? { mode: 'empty' } : request.delivery;
   record(delivery, ['mode', 'text'], ['mode']);
   if (delivery.mode === 'empty') record(delivery, ['mode'], ['mode']);
-  else if (delivery.mode === 'submit') { record(delivery, ['mode', 'text'], ['mode', 'text']); text(delivery.text, MAX_TEXT_BYTES); }
-  else fail('invalid_delivery');
+  else if (delivery.mode === 'submit') {
+    record(delivery, ['mode', 'text'], ['mode', 'text']);
+    // CRLF -> LF before validation: the approval card, its sha256, the request
+    // hash and the delivered text all use this one normalized literal.
+    delivery = { mode: 'submit', text: normalizeNewlines(delivery.text) };
+    text(delivery.text, MAX_TEXT_BYTES);
+  } else fail('invalid_delivery');
   const target = request.target === undefined ? { kind: 'current' } : request.target;
   record(target, ['kind', 'project_id', 'name', 'path', 'directory'], ['kind']);
   if (target.kind === 'current') record(target, ['kind'], ['kind']);
@@ -74,9 +87,9 @@ export function parseArgs(args) {
 const string = description => ({ type: 'string', description });
 const object = (properties, required) => ({ type: 'object', properties, required, additionalProperties: false });
 export const requestSchema = object({
-  version: { type: 'integer', const: 1 }, owner_intent: string('Explain the owner request; this is not proof of authorization.'),
+  version: { type: 'integer', const: 1 }, owner_intent: string('The owner\'s (human) request in your own words; shown in the approval, never proof of authorization.'),
   delivery: { description: 'Default empty: no prompt, draft or model. submit explicitly authorizes immediate queue/run after native human review.', oneOf: [object({ mode: { type: 'string', const: 'empty' } }, ['mode']), object({ mode: { type: 'string', const: 'submit' }, text: string('Full literal nonblank text, at most 16 KiB UTF-8; never truncated in approval.') }, ['mode', 'text'])] },
-  target: { oneOf: [object({ kind: { type: 'string', const: 'current' } }, ['kind']), object({ kind: { type: 'string', const: 'existing_project' }, project_id: string('Exact registry ID; only dedicated root or approved direct projects children.') }, ['kind', 'project_id']), object({ kind: { type: 'string', const: 'new_project' }, name: string('Single ASCII leaf [A-Za-z0-9][A-Za-z0-9_-]{0,63}; folder and initial title.'), path: string('If supplied, must equal dedicatedRoot/projects/name. No arbitrary cwd.'), directory: { type: 'string', enum: ['must_exist', 'create_child'], description: 'Default create_child. Missing projects parent may be created after approval; existing target in create_child is a conflict.' } }, ['kind', 'name'])] },
+  target: { oneOf: [object({ kind: { type: 'string', const: 'current' } }, ['kind']), object({ kind: { type: 'string', const: 'existing_project' }, project_id: string('ID of a project already registered in DSH whose folder is the dedicated Companion workspace or a direct child of its projects/ folder.') }, ['kind', 'project_id']), object({ kind: { type: 'string', const: 'new_project' }, name: string('Single ASCII leaf [A-Za-z0-9][A-Za-z0-9_-]{0,63}; folder and initial title.'), path: string('If supplied, must equal <Companion workspace>/projects/<name>. No arbitrary cwd.'), directory: { type: 'string', enum: ['must_exist', 'create_child'], description: 'Default create_child. Missing projects parent may be created after approval; existing target in create_child is a conflict.' } }, ['kind', 'name'])] },
   preset: { type: 'string', const: 'companion' }, model: object({ provider: string('Must match current effective route; never changes global default.'), model: string('Must match current effective model.'), reasoning_effort: string('Must match effective effort.') }, ['provider', 'model']),
   idempotency_key: string('Caller-scoped stable key. Same key/different request conflicts; existing operations are never automatically retried.'),
 }, ['version', 'owner_intent']);

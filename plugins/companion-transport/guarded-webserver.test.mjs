@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import GuardedWebServer, { NativeWebServer } from './guarded-webserver.mjs';
 import { PUBLIC_ORIGIN } from './origin-policy.mjs';
-import { MAX_REQUEST_BYTES } from './request-budget.mjs';
+import { MAX_REQUEST_BYTES, MAX_UPLOAD_REQUEST_BYTES, UPLOAD_PATH } from './request-budget.mjs';
+import { DSH_CLI_PACKAGE } from '../session/host-paths.mjs';
 
-const sdk = createRequire(path.join(homedir(), '.local/share/dsh-cli/package.json'));
+const sdk = createRequire(DSH_CLI_PACKAGE);
 const load = name => import(pathToFileURL(sdk.resolve(name)).href);
 const [{ Context }, Connection, { default: Gateway }, { default: Registry }] = await Promise.all([
   load('@deepseek-ai/cordis'), load('@deepseek-ai/dsh-client-connection'),
@@ -166,6 +166,20 @@ test('HTTP1 wire budget rejects oversized declarations and chunked bodies before
   assert.equal(Buffer.byteLength(body), MAX_REQUEST_BYTES);
   assert.equal((await request(fixture.port, { method: 'POST', pathname: '/fixture/echo', headers: { origin: PUBLIC_ORIGIN, cookie, 'content-type': 'application/json', 'content-length': MAX_REQUEST_BYTES }, body })).status, 200);
   assert.equal(fixture.counts.rpc, 1);
+});
+
+test('upload route passes a declared multi-MiB file to native ownership; unknown length stays 411', async t => {
+  const fixture = await host(t); const cookie = await authenticate(fixture);
+  const pathname = `${UPLOAD_PATH}?sessionId=fixture-session&name=fixture.bin`;
+  const headers = { origin: PUBLIC_ORIGIN, cookie, 'content-type': 'application/octet-stream' };
+  const body = Buffer.alloc(2 * 1024 * 1024 + 1, 7);
+  // No upload service is mounted here: any native answer proves the wire guard admitted it.
+  const admitted = await request(fixture.port, { method: 'POST', pathname, headers: { ...headers, 'content-length': body.length }, body });
+  assert.ok(![411, 413].includes(admitted.status), `guard admitted the declared upload (${admitted.status})`);
+  assert.equal((await request(fixture.port, { method: 'POST', pathname, chunked: true, headers: { ...headers, 'transfer-encoding': 'chunked' }, body: 'fixture-only' })).status, 411);
+  assert.equal((await request(fixture.port, { method: 'POST', pathname, headers: { ...headers, 'content-length': MAX_UPLOAD_REQUEST_BYTES + 1 } })).status, 413);
+  assert.equal((await request(fixture.port, { method: 'POST', pathname: '/fixture/echo', headers: { ...headers, 'content-length': body.length } })).status, 413);
+  assert.equal(fixture.counts.rpc, 0);
 });
 
 test('upgrade and fallback cannot bypass request framing limits', async t => {

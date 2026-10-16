@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { zstdCompressSync } from 'node:zlib';
 import { createFileController } from './file-controller.mjs';
 import { parseFileRequest } from './file-contracts.mjs';
+import { DSH_CLI_PACKAGE } from './host-paths.mjs';
 
 const event = (seq, type, data) => ({ seq, time: 1000 + seq, type, data });
 const user = (seq, text) => event(seq, 'user/message', { content: [{ type: 'text', text }] });
@@ -189,7 +190,7 @@ test('byte-capped list and read pages stay under budget without dropping omitted
 
 test('installed SDK-produced native zstd layout is readable through file controller', async t => {
   const { createRequire } = await import('node:module');
-  const require = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+  const require = createRequire(DSH_CLI_PACKAGE);
   const load = id => import(require.resolve(`@deepseek-ai/${id}`));
   const [{ Context }, session, persistence] = await Promise.all([load('cordis'), load('dsh-session'), load('dsh-session-persistence-jsonl')]);
   const f = await fixture(t), ctx = new Context();

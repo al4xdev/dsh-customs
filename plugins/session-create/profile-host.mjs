@@ -11,8 +11,16 @@ import { verifyCreateGrant, preparationHash } from './profile-protocol.mjs';
 const { scopeOf } = await import(resolveHost('@deepseek-ai/dsh-scope'));
 const { installModelSelection } = await import(resolveHost('@deepseek-ai/dsh-agent'));
 const copy = value => JSON.parse(JSON.stringify(value));
-const errorResult = error => ({ ok: false, error: { code: error.code ?? 'profile_create_unavailable', message: error.message }, retrySafe: false });
+// Only errors raised before create() takes its ledger lease reach this result:
+// later failures return their receipt. So it is an authenticated no-effect proof.
+const errorResult = error => ({ ok: false, error: { code: error.code ?? 'profile_create_unavailable', message: error.message }, retrySafe: false, effect: 'none' });
 const view = w => w ? { id: w.id, path: w.path, name: w.title, updatedAt: w.updatedAt } : null;
+
+// Resolves after `promise` settles or `ms` elapses, whichever is first; never rejects.
+const settleWithin = (promise, ms) => new Promise(resolve => {
+  const timer = setTimeout(resolve, ms); timer.unref?.();
+  Promise.resolve().then(() => promise).catch(() => {}).finally(() => { clearTimeout(timer); resolve(); });
+});
 
 /** The bridge root owns these handles, never the caller or the foreground TUI tab. */
 export function createProfileHost(ctx, { root, key, identity, workspaceRoot = DEDICATED_ROOT }) {
@@ -183,8 +191,13 @@ export function createProfileHost(ctx, { root, key, identity, workspaceRoot = DE
     } finally {
       // A published but failed empty target must not escape startup fences.
       if (handle && lease?.record.status !== 'completed' && fences.length) retainedFences.set(p.session_id, fences);
-      else for (const dispose of fences) dispose();
-      await lease?.release();
+      else for (const dispose of fences) { try { dispose(); } catch { /* Same reason as below: keep the receipt. */ } }
+      // A failed unlock must not replace the receipt with a receipt-less (no-effect)
+      // error; the leftover lock is reported by the next begin() instead.
+      await lease?.release().catch(() => {});
+      // close() may have given up waiting for this create: it will never see a
+      // handle or fences published now, so this path releases them itself.
+      if (closed) await releaseSession(p.session_id, closeTimeoutMs);
     }
   }
   function receipt(record, binding) { return { ...publicResult(record), state: record.status, profile: 'dsh-tui', preset: 'standard', model: binding.model, policy: binding.policy }; }
@@ -201,16 +214,28 @@ export function createProfileHost(ctx, { root, key, identity, workspaceRoot = DE
     chain = run.catch(() => {});
     return run;
   }
-  async function close() {
-    closed = true;
-    await chain;
-    preparations.clear();
-    await Promise.allSettled([...handles.values()].map(async handle => {
-      try { await service('sessions').flush(handle.agent.session); } finally { await handle.dispose(); }
-    }));
-    handles.clear();
-    for (const fences of retainedFences.values()) for (const dispose of fences) dispose();
-    retainedFences.clear();
+  // Each drain step is bounded: a hung create, flush or dispose must not keep
+  // the bridge from shutting down, and fences are released no matter what.
+  let closeTimeoutMs = 5000;
+  // Flush then dispose one root handle and drop its fences; each step bounded.
+  async function releaseSession(sessionId, timeoutMs) {
+    const owned = handles.get(sessionId), fences = retainedFences.get(sessionId) ?? [];
+    handles.delete(sessionId); retainedFences.delete(sessionId);
+    try {
+      if (owned) {
+        try { await settleWithin(Promise.resolve().then(() => service('sessions').flush(owned.agent.session)), timeoutMs); }
+        finally { await settleWithin(Promise.resolve().then(() => owned.dispose()), timeoutMs); }
+      }
+    } finally { for (const dispose of fences) { try { dispose(); } catch { /* Release the rest. */ } } }
+  }
+  async function close({ timeoutMs = 5000 } = {}) {
+    closed = true; closeTimeoutMs = timeoutMs;
+    try {
+      await settleWithin(chain, timeoutMs);
+      preparations.clear();
+    } finally {
+      await Promise.allSettled([...new Set([...handles.keys(), ...retainedFences.keys()])].map(id => releaseSession(id, timeoutMs)));
+    }
   }
   return { capabilities, handle, close };
 }

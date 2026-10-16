@@ -6,8 +6,9 @@ import { resolve, join } from 'node:path';
 import { crc32, deflateSync } from 'node:zlib';
 import { profileFiles, YAML } from '../../tools/session-companion/profile.mjs';
 import { COMPANION_WORKSPACE_ROOT } from './controller-policy.mjs';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 

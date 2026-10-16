@@ -37,7 +37,7 @@ React permanece o framework. TypeScript usa `strict`, opcionais exatos, acesso i
 ## Arquitetura
 
 - `src/`: shell React e navegação próprios, usando React/store únicos do Web oficial.
-- `server/`: proxy HTTP/WS same-origin para o backend fixo3081, catálogo público read-only de headers Zstd e transformação do bootstrap.
+- `server/`: proxy HTTP/WS same-origin para o backend fixo3081, catálogo público read-only de headers Zstd e transformação do bootstrap. Corpos de POST encaminhados têm limite de 1 MiB, exceto `POST /api/session/uploadFileBinary` (um arquivo por pedido): até 20 MiB + 64 KiB, somente com `Content-Length`, repassado em streaming (sem bufferizar antes da autenticação nativa); sem tamanho ou chunked responde 411 (contrato A1 compartilhado com `plugins/companion-transport/request-budget.mjs` e o app).
 - `styles/`: layout de uma coluna, safe-area, viewport dinâmico, alvos de toque44px e input16px.
 - `public/`: ícone e manifest local. Sem service worker: não há cache offline de conversas, API ou credenciais. Adicionar à tela inicial depende do browser; não é APK.
 - `test/`: regressões isoladas de auth/proxy/profile/bootstrap/navegação. Artefatos de build em `dist/`, ignorados pelo Git.

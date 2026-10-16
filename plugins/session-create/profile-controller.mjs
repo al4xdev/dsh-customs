@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { hash, fail, freeze } from './contracts.mjs';
+import { hash, fail, freeze, CreateError } from './contracts.mjs';
 import { parseProfileArgs } from './profile-contracts.mjs';
 import { callerKey, prepare, revalidate } from './preflight.mjs';
 import { displayJson } from './approval.mjs';
+import { hiddenCount, sha256 } from '../session/approval-text.mjs';
 import { publicResult } from './operation-store.mjs';
 import { profileClient } from './profile-client.mjs';
 import { preparationHash } from './profile-protocol.mjs';
@@ -54,7 +55,7 @@ export function createProfileController(ctx,{authority,store,bridgeRoot,client=p
       const {intent_hash:oldHash,...localBody}=local;
       const intent=freeze({...localBody,destination,preparation_id:preparation.id,preparation_hash:preparation.hash,model_binding:'destination-host-live-pinned; no cold-resume promise',intent_hash:hash({...localBody,destination,preparation_id:preparation.id,preparation_hash:preparation.hash})});
       phase='native-approval';
-      const reason=`Criar sessão no perfil dsh-tui — permitir uma vez\n${displayJson({operation_id:operationId,intent_hash:intent.intent_hash,caller:local.binding.caller,owner_intent:request.owner_intent,host:{bridgeId:record.bridgeId,pid:record.pid,startTime:record.startTime},destination:preparation.binding,cwd:intent.cwd,target:intent.target,directory:intent.directory,create_projects_parent:intent.create_projects_parent,new_session_id:intent.session_id,delivery:request.delivery.mode,initial_text_full:request.delivery.mode==='submit'?request.delivery.text:null,notice:request.delivery.mode==='submit'?'CRIAR E ENVIAR AGORA: o agente poderá executar a tarefa e consumir quota.':'CRIAR VAZIA: sem prompt, draft, execução de modelo ou mudança da aba ativa.',policy_notice:'As políticas exibidas são as do destino. danger-full-access/never significa acesso amplo e execução futura sem aprovação de ferramentas; a aprovação desta criação não muda essas políticas nem os defaults globais.',limitations:'Sem fallback para Companion, retry automático ou rollback destrutivo. Falha/desconexão pode deixar efeitos parciais. Criação/admissão não significa conclusão da tarefa.'})}`;
+      const reason=`Criar sessão no perfil dsh-tui — permitir uma vez\n${displayJson({operation_id:operationId,intent_hash:intent.intent_hash,caller:local.binding.caller,owner_intent:request.owner_intent,host:{bridgeId:record.bridgeId,pid:record.pid,startTime:record.startTime},destination:preparation.binding,cwd:intent.cwd,target:intent.target,directory:intent.directory,create_projects_parent:intent.create_projects_parent,new_session_id:intent.session_id,delivery:request.delivery.mode,...(request.delivery.mode==='submit'?{initial_text_utf8_bytes:Buffer.byteLength(request.delivery.text,'utf8'),initial_text_sha256:sha256(request.delivery.text),initial_text_hidden_characters:hiddenCount(request.delivery.text),initial_text_encoding:'JSON completo e reversível; invisíveis e controles aparecem escapados (\\uXXXX), nunca truncados. O envio usa o texto original.'}:{}),initial_text_full:request.delivery.mode==='submit'?request.delivery.text:null,notice:request.delivery.mode==='submit'?'CRIAR E ENVIAR AGORA: o agente poderá executar a tarefa e consumir quota.':'CRIAR VAZIA: sem prompt, draft, execução de modelo ou mudança da aba ativa.',policy_notice:'As políticas exibidas são as do destino. danger-full-access/never significa acesso amplo e execução futura sem aprovação de ferramentas; a aprovação desta criação não muda essas políticas nem os defaults globais.',limitations:'Sem fallback para Companion, retry automático ou rollback destrutivo. Falha/desconexão pode deixar efeitos parciais. Criação/admissão não significa conclusão da tarefa.'})}`;
       const outcome=await ctx.approval.request(Object.freeze({agent:exec.agent,toolName:'session_create',callId:exec.callId,reason,signal:exec.signal}));
       exec.signal.throwIfAborted();
       if(outcome!=='allowed-once')fail(`approval_${['rejected','cancelled','unavailable'].includes(outcome)?outcome:'unavailable'}`);
@@ -66,6 +67,10 @@ export function createProfileController(ctx,{authority,store,bridgeRoot,client=p
       await lease.stage('session',async()=>{
         // Once dispatched, interruption cannot prove that the target did not create/admit.
         const reply=await client.execute(record,preparation,exec.signal);
+        // Proven no-effect replies only: a local refusal before the frame was sent
+        // (retrySafe) or the destination's authenticated refusal before it took
+        // its own ledger lease (effect:none). Lost or ambiguous replies stay UNKNOWN.
+        if(reply?.ok===false&&!reply.receipt&&(reply.retrySafe===true||reply.effect==='none'))throw Object.assign(new CreateError(reply.error?.code??'destination_unavailable',String(reply.error?.message??'Destination refused before any effect').slice(0,240)),{noEffect:true});
         if(!reply?.receipt||!states.has(reply.receipt.status)||reply.receipt.session_id!==intent.session_id||reply.receipt.request_id!==intent.request_id||reply.receipt.profile!=='dsh-tui'||reply.receipt.preset!=='standard'||!reply.receipt.effects)fail(reply?.error?.code??'creation_unknown');
         remote=reply.receipt;
         return {id:intent.session_id,remote_receipt_received:true};
@@ -76,7 +81,7 @@ export function createProfileController(ctx,{authority,store,bridgeRoot,client=p
       await lease.finish(remote.status,remote.code??undefined);
       return publicReceipt(lease.record);
     } catch(error) {
-      if(lease){await lease.finish('unknown',error.code??'creation_unknown').catch(()=>{});return publicReceipt(lease.record);}
+      if(lease){await lease.finish(error.noEffect?'not_started':'unknown',error.code??'creation_unknown').catch(()=>{});return publicReceipt(lease.record);}
       return unavailable(error,operationId);
     } finally {await lease?.release();phase='idle';}
   }

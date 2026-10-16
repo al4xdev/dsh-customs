@@ -10,6 +10,7 @@ Only public `register`, `registerUpgrade` and `registerFallback` handlers are wr
 - Origin is mandatory for every non-GET/HEAD request and every upgrade. Present Origin values match literally; parsed host equality, SameSite cookies and CORS are not substitutes.
 - Host/Origin failures remain 403 **before** native cookie authentication. Native authentication still owns no-cookie 401, root token 303 (`Location: ./`), authority-bound signed cookies, RPC and WebSocket negotiation.
 - The inherited carrier is Node HTTP/1: declared lengths above 1 MiB are 413; all Transfer-Encoding/chunked requests are unsupported (411), malformed framing is 400. Origin checks retain priority. No body stream is replaced or buffered by the wrapper.
+- Shared host ↔ app contract (task132 A1): `POST /api/session/uploadFileBinary` (exact raw path, query allowed) carries ONE file of up to 20 MiB, so it accepts up to 20 MiB + 64 KiB, and only with `Content-Length` (absent length or chunked: 411). Every other route keeps 1 MiB. The 3082 proxy (`frontend/mobile-companion/server`) applies the same rule to that route through `classifyRequestBudget` and streams that body upstream (never buffering 20 MiB before native authentication; a client abort aborts the upstream request); the app must send uploads with a known body length.
 - Keep native Connection's attachment-aware body cap and image limits unchanged. Setting native `maxRequestBodyBytes` to 1 MiB fails its image-envelope-headroom check when attachments exist. The smaller reachable wire budget is enforced by `request-budget.mjs`, not a misleading native configuration.
 - This remains text-first client scope. Chunked uploads and larger bodies are an intentional compatibility restriction; real Tailscale/browser/OkHttp framing must be verified before migration. These fixtures do not prove TLS, production forwarding, a phone request, or a deployment.
 
@@ -23,7 +24,7 @@ A generic fixture RPC channel explicitly declares the public `webServer` depende
 
 ## Public source contracts
 
-Installed package root: `/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/`.
+Installed package root: `${XDG_DATA_HOME:-~/.local/share}/dsh-cli/node_modules/@deepseek-ai/`.
 
 - `dsh-host-webserver/lib/types/index.d.ts:67–116`: exported class, config, public registrations and lifecycle; `lib/index.js:228–320`: inherited Node HTTP/1 listener/upgrade dispatch/disposal.
 - `dsh-client-connection/lib/index.js:205–219`: native Host trust allows absent Origin and compares only parsed Origin host. `586–594, 821–843`: native trust then cookie admission before the HTTP bridge. `791–795`: image-body headroom requirement.

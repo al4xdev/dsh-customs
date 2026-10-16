@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { zstdCompressSync } from 'node:zlib';
 import { createFileCatalog } from './file-catalog.mjs';
+import { DSH_CLI_PACKAGE } from './host-paths.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'file-catalog-'));
@@ -195,7 +196,7 @@ test('factory rejects relative roots and invalid options', () => {
 
 test('installed public persistence SDK authors a real zstd session header accepted by catalog', async t => {
   const { createRequire } = await import('node:module');
-  const require = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+  const require = createRequire(DSH_CLI_PACKAGE);
   const load = id => import(require.resolve(`@deepseek-ai/${id}`));
   const [{ Context }, session, persistence] = await Promise.all([load('cordis'), load('dsh-session'), load('dsh-session-persistence-jsonl')]);
   const { root } = await fixture(t);

@@ -1,4 +1,7 @@
-export const COMPANION_WORKSPACE_ROOT = '/home/alex/git/my/dsh-companion-workspace';
+import { COMPANION_WORKSPACE_ROOT } from '../session/host-paths.mjs';
+
+// ~/git/my/dsh-companion-workspace: on the lab, the same path as the literal it replaced.
+export { COMPANION_WORKSPACE_ROOT };
 export const CONTROLLER_INPUT_CODE = 'companion/invalid-create-request';
 export const CONTROLLER_PROFILE_CODE = 'companion/profile-mismatch';
 

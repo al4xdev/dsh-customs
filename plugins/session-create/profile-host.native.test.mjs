@@ -12,11 +12,14 @@ import { createProfileHost } from './profile-host.mjs';
 import { signCreateGrant } from './profile-protocol.mjs';
 import { directoryFact } from './preflight.mjs';
 import { hash, DEDICATED_ROOT } from './contracts.mjs';
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 
-test('installed SDK: real factory, standard preset, writer ownership and empty target without model dispatch', { timeout: 30000 }, async () => {
+// Durable ledger writes fsync file+directory per stage; on a slow disk, running beside
+// the other suites, this alone can exceed 30s while still being correct.
+test('installed SDK: real factory, standard preset, writer ownership and empty target without model dispatch', { timeout: 90000 }, async () => {
   await mkdir('.dumps/tasks', { recursive: true });
   const home = await mkdtemp(resolve('.dumps/tasks/profile-native-'));
   const root = join(home, 'workspace'); await mkdir(root); await mkdir(join(root, 'projects'));

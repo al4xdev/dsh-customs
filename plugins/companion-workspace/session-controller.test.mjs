@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { DSH_CLI_PACKAGE } from '../session/host-paths.mjs';
 import {
   COMPANION_WORKSPACE_ROOT, CONTROLLER_INPUT_CODE, CONTROLLER_PROFILE_CODE,
   ControllerPolicyError, createCompanionSessionController,
@@ -75,7 +78,7 @@ test('native create receives one fresh fixed-root request and returns its unchan
   assert.notEqual(f.calls[0], request);
   assert.deepEqual(request, { agentPreset: 'companion' });
   assert.equal(Object.hasOwn(f.calls[0], 'sessionId'), false);
-  assert.equal(COMPANION_WORKSPACE_ROOT, '/home/alex/git/my/dsh-companion-workspace');
+  assert.equal(COMPANION_WORKSPACE_ROOT, join(homedir(), 'git/my/dsh-companion-workspace'));
 });
 
 test('untrusted native create options fail before delegate, mkdir or adoption', async () => {
@@ -126,7 +129,7 @@ test('native asynchronous failure semantics are not replaced by an alternate lif
 test('public native Remote markers bind inherited methods to the overridden create on a fake receiver', async () => {
   // Only public metadata/error helpers load: no native SessionController, Cordis
   // service, filesystem provider, Agent, session, grant, model or gateway starts.
-  const host = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+  const host = createRequire(DSH_CLI_PACKAGE);
   const { Remote, RemoteError, remoteMethods, remoteErrorOf } = await import(host.resolve('@deepseek-ai/dsh-typert-protocol'));
   const initializers = [];
   const calls = [];

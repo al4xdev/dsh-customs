@@ -1,13 +1,8 @@
-import { createRequire } from 'node:module';
+import { resolveInstalled } from '../session/host-paths.mjs';
 import { createGoalPush } from './source.mjs';
 import { fields, generation, refuse, uuid, validReceipt, validRegistration } from './contracts.mjs';
 
-function resolveSdk(id) {
-  for (const base of [process.argv[1], '/home/alex/.local/share/dsh-cli/package.json']) {
-    try { return createRequire(base).resolve(id); } catch {}
-  }
-  throw new Error('Companion push public SDK unavailable.');
-}
+const resolveSdk = id => resolveInstalled(id, 'Companion push public SDK unavailable.');
 const [{ scopeOf, scopeChainOf }, { foldGoal }, { symbols }, { TypertRemoteService, RemoteError }] = await Promise.all([
   import(resolveSdk('@deepseek-ai/dsh-scope')), import(resolveSdk('@deepseek-ai/dsh-goal')),
   import(resolveSdk('@deepseek-ai/cordis')), import(resolveSdk('@deepseek-ai/dsh-typert-protocol')),

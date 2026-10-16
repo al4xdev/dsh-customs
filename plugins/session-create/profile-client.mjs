@@ -1,6 +1,6 @@
 import { discoverBridges } from '../session/bridge-client.mjs';
 import { exchange } from '../session/bridge-transport.mjs';
-import { readKey } from '../session/bridge-security.mjs';
+import { failure, readKey } from '../session/bridge-security.mjs';
 import { signCreateGrant } from './profile-protocol.mjs';
 
 export async function discoverProfileHosts({root,signal}={}) {
@@ -14,10 +14,13 @@ export async function prepareProfileCreate(record,proposal,signal) {
 }
 /** Only the native owner controller calls this after allowed-once approval and revalidation. */
 export async function executeProfileCreate(record,preparation,signal) {
-  signal?.throwIfAborted();
-  const key=await readKey(record.root);
-  const grant=signCreateGrant(preparation,record,key);
-  signal?.throwIfAborted();
+  let grant;
+  // Nothing has been sent yet: these failures are definite non-effects (retrySafe), not UNKNOWN.
+  try {
+    signal?.throwIfAborted();
+    grant=signCreateGrant(preparation,record,await readKey(record.root));
+    signal?.throwIfAborted();
+  } catch(error) { return failure(signal?.aborted?'cancelled':'grant_unavailable',error.message,{retrySafe:true}); }
   return exchange(record,{operation:'create-session',preparationId:preparation.id,preparationHash:preparation.hash,grant},signal,{timeoutMs:30000});
 }
 export const profileClient={discover:discoverProfileHosts,prepare:prepareProfileCreate,execute:executeProfileCreate};

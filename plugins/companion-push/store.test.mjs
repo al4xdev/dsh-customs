@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { root } from './test-fixture.mjs';
 import { MAX_BYTES, PrivateStore } from './store.mjs';
@@ -10,7 +10,9 @@ test('private0700 directory and0600 state, exclusive writer, stable owner and sa
   try {
     assert.equal(statSync(s.directory).mode & 0o777, 0o700); assert.equal(statSync(s.path).mode & 0o777, 0o600);
     assert.equal(statSync(s.lock).mode & 0o777, 0o600);
-    assert.throws(() => new PrivateStore(directory), /EEXIST/);
+    assert.throws(() => new PrivateStore(directory), { code: 'goalPush/store-locked' });
+    const lock = JSON.parse(readFileSync(s.lock, 'utf8'));
+    assert.equal(lock.pid, process.pid); assert.match(lock.startTime, /^\d+$/);
     const owner = s.read().ownerScopeId; s.close();
     const reopened = new PrivateStore(directory);
     try { assert.equal(reopened.read().ownerScopeId, owner); } finally { reopened.close(); }
@@ -43,8 +45,15 @@ test('symlink directory/state and unsafe parent path are refused before followin
 
 test('crash-held writer lock requires manual stopped-profile review, never automatic reclaim', () => {
   const directory = root(), folder = join(directory, 'companion-push'); mkdirSync(folder, { mode: 0o700 });
+  // Legacy/unreadable lock: owner unknown, so it is simply held.
   writeFileSync(join(folder, 'writer.lock'), 'OWN SYNTHETIC CRASH', { mode: 0o600 });
-  assert.throws(() => new PrivateStore(directory), /EEXIST/);
+  assert.throws(() => new PrivateStore(directory), { code: 'goalPush/store-locked' });
+  // Dead writer (gone PID, or a reused PID with other start ticks): reported as orphaned, still not reclaimed.
+  for (const owner of [{ pid: 2 ** 31 - 4, startTime: '1' }, { pid: process.pid, startTime: '0' }]) {
+    writeFileSync(join(folder, 'writer.lock'), JSON.stringify({ version: 1, ...owner }), { mode: 0o600 });
+    assert.throws(() => new PrivateStore(directory), { code: 'goalPush/store-lock-orphaned' });
+    assert.equal(JSON.parse(readFileSync(join(folder, 'writer.lock'), 'utf8')).pid, owner.pid);
+  }
   assert.equal(existsSync(join(folder, 'state-v1.json')), false);
 });
 

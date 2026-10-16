@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertMount, bashDecision, guardReason, GUARDED_TOOLS, MAX_COMMAND_BYTES, WORKSPACE_ROOT } from './guard-policy.mjs';
+import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { assertMount, bashDecision, denialCode, ESCALATION_DENIED, guardReason, GUARDED_TOOLS, MAX_COMMAND_BYTES, WORKSPACE_ROOT } from './guard-policy.mjs';
 
 const policy = () => ({ mode: 'workspace-write', workspaceRoot: WORKSPACE_ROOT });
 const exec = (name = 'bash', args = {}) => ({ name, arguments: { command: 'pwd', description: 'Show working directory', ...args },
@@ -38,7 +41,7 @@ test('host reads accept legacy companion cwd without widening any mutation bound
     for (const mode of ['read-only', 'workspace-write']) assert.equal(guardReason(call, { mode, workspaceRoot: '/synthetic/legacy-repo' }), undefined);
     assert.equal(guardReason(call, undefined), 'workspace-policy-denied');
     assert.equal(guardReason(call, { mode: 'danger-full-access' }), 'workspace-policy-denied');
-    assert.equal(guardReason({ ...call, arguments: { sandbox_permissions: 'workspace-write' } }, policy()), 'workspace-escalation-denied');
+    assert.equal(guardReason({ ...call, arguments: { sandbox_permissions: 'workspace-write' } }, policy()), ESCALATION_DENIED);
   }
   for (const name of ['write', 'edit', 'bash']) {
     const call = exec(name); call.agent.session.header.cwd = '/synthetic/legacy-repo';
@@ -49,10 +52,10 @@ test('host reads accept legacy companion cwd without widening any mutation bound
 test('own privileged fields are rejected even if unadvertised, null, false or same mode', () => {
   for (const name of GUARDED_TOOLS) {
     for (const value of ['workspace-write', 'danger-full-access', null, false, undefined]) {
-      assert.equal(guardReason(exec(name, { sandbox_permissions: value }), policy()), 'workspace-escalation-denied');
+      assert.equal(guardReason(exec(name, { sandbox_permissions: value }), policy()), ESCALATION_DENIED);
     }
-    assert.equal(guardReason(exec(name, { justification: 'Do not promote' }), policy()), 'workspace-escalation-denied');
-    assert.equal(guardReason(exec(name, { sandboxPolicy: policy() }), policy()), 'workspace-escalation-denied');
+    assert.equal(guardReason(exec(name, { justification: 'Do not promote' }), policy()), ESCALATION_DENIED);
+    assert.equal(guardReason(exec(name, { sandboxPolicy: policy() }), policy()), ESCALATION_DENIED);
   }
 });
 
@@ -66,7 +69,8 @@ test('every readonly or identical Bash call asks; model summaries are never prev
     const decision = bashDecision(exec('bash', { command, description: 'MODEL SUMMARY NOT AUTHORITY' }), policy());
     assert.equal(decision.kind, 'ask');
     assert.ok(decision.reason.includes(`CWD: ${WORKSPACE_ROOT}`));
-    assert.ok(decision.reason.endsWith(`Comando literal completo:\n${command}`));
+    assert.ok(decision.reason.endsWith(`Comando (literal completo):\n${command}`));
+    assert.ok(decision.reason.includes(`Comando: ${Buffer.byteLength(command)} bytes UTF-8, sha256 ${createHash('sha256').update(command).digest('hex')}`));
     assert.ok(!decision.reason.includes('MODEL SUMMARY'));
   }
 });
@@ -88,7 +92,9 @@ test('fixed omitted/exact cwd works; foreign and relative cwd never execute unde
   assert.equal(bashDecision(exec(), policy()).kind, 'ask');
   assert.equal(bashDecision(exec('bash', { workdir: WORKSPACE_ROOT }), policy()).kind, 'ask');
   for (const workdir of ['.', '..', '/synthetic/other', null]) {
-    assert.equal(bashDecision(exec('bash', { workdir }), policy()).reason, 'workspace-cwd-denied');
+    const { reason } = bashDecision(exec('bash', { workdir }), policy());
+    assert.equal(denialCode(reason), 'workspace-cwd-denied');
+    assert.ok(reason.includes(WORKSPACE_ROOT) && /Omit workdir/.test(reason) && /cd <subdirectory>/.test(reason));
   }
 });
 
@@ -104,4 +110,27 @@ test('aborted calls cannot grant and non-Bash does not invent an ask', () => {
   const controller = new AbortController(); controller.abort();
   assert.equal(guardReason({ ...exec(), signal: controller.signal }, policy()), 'workspace-call-cancelled');
   assert.equal(bashDecision(exec('write'), policy()).kind, 'deny');
+});
+
+test('A5: escalation denial is actionable text, never a bare code inviting another retry', () => {
+  assert.equal(denialCode(ESCALATION_DENIED), 'workspace-escalation-denied');
+  for (const phrase of [/never widens/, /Do not retry/, /owner \(human\)/, /sandbox_permissions/]) assert.match(ESCALATION_DENIED, phrase);
+  assert.equal(bashDecision(exec('bash', { sandbox_permissions: 'danger-full-access', justification: 'needs it' }), policy()).reason, ESCALATION_DENIED);
+});
+
+test('A4: Bash refuses smuggling characters and shows rare invisible ones escaped with size and digest', () => {
+  for (const command of ['echo ok\u202E', 'echo \u{E0041}', 'echo a\rb', 'echo \u001b[2J', 'echo \u2066x']) {
+    const decision = bashDecision(exec('bash', { command }), policy());
+    assert.equal(decision.kind, 'deny'); assert.equal(denialCode(decision.reason), 'workspace-command-invisible-character');
+    assert.match(decision.reason, /U\+[0-9A-F]{4}/);
+  }
+  const command = 'echo "zero\u200bwidth"\nls\t-la';
+  const decision = bashDecision(exec('bash', { command }), policy());
+  assert.equal(decision.kind, 'ask'); assert.ok(!decision.reason.includes('\u200b'));
+  assert.match(decision.reason, /ATENÇÃO: 1 caractere/);
+  assert.equal(JSON.parse(decision.reason.slice(decision.reason.lastIndexOf('\n') + 1)), command);
+});
+
+test('portable dedicated root follows HOME instead of a fixed user directory', () => {
+  assert.equal(WORKSPACE_ROOT, join(homedir(), 'git/my/dsh-companion-workspace'));
 });

@@ -83,7 +83,9 @@ or prompt effects. Only `allowed-once` reaches commit. A pre-execute middleware 
 cannot bypass the body gate. No cached approval or caller-provided authorization token.
 
 Preview is a complete reversible JSON representation: trusted fields precede the
-initial text; ASCII controls/newlines and bidi/invisible formatting are escaped.
+initial text; ASCII controls/newlines and every invisible/format character (shared
+`plugins/session/approval-text.mjs`) are escaped. Tags, bidi controls, private use and
+CR are refused by the parser before any approval.
 Original prompt UTF-8 length and SHA256 accompany the full text. The actual queued
 text stays exactly literal. Approval audit (`asked`/`decided`) is an intentional native
 effect; it is not project/session provisioning. Never/rejected/cancelled/unavailable,
@@ -135,7 +137,9 @@ ancestors rejected. Native operations remain path-based: **not TOCTOU-free again
 external OS actors**. No fd/openat or cross-store atomicity is invented.
 
 A private file ledger starts only after approval/revalidation. `owner.lock` is exclusive
-across processes; an existing/stale lock fails closed, without takeover/deletion. Atomic
+across processes and records the owner's pid and kernel start ticks; an existing lock fails
+closed, without takeover/deletion: `ledger_owner_held` for a live (or unverifiable legacy)
+owner, `ledger_owner_dead` naming the dead pid and operation for owner-directed recovery. Atomic
 per-record writes use file fsync+rename+directory fsync. Every stage records a durable
 starting marker before its SDK effect and confirmation after its receipt. Native session
 flush must explicitly report a successful durability barrier. This is NOT a transaction
@@ -151,7 +155,9 @@ Failure/crash after a stage starts or a native service throws can leave UNKNOWN 
 Starting records are UNKNOWN on readonly status/restart. `TOOL_OUTCOME_UNKNOWN` and lost
 receipts must not trigger retries. Status is caller-bound and uses readonly journal reads;
 no Agent activation or model. No automatic continuation after restart or old grant reuse.
-A stale lock requires owner-directed recovery, not guessed PID/lease freedom.
+A stale lock requires owner-directed recovery, not guessed PID/lease freedom. A stage
+whose action proves it never reached its destination (`noEffect`) is journaled as
+`not_started` instead of UNKNOWN; anything ambiguous stays UNKNOWN.
 
 Default compensation is **keep and report**: directory, native project record, session,
 association and submission are distinct effects. No rm, rename of reused projects, archive,

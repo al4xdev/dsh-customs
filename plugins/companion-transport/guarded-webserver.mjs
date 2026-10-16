@@ -1,12 +1,12 @@
 import { STATUS_CODES } from 'node:http';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PUBLIC_ORIGIN, classifyRequest } from './origin-policy.mjs';
 import { classifyRequestBudget } from './request-budget.mjs';
+import { DSH_CLI_PACKAGE } from '../session/host-paths.mjs';
 
-const sdk = createRequire(path.join(homedir(), '.local/share/dsh-cli/package.json'));
+const sdk = createRequire(DSH_CLI_PACKAGE);
 const { WebServer: NativeWebServer } = await import(pathToFileURL(sdk.resolve('@deepseek-ai/dsh-host-webserver')).href);
 
 export { NativeWebServer };

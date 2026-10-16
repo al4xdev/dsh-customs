@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fixture, load } from './native-fixture.mjs';
 import { MockSink } from './mock-sink.mjs';
 
 const ref = goal => ({ id: goal.id, revision: goal.revision });
+// Stand-in for the reviewed task99 workspace AGENTS.md proposal: the test proves
+// loading mechanics, not that proposal's wording, so a portable fixture suffices.
+const PROPOSAL = '# Companion workspace\n\nSynthetic reviewed proposal fixture: goal completion stays native; notifications are delivery only.\n';
 function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }
 async function deadline(promise) {
   let timer;
@@ -53,7 +56,7 @@ test('actual native driver queues exact source on human rearm; complete-vs-await
 test('actual instructions plugin loads proposal from immutable session cwd before model; scoped source is agent-instructions', { timeout: 10000 }, async () => {
   const f = await fixture({ installed: false, instructions: true });
   try {
-    const proposal = await readFile('.dumps/tasks/task99-AGENTS.proposal.md', 'utf8');
+    const proposal = PROPOSAL;
     await writeFile(join(f.cwd, 'AGENTS.md'), proposal);
     const { agent } = await f.create();
     const { createUserMessage } = await load('dsh-llm');
@@ -66,9 +69,13 @@ test('actual instructions plugin loads proposal from immutable session cwd befor
     assert.ok(instruction.content[0].text.includes(proposal));
     assert.ok(instruction.source.changes.some(change => change.path === 'AGENTS.md' && change.action === 'set'));
     assert.equal(f.modelCalls, 0);
-    // The PUBLIC discovery function evaluates the real future Companion cwd without reading global content.
+    // The PUBLIC discovery function evaluates only the session cwd: a workspace
+    // without AGENTS.md contributes nothing until the reviewed proposal is installed,
+    // and no global/home instructions are read from the empty dshHome.
     const instructions = await load('dsh-agent-instructions');
-    const discovered = await instructions.discoverBaselineInstructionFiles({ cwd: '/home/alex/git/my/dsh-companion-workspace', dshHome: join(f.root, 'empty-home') });
-    assert.equal(discovered.some(row => row.absolutePath === '/home/alex/git/my/dsh-companion-workspace/AGENTS.md'), false, 'absent today; executor must install reviewed proposal before claiming live loading');
+    const future = join(f.root, 'future-workspace'); await mkdir(join(future, '.git'), { recursive: true });
+    const discovered = await instructions.discoverBaselineInstructionFiles({ cwd: future, dshHome: join(f.root, 'empty-home') });
+    assert.equal(discovered.some(row => row.absolutePath.startsWith(future)), false, 'absent proposal is never claimed as loaded');
+    assert.equal(discovered.some(row => !row.absolutePath.startsWith(f.root)), false, 'no instructions outside the fixture are read');
   } finally { await f.close(); }
 });

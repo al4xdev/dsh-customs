@@ -52,7 +52,7 @@ test('approved child Bash still always asks with exact scoped cwd/literal, rejec
     assert.equal(decision.kind, 'ask'); assert.ok(decision.reason.includes(f.policy.workspaceRoot)); assert.ok(decision.reason.endsWith(literal));
   }
   const foreign = f.exec('bash', { command: 'pwd', description: 'no', workdir: f.root });
-  assert.equal((await f.handlers.get('tools/pre-execute')(foreign, async () => ({ kind: 'allow' }))).reason, 'workspace-cwd-denied');
+  assert.match((await f.handlers.get('tools/pre-execute')(foreign, async () => ({ kind: 'allow' }))).reason, /^workspace-cwd-denied: /);
   await rename(f.policy.workspaceRoot, `${f.policy.workspaceRoot}-old`); await mkdir(f.policy.workspaceRoot);
   const drift = await f.handlers.get('tools/pre-execute')(f.exec(), async () => ({ kind: 'allow' }));
   assert.match(drift.reason, /^workspace-(project-authority-changed|session-scope-denied)$/);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createController } from './controller.mjs';
 import { parseRequest, cursorCodec, previewEvent, publicHeader } from './contracts.mjs';
 import { mountHints } from './discovery.mjs';
@@ -97,8 +98,35 @@ test('every send requires exact literal native approval and only allowed-once en
   for (let i = 0; i < 2; i++) await f.controller.execute({ operation: 'send', sessionId: header.id, text: 'literal\nmessage' }, f.exec);
   assert.equal(f.calls.approvals.length, 2); const req = f.calls.approvals[0];
   assert.equal(req.agent, f.exec.agent); assert.equal(req.toolName, 'session'); assert.equal(req.callId, 'call-1'); assert.equal(req.signal, f.exec.signal);
-  assert.ok(req.reason.endsWith('Mensagem literal:\nliteral\nmessage')); assert.ok(req.reason.includes(header.id));
+  assert.ok(req.reason.endsWith('Mensagem (literal completo):\nliteral\nmessage')); assert.ok(req.reason.includes(header.id));
+  assert.ok(req.reason.includes(`Mensagem: 15 bytes UTF-8, sha256 ${createHash('sha256').update('literal\nmessage').digest('hex')}`));
   assert.equal(f.calls.sent[0][1], 'next-turn'); assert.equal(f.calls.sent[0][2], true); assert.equal(f.calls.sent[0][0].content[0].text, 'literal\nmessage');
+});
+test('A4: smuggling characters are refused before approval; rare invisible ones are shown escaped', async () => {
+  for (const text of ['hi\u{E0041}\u{E0042}', 'abc\u202Edef', 'a\u2066b', 'x\ry', 'x\u001by', 'pua\uE000', 'lone\uD800']) {
+    const f = fixture();
+    await assert.rejects(f.controller.execute({ operation: 'send', sessionId: header.id, text }, f.exec), /owner \(human\) cannot review/);
+    assert.throws(() => parseRequest({ operation: 'resume', sessionId: header.id, text }), /U\+/);
+    assert.equal(f.calls.approvals.length, 0); assert.equal(f.calls.sent.length, 0);
+  }
+  const f = fixture();
+  const text = 'família 👨\u200D👩\u200D👧 zero\u200Bwidth';
+  await f.controller.execute({ operation: 'send', sessionId: header.id, text }, f.exec);
+  const reason = f.calls.approvals[0].reason;
+  assert.match(reason, /ATENÇÃO: 3 caractere/);
+  assert.ok(reason.endsWith(JSON.stringify(text).replaceAll('\u200D', '\\u200d').replaceAll('\u200B', '\\u200b')));
+  assert.equal(JSON.parse(reason.slice(reason.lastIndexOf('\n') + 1)), text);
+  assert.equal(f.calls.sent[0][0].content[0].text, text, 'delivery stays byte-for-byte literal');
+});
+test('CRLF becomes LF before the card and digest; the delivered bytes are the approved bytes; lone CR stays refused', async () => {
+  const f = fixture();
+  await f.controller.execute({ operation: 'send', sessionId: header.id, text: 'linha 1\r\nlinha 2\r\n' }, f.exec);
+  const reason = f.calls.approvals[0].reason, delivered = f.calls.sent[0][0].content[0].text;
+  assert.equal(delivered, 'linha 1\nlinha 2\n');
+  assert.ok(reason.endsWith(`Mensagem (literal completo):\n${delivered}`)); assert.ok(!reason.includes('\r'));
+  assert.ok(reason.includes(`Mensagem: ${Buffer.byteLength(delivered)} bytes UTF-8, sha256 ${createHash('sha256').update(delivered).digest('hex')}`));
+  assert.equal(parseRequest({ operation: 'resume', sessionId: header.id, text: 'a\r\nb' }).text, 'a\nb');
+  for (const text of ['a\rb', 'a\r', 'x\r\r\ny']) assert.throws(() => parseRequest({ operation: 'send', sessionId: header.id, text }), /U\+000D/);
 });
 test('public local send throwing after admission returns unknown and never retries', async () => {
   const f = fixture(); let attempts = 0;
@@ -160,7 +188,8 @@ test('cold resume native approval binds original context and literal text; only 
     assert.equal(f.calls.approvals.length, 1);
     assert.match(f.calls.approvals[0].reason, /original-headless/);
     assert.match(f.calls.approvals[0].reason, /CURRENT configuration/);
-    assert.ok(f.calls.approvals[0].reason.endsWith('Mensagem literal:\nliteral\nresume message'));
+    assert.ok(f.calls.approvals[0].reason.endsWith('Mensagem (literal completo):\nliteral\nresume message'));
+    assert.match(f.calls.approvals[0].reason, /Mensagem: 22 bytes UTF-8, sha256 [a-f0-9]{64}/);
     if (outcome === 'allowed-once') { assert.equal(result.completed, false); assert.equal(result.immutableOriginal, false); }
   }
 });

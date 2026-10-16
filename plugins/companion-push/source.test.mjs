@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fixture, config } from './test-fixture.mjs';
@@ -171,11 +171,19 @@ test('zero-recipient completions are remembered; later registrations do not rece
 test('device tombstones and ledger enforce capacity without eviction or native goal rollback', async () => {
   const f = fixture();
   try {
-    for (let i = 0; i < MAX_DEVICES; i++) await receipt(f);
+    const devices = [];
+    for (let i = 0; i < MAX_DEVICES; i++) { const r = f.request(); devices.push(r); await receipt(f, r); }
     assert.equal((await f.call('register', f.request())).error.code, 'goalPush/device-limit');
+    // A full device ledger is a reason, not "ready"; known devices still see their own state.
+    assert.deepEqual([f.source.status().registrationReady, f.source.status().reason], [false, 'device-limit']);
+    const known = (await f.call('status', { version: 1, deviceId: devices[0].deviceId, authGeneration: 1 })).value;
+    assert.equal(known.reason, 'ready'); assert.equal(known.registrationReady, true); assert.notEqual(known.receipt, null);
     for (let i = 0; i < MAX_EVENTS; i++) assert.equal(f.source.onGoalChanged(f.completion('own-session', `own-goal-${i}`)), true);
     const overflow = f.completion('own-session', 'overflow'); assert.equal(f.source.onGoalChanged(overflow), false);
     assert.equal(overflow.agent.goal.phase, 'complete'); assert.equal(f.state().events.length, MAX_EVENTS);
+    assert.deepEqual([f.source.status().registrationReady, f.source.status().reason], [false, 'event-limit']);
+    assert.equal((await f.call('status', { version: 1, deviceId: devices[0].deviceId, authGeneration: 1 })).value.reason, 'event-limit');
+    assert.equal((await f.call('register', { ...devices[0], authGeneration: 2 })).error.code, 'goalPush/event-limit');
     assert.equal(f.warnings.every(w => w === 'companion-push: delivery unavailable; native goal unchanged'), true);
   } finally { f.close(); }
 });
@@ -229,4 +237,21 @@ test('in-flight rotation never acknowledges the successor binding; concurrent fl
     await receipt(f, { ...r, authGeneration: 2 }); resolveSend({ ok: true }); await pending;
     assert.equal(calls, 1); assert.equal(f.state().events[0].targets[0].state, 'revoked');
   } finally { f.close(); }
+});
+
+test('held and orphaned writer locks surface as specific status reasons, never a takeover', async () => {
+  const first = fixture();
+  try {
+    assert.equal(first.source.status().reason, 'ready');
+    const second = fixture({ directory: first.directory });
+    try { assert.deepEqual([second.source.status().registrationReady, second.source.status().reason], [false, 'store-locked']); }
+    finally { second.close(); }
+  } finally { first.close(); }
+  const crashed = fixture(); const directory = crashed.directory; crashed.close();
+  writeFileSync(join(directory, 'companion-push/writer.lock'), JSON.stringify({ version: 1, pid: 2 ** 31 - 3, startTime: '1' }), { mode: 0o600 });
+  const after = fixture({ directory });
+  try {
+    assert.equal(after.source.status().reason, 'store-lock-orphaned');
+    assert.equal(JSON.parse(readFileSync(join(directory, 'companion-push/writer.lock'), 'utf8')).pid, 2 ** 31 - 3, 'lock left for operator review');
+  } finally { after.close(); }
 });

@@ -22,7 +22,7 @@ O retorno inclui `destination_profile:dsh-tui`, `preset:standard`, `hosts`, `ava
 
 Com vários hosts, adicione `request.host_id` com o ID real. `request.profile` e `request.preset`, quando fornecidos, só aceitam `dsh-tui` e `standard`. `preset:companion` é rejeitado, não reinterpretado.
 
-`delivery:empty` é o padrão: cria/persiste a sessão sem prompt/draft/modelo executado. `delivery:{mode:submit,text:...}` exige texto literal não vazio até16KiB UTF-8 e também admite a tarefa para execução. A aprovação exibe o texto completo escapado reversivelmente. ACK de admissão e `status:completed` do provisionamento não significam conclusão da tarefa.
+`delivery:empty` é o padrão: cria/persiste a sessão sem prompt/draft/modelo executado. `delivery:{mode:submit,text:...}` exige texto literal não vazio até16KiB UTF-8 e também admite a tarefa para execução. A aprovação exibe o texto completo escapado reversivelmente, com `initial_text_utf8_bytes`, `initial_text_sha256` e a contagem de invisíveis. CRLF vira LF antes do cartão, do hash e do envio (o literal aprovado é o entregue). Tags Unicode (U+E0000–E007F), controles bidi, uso privado, CR isolado e demais controles (exceto LF/TAB) são recusados (`invalid_text`) antes da aprovação, em todo campo de texto: o dono (humano) não os veria, mas o agente destino leria. Invisíveis com uso legítimo raro (ZWJ, ZWSP, BOM, seletores de variação) passam, sempre exibidos como `\uXXXX`. ACK de admissão e `status:completed` do provisionamento não significam conclusão da tarefa.
 
 O modelo padrão é o do host destino. `request.model` é uma asserção opcional exata desse modelo/provider/effort, não uma seleção arbitrária nem cópia do Companion. Nenhum default global é salvo.
 
@@ -32,7 +32,9 @@ A aprovação no Companion permanece obrigatoriamente `allowed-once`, mesmo quan
 
 - `current`: cwd comprovado do chamador, dentro do workspace dedicado ou child autorizado.
 - `existing_project`: projeto nativo exato já existente dentro da fronteira autorizada, com fatos revalidados nos dois hosts.
-- `new_project`: **indisponível** nesta versão. A API nativa de registro é create-or-reuse e não comprova propriedade exclusiva de novo projeto; a tool não adota resultados de uma corrida nem inventa `created:true`. Retorna `new_project_unavailable`, sem criação/aprovação. Não criar diretórios/projetos por outro caminho para contornar a recusa.
+- `new_project`: **indisponível** nesta versão e por isso **fora do schema anunciado** ao modelo (o parser interno ainda o reconhece para recusar explicitamente). A API nativa de registro é create-or-reuse e não comprova propriedade exclusiva de novo projeto; a tool não adota resultados de uma corrida nem inventa `created:true`. Retorna `new_project_unavailable`, sem criação/aprovação. Não criar diretórios/projetos por outro caminho para contornar a recusa.
+
+A descrição e o schema evitam jargão interno: "workspace dedicado do Companion" é a pasta raiz (`~/git/my/dsh-companion-workspace`); `existing_project` é o ID de um projeto já registrado no DSH cuja pasta fica diretamente em `projects/` desse workspace. "Dono (humano)" é sempre a pessoa; serviços internos `*Owner` não aparecem no texto do modelo.
 
 O host destino mantém a sessão independente do chamador Companion. Cancelamento/desconexão do chamador após envio não mata a sessão de destino. Fechar o host dono drena/fecha somente seus handles. Não há promessa de preservar modelo no cold resume de uma sessão vazia: binding é live-pinned e essa limitação permanece explícita.
 
@@ -44,12 +46,15 @@ O host destino mantém a sessão independente do chamador Companion. Cancelament
 - Host revalida antes dos efeitos, publicação e admissão. Fences bloqueiam requests/tools não aprovados durante startup.
 - Journal durável e reserva anterior ao efeito; nonces e IDs não são reusados como autorização. Preparação pode expirar enquanto se aguarda aprovação: erro explícito, sem replay de aprovação antiga.
 - Perda de resposta após dispatch é UNKNOWN, nunca confirmação de que nada aconteceu. `status` lê o recibo do chamador; não reexecuta. Sem retry automático, rollback destrutivo, delete/archive ou remoção de lock incerto.
+- Só respostas que **provam ausência de efeito** viram `not_started` (sem `recovery_required`): falha local antes de enviar o frame (`retrySafe:true`: cancelamento, chave indisponível, bridge inalcançável) ou recusa autenticada do destino antes de ele abrir seu próprio ledger (`effect:none`). O recibo fica no journal; a mesma chave devolve esse recibo, sem retry.
+- `owner.lock` grava `pid`+`startTime` (ticks do kernel). Lock de processo vivo: `ledger_owner_held`; de processo morto (PID ausente ou reutilizado): `ledger_owner_dead`, com PID e operação, pedindo verificação do `status` e remoção **manual** pelo dono (humano). Nunca há tomada automática. Lock antigo sem dono verificável continua `ledger_owner_held`.
+- O bridge não executa um pedido enfileirado cujo socket já fechou ou cujo prazo (3s, ou30s para criação) passou; `close()` do host de criação é limitado (5s por etapa) e sempre libera fences.
 
 Ledgers: owner Companion em `~/.dsh/session-create/profile-dsh-tui`; destino em `<bridge-root>/profile-create-ledger`. Não migrar recibos legados nem reutilizar aprovação salva. `operation_id` é restrito ao caller. IPC de criação tem timeout30s; timeout não cancela um efeito já admitido. Send/read conservam seus protocolos e limites anteriores.
 
 ## Skills no Companion (plano128)
 
-O bundle web desativa `skill-filesystem` e `tool-skill` globais. Ambos foram adicionados **dentro do preset Companion**, no perfil instalado e no gerador, sem mudar modelo/permissões. O provider usa `customSkillDirs` para `/home/alex/git/my/dsh-companion-workspace/.agents/skills`, inclusive quando a sessão está em um projeto filho com `.git` próprio. O próprio `tool-skill` entrega a ferramenta e a mensagem `skill-catalog`.
+O bundle web desativa `skill-filesystem` e `tool-skill` globais. Ambos foram adicionados **dentro do preset Companion**, no perfil instalado e no gerador, sem mudar modelo/permissões. O provider usa `customSkillDirs` para `~/git/my/dsh-companion-workspace/.agents/skills`, inclusive quando a sessão está em um projeto filho com `.git` próprio. O próprio `tool-skill` entrega a ferramenta e a mensagem `skill-catalog`.
 
 O arquivo de instruções original é `~/.dsh/AGENTS-Companion.md`. `~/.dsh/Companion/AGENTS.md` é seu link necessário ao loader, não uma cópia duplicada.
 

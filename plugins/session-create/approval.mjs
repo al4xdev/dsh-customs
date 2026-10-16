@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
 import { fail } from './contracts.mjs';
+import { escapeHidden } from '../session/approval-text.mjs';
 
 export function displayJson(value) {
-  // JSON already escapes ASCII controls/newlines. Escape invisible formatting
-  // characters too, preserving a complete reversible representation, not a clipped summary.
-  return JSON.stringify(value, null, 2).replace(/[\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/gu, character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  // JSON already escapes ASCII controls/newlines. Escape every invisible or
+  // zero-width character too (Cf incl. tags/bidi/ZWJ/BOM, private use,
+  // unassigned, separators, variation selectors), preserving a complete
+  // reversible representation, not a clipped summary.
+  return escapeHidden(JSON.stringify(value, null, 2));
 }
 
 export function approvalPreview(intent) {

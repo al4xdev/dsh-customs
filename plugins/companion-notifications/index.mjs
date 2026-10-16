@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { DSH_CLI_PACKAGE } from '../session/host-paths.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import { isAbsolute } from 'node:path';
 import { MockSink, eventId } from './mock-sink.mjs';
@@ -7,7 +8,8 @@ export const name = 'companion-notifications';
 export const inject = ['agents', 'goals', 'agentPresets', 'profileContext'];
 
 async function nativeApis() {
-  for (const base of [process.argv[1], '/home/alex/.local/share/dsh-cli/package.json']) {
+  // Both packages come from the SAME install: the first base that has dsh-goal.
+  for (const base of [process.argv[1], DSH_CLI_PACKAGE]) {
     let require;
     try { require = createRequire(base); require.resolve('@deepseek-ai/dsh-goal'); } catch { continue; }
     return { ...await import(require.resolve('@deepseek-ai/dsh-scope')), ...await import(require.resolve('@deepseek-ai/dsh-goal')) };

@@ -25,7 +25,10 @@ const destinationRequest=structuredClone(requestSchema);
 destinationRequest.properties.preset={type:'string',const:DESTINATION_PRESET};
 destinationRequest.properties.profile={type:'string',const:DESTINATION_PROFILE,description:'Real destination profile; never silently replaced by Companion.'};
 destinationRequest.properties.host_id={type:'string',description:'Exact compatible host ID from capabilities; mandatory if multiple dsh-tui hosts are available.'};
-destinationRequest.properties.target.description='Current workspace or existing approved project. new_project is retained for explicit compatibility errors but currently unavailable: no proven exclusive destination registry creation.';
+// new_project stays parseable internally (explicit new_project_unavailable) but is
+// not advertised: the destination cannot prove exclusive ownership of a new project.
+destinationRequest.properties.target.oneOf=destinationRequest.properties.target.oneOf.filter(branch=>branch.properties.kind.const!=='new_project');
+destinationRequest.properties.target.description='Default current (the dedicated Companion workspace folder) or existing_project.';
 destinationRequest.properties.model.description='Optional assertion of the destination host default route, not the calling Companion model. No global defaults are changed.';
 for(const field of Object.values(destinationRequest.properties.model.properties))field.description='Must match the prepared destination host effective selection.';
 export const profileParameters={...legacyParameters,properties:{...legacyParameters.properties,request:destinationRequest}};

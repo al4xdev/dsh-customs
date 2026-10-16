@@ -5,9 +5,11 @@ import net from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { mkdtemp, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createMobileServer, PUBLIC_ORIGIN } from '../server/index.mjs';
 import { companionMetadata } from '../server/session-catalog.mjs';
+import { MAX_UPLOAD_REQUEST_BYTES, UPLOAD_PATH } from '../../../plugins/companion-transport/request-budget.mjs';
+import { DSH_CUSTOMS_ROOT } from '../../../plugins/session/host-paths.mjs';
 
 async function fixture(t, options = {}) {
   const seen = []; let catalogReads = 0; let closed = 0;
@@ -91,7 +93,8 @@ test('creation uses exact named native request and ignores caller preset/cwd/id'
   const create = f.seen.find(row => row.path === '/api/session/create');
   const envelope = JSON.parse(create.body);
   assert.equal(envelope.type, 'client-request'); assert.equal(envelope.method, 'session/create');
-  assert.deepEqual(envelope.payload.args, { request: { agentPreset: 'companion', cwd: '/home/alex/git/my/dsh-customs' } });
+  assert.deepEqual(envelope.payload.args, { request: { agentPreset: 'companion', cwd: DSH_CUSTOMS_ROOT } });
+  assert.equal(DSH_CUSTOMS_ROOT, resolve(import.meta.dirname, '../../..'), 'default cwd is this checkout, not a fixed home path');
 });
 
 test('wrong profile fails closed before catalog or transform', async t => {
@@ -259,4 +262,64 @@ test('generic native API deliberately remains the authenticated owner API, not a
   assert.equal(f.seen.length, 1); assert.equal(f.seen[0].path, '/api/fixture-owner-operation');
   assert.equal(f.seen[0].body, 'fixture-owner-request'); assert.equal(f.seen[0].headers.cookie, 'fixture=authorized');
   assert.equal(f.catalogReads(), 0);
+});
+
+function raw(f, { method = 'POST', path, headers = {}, body, chunked = false }) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(f.origin + path, { method, agent: false, headers: { cookie: 'fixture=authorized', origin: f.origin, ...headers } }, res => {
+      const chunks = []; res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => { resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }); req.destroy(); });
+    });
+    req.on('error', reject);
+    if (chunked) { req.write(body); req.end(); } else req.end(body);
+  });
+}
+
+test('A1 upload route forwards a declared multi-MiB file; chunked is 411 and other bodies keep 1 MiB', async t => {
+  const f = await fixture(t);
+  const path = `${UPLOAD_PATH}?sessionId=mine&name=photo.jpg`;
+  const file = Buffer.alloc(3 * 1024 * 1024 + 7, 9);
+  const sent = await raw(f, { path, headers: { 'content-type': 'application/octet-stream', 'content-length': file.length }, body: file });
+  assert.equal(sent.status, 200);
+  const forwarded = f.seen.find(row => row.path === path);
+  assert.equal(forwarded.body.length, file.length); assert.equal(forwarded.headers['content-length'], String(file.length));
+  const chunked = await raw(f, { path, headers: { 'content-type': 'application/octet-stream', 'transfer-encoding': 'chunked' }, body: 'small', chunked: true });
+  assert.equal(chunked.status, 411); assert.equal(JSON.parse(chunked.body).error.code, 'known_body_length_required');
+  const oversize = await raw(f, { path, headers: { 'content-length': MAX_UPLOAD_REQUEST_BYTES + 1 } });
+  assert.equal(oversize.status, 413);
+  const other = await raw(f, { path: '/api/session/send', headers: { 'content-type': 'application/json', 'content-length': file.length }, body: file });
+  assert.equal(other.status, 413);
+  assert.equal(f.seen.filter(row => row.method === 'POST').length, 1);
+});
+
+test('A1 upload streams through the proxy; a client abort aborts upstream and the proxy keeps serving', async t => {
+  const events = [];
+  const native = http.createServer((req, res) => {
+    let received = 0;
+    req.on('data', chunk => { received += chunk.length; if (received >= 1024 * 1024 && !events.includes('streaming')) events.push('streaming'); });
+    req.on('error', () => events.push('upstream-aborted'));
+    req.on('end', () => { events.push(`complete:${received}`); res.end('stored'); });
+  });
+  await new Promise(resolve => { native.listen(0, '127.0.0.1', resolve); });
+  const app = createMobileServer({ port: 0, backend: `http://127.0.0.1:${native.address().port}`, sessionCatalog: { list: async () => [], close: async () => {} }, transformHtml: html => html });
+  await app.listen();
+  t.after(async () => { await app.close(); native.closeAllConnections(); await new Promise(resolve => { native.close(resolve); }); });
+  const origin = `http://127.0.0.1:${app.server.address().port}`, path = `${UPLOAD_PATH}?sessionId=s`;
+  // Abort after 1 MiB of a declared 3 MiB body.
+  await new Promise(resolve => {
+    const req = http.request(origin + path, { method: 'POST', agent: false, headers: { origin, 'content-type': 'application/octet-stream', 'content-length': 3 * 1024 * 1024 } });
+    req.on('error', () => resolve());
+    req.write(Buffer.alloc(1024 * 1024 + 1));
+    const started = Date.now();
+    // Bounded: a buffering proxy would never forward the partial body.
+    const wait = setInterval(() => { if (events.includes('streaming') || Date.now() - started > 3000) { clearInterval(wait); req.destroy(); resolve(); } }, 5);
+  });
+  for (let i = 0; i < 200 && !events.includes('upstream-aborted'); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(events.includes('streaming'), 'bytes reached native before the body completed (no proxy buffering)');
+  assert.ok(events.includes('upstream-aborted'), JSON.stringify(events));
+  assert.ok(!events.some(event => event.startsWith('complete:')), 'a truncated upload never completes upstream');
+  const body = Buffer.alloc(2 * 1024 * 1024, 1);
+  const ok = await fetch(origin + path, { method: 'POST', body, headers: { origin, 'content-type': 'application/octet-stream' } });
+  assert.equal(ok.status, 200); assert.equal(await ok.text(), 'stored');
+  assert.ok(events.includes(`complete:${body.length}`));
 });

@@ -2,9 +2,10 @@ import { resolve, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { COMPANION_WORKSPACE_ROOT } from '../../plugins/companion-workspace/controller-policy.mjs';
+import { DSH_CLI_PACKAGE } from '../../plugins/session/host-paths.mjs';
 
 function loadYaml() {
-  for (const base of [import.meta.url, join(homedir(), '.local/share/dsh-cli/package.json'), join(homedir(), '.dsh/profiles/package.json')]) {
+  for (const base of [import.meta.url, DSH_CLI_PACKAGE, join(homedir(), '.dsh/profiles/package.json')]) {
     try { return createRequire(base)('yaml'); } catch { /* Try the next supported runtime resolver. */ }
   }
   throw new Error('Cannot resolve yaml: install repository dependencies or the DSH runtime');
@@ -20,6 +21,9 @@ export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
     ...['standard', 'minimal', 'ptc', 'cordis'].map(id => ({ id: `preset-${id}`, disabled: true })),
     { id: 'agent-preset-registry', config: { default: 'companion' } },
     { id: 'agent-default-model', config: { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'low' } },
+    // Pure API model (owner decision 2026-10-16): no harness identity or persona lines;
+    // anything the owner wants the model to read lives visibly in AGENTS-Companion.md.
+    { id: 'system-prompt', config: { includeHarnessIdentity: false, personaPrefix: '', personaSuffix: '' } },
     // Physical encoding is root-wide, not autodetected per file. The shared host root was verified as Zstd.
     // Restate root because Loader patches replace the entire config rather than merging it with the base.
     { id: 'session-persistence-jsonl', config: { root: join(homedir(), '.dsh/sessions'), compression: 'zstd' } },
@@ -51,8 +55,8 @@ export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
     { insert: [{ id: 'alex-research', name: join(root, 'plugins/research/index.mjs') }, { id: 'companion-session-controller', name: join(root, 'plugins/companion-workspace/session-controller.mjs') }, { id: 'companion-oauth', name: join(root, 'frontend/dsh-tui/lib/types/dsh-adapter/oauth/index.js'), inject: ['llm', 'commands'], config: { providers: ['openai-codex'] } }, { id: 'companion-private-link', name: join(root, 'tools/session-companion/connection.mjs') }, { id: 'companion-catalog-api', name: join(root, 'plugins/companion-api/index.mjs'), inject: ['typert', 'sessionPersistence'] }, { id: 'preset-companion', name: '@deepseek-ai/dsh-agent-preset', config: {
       id: 'companion', name: 'Companion', description: 'Leitura do PC; escrita no workspace pessoal; Bash e intervenções exigem aprovação.', order: 0,
       plugins: [
-        // Use the SDK's deployment persona; capability guards belong to the tool,
-        // not to a companion-specific prompt that replaces the normal instructions.
+        // No persona row: the root system-prompt keeps identity/persona empty, and
+        // capability guards belong to the tool, not to a companion-specific prompt.
         { id: 'companion-session', name: join(root, 'plugins/session/index.mjs'), config: { profile: 'companion' } },
         { id: 'companion-workspace', name: join(root, 'plugins/companion-workspace/index.mjs'), config: { profile: 'companion' } },
         // Web disables host skill discovery and loading. Keep both scoped here;

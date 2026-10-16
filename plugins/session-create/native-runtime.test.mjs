@@ -8,6 +8,7 @@ import { AuthorityRegistry } from './authority.mjs';
 import { OperationStore } from './operation-store.mjs';
 import { createController } from './controller.mjs';
 import { parameters, outputSchema, parseArgs } from './contracts.mjs';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
 // Explicit internal regression fixture, never the production session_create binding.
 const legacyTool = { name: 'fixture-legacy-create', inject: ['tools', 'sessionCreateOwner'], apply(ctx) {
@@ -17,11 +18,13 @@ const legacyTool = { name: 'fixture-legacy-create', inject: ['tools', 'sessionCr
     execute: (args, exec) => { parseArgs(args); return ctx.sessionCreateOwner.execute(args, exec); } });
 } };
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 
-test('legacy INTERNAL provisioning: SDK authority/lifetime/approval, not public profile creation', { timeout: 30000 }, async () => {
+// Durable ledger writes fsync file+directory per stage; on a slow disk, running beside
+// the other suites, this alone can exceed 30s while still being correct.
+test('legacy INTERNAL provisioning: SDK authority/lifetime/approval, not public profile creation', { timeout: 90000 }, async () => {
   await mkdir('.dumps/tasks', { recursive: true });
   const home = await mkdtemp(resolve('.dumps/tasks/task83-native-'));
   const root = join(home, 'workspace'); await mkdir(root);

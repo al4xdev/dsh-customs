@@ -1,14 +1,16 @@
-import { constants } from 'node:fs';
+import { constants, readFileSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 
 export const DEFAULT_ROOT = path.join(process.env.DSH_HOME ?? path.join(os.homedir(), '.dsh'), 'session-companion');
 export const MAX_FRAME = 64 * 1024;
 export const MAX_TEXT = 16 * 1024;
 export const GRANT_TTL = 15_000;
-export const capabilities = Object.freeze({ list: true, inspect: true, send: true, resume: false, boundary: 'next-turn', approval: 'companion-required' });
+// `sideQuery: 1` marks bridges that serve ask/recap; older bridges omit it, and
+// the Companion then reports host_outdated instead of guessing.
+export const capabilities = Object.freeze({ list: true, inspect: true, send: true, resume: false, boundary: 'next-turn', approval: 'companion-required', ask: true, recap: true, sideQuery: 1 });
 export function failure(code, message, extra = {}) { return { ok: false, error: { code, message }, capabilities, ...extra }; }
 export function validId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value); }
 export function validateSend(value) {
@@ -45,10 +47,26 @@ export async function readKey(root) {
   } finally { await file.close(); }
 }
 // Linux start ticks disambiguate reused PIDs; a timestamp claimed by a peer is not enough.
+const startTicks = stat => stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
 export async function processStart(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('Invalid PID');
-  const value = await fs.readFile(`/proc/${pid}/stat`, 'utf8');
-  return value.slice(value.lastIndexOf(')') + 2).split(' ')[19];
+  return startTicks(await fs.readFile(`/proc/${pid}/stat`, 'utf8'));
+}
+/**
+ * "No /proc entry" only means "process gone" if this process can see its OWN
+ * entry with numeric start ticks (no hidden/foreign procfs or PID namespace).
+ * Every dead-owner verdict (record removal included) checks this first.
+ */
+export async function procReliable() {
+  try { return /^\d+$/.test(await processStart(process.pid)); } catch { return false; }
+}
+export function procReliableSync() {
+  try { return /^\d+$/.test(processStartSync(process.pid)); } catch { return false; }
+}
+/** Synchronous twin for constructors that cannot await (same ENOENT-means-gone contract). */
+export function processStartSync(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('Invalid PID');
+  return startTicks(readFileSync(`/proc/${pid}/stat`, 'utf8'));
 }
 export function sameIdentity(a, b) { return a?.bridgeId === b?.bridgeId && a?.pid === b?.pid && a?.startTime === b?.startTime; }
 export function grantPayload(request, identity, agentIdentity, now = Date.now()) {
@@ -61,6 +79,33 @@ export function signGrant(payload, key) { return { ...payload, mac: createHmac('
 export function verifyGrant(grant, request, identity, key, now = Date.now()) {
   if (!grant || grant.version !== 1 || grant.operation !== 'send' || !sameIdentity(grant, identity) || grant.sessionId !== request.sessionId || grant.text !== request.text || grant.requestId !== request.requestId || !validId(grant.agentIdentity) || !/^[a-f0-9]{48}$/.test(grant.nonce ?? '') || !Number.isSafeInteger(grant.issuedAt) || !Number.isSafeInteger(grant.expiresAt) || grant.issuedAt > now || grant.expiresAt <= now || grant.expiresAt - grant.issuedAt > GRANT_TTL || !/^[a-f0-9]{64}$/.test(grant.mac ?? '')) return false;
   const expected = signGrant(grant, key).mac;
+  return timingSafeEqual(Buffer.from(grant.mac, 'hex'), Buffer.from(expected, 'hex'));
+}
+// Side queries (ask/recap) need no human approval (owner decision: read-like,
+// answered outside the main agent, nothing written to its log), but they still
+// prove possession of the bridge key. They use their OWN MAC domain: a key
+// derived from grant.key with a fixed label, over a canonical form that starts
+// with that label. A send grant can therefore never verify as a side grant and
+// a side grant never as a send (or create) grant, even with identical fields.
+const SIDE_DOMAIN = 'dsh-companion/session-side-query/v1';
+export const SIDE_OPERATIONS = Object.freeze(['ask', 'recap']);
+const sideKey = key => createHmac('sha256', key).update(SIDE_DOMAIN).digest();
+const questionDigest = question => createHash('sha256').update(question ?? '', 'utf8').digest('hex');
+function sideCanonical(p) {
+  return JSON.stringify([SIDE_DOMAIN, p.version, p.operation, p.bridgeId, p.pid, p.startTime, p.sessionId, p.agentIdentity, p.requestId, p.questionHash, p.nonce, p.issuedAt, p.expiresAt]);
+}
+export function validateSideRequest(value) {
+  if (!SIDE_OPERATIONS.includes(value?.operation) || !validId(value?.sessionId) || !validId(value?.requestId)) return false;
+  if (value.operation === 'recap') return value.question === undefined;
+  return typeof value.question === 'string' && value.question.trim().length > 0 && Buffer.byteLength(value.question) <= 8 * 1024;
+}
+export function sideGrantPayload(request, identity, agentIdentity, now = Date.now()) {
+  return { version: 1, operation: request.operation, bridgeId: identity.bridgeId, pid: identity.pid, startTime: identity.startTime, sessionId: request.sessionId, agentIdentity, requestId: request.requestId, questionHash: request.operation === 'ask' ? questionDigest(request.question) : '', nonce: randomBytes(24).toString('hex'), issuedAt: now, expiresAt: now + GRANT_TTL };
+}
+export function signSideGrant(payload, key) { return { ...payload, mac: createHmac('sha256', sideKey(key)).update(sideCanonical(payload)).digest('hex') }; }
+export function verifySideGrant(grant, request, identity, key, now = Date.now()) {
+  if (!grant || grant.version !== 1 || !SIDE_OPERATIONS.includes(grant.operation) || grant.operation !== request.operation || !sameIdentity(grant, identity) || grant.sessionId !== request.sessionId || grant.requestId !== request.requestId || grant.questionHash !== (request.operation === 'ask' ? questionDigest(request.question) : '') || !validId(grant.agentIdentity) || !/^[a-f0-9]{48}$/.test(grant.nonce ?? '') || !Number.isSafeInteger(grant.issuedAt) || !Number.isSafeInteger(grant.expiresAt) || grant.issuedAt > now || grant.expiresAt <= now || grant.expiresAt - grant.issuedAt > GRANT_TTL || !/^[a-f0-9]{64}$/.test(grant.mac ?? '')) return false;
+  const expected = signSideGrant(grant, key).mac;
   return timingSafeEqual(Buffer.from(grant.mac, 'hex'), Buffer.from(expected, 'hex'));
 }
 export async function validateRecord(record) {

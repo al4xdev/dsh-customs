@@ -82,6 +82,10 @@ export function createSnapshotRegistry({ origin, now = Date.now, checkOwner = ()
           if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_BYTES) refuse('too-large');
           // The SDK read result is owned by this reservation; do not copy another 20MiB.
           row.bytes = bytes; row.name = safeName(name); row.preparing = false; committed = true;
+          // The reservation TTL bounded preparation, including the owner's approval
+          // wait; the link itself gets the full five minutes from publication.
+          row.expires = now() + TTL_MS; clearTimeout(row.timer);
+          row.timer = setTimeout(() => revoke(row), TTL_MS); row.timer.unref?.();
           row.token = randomBytes(32).toString('base64url'); tickets.set(row.token, row);
           return Object.freeze({ url: `${origin}${PREFIX}/${row.token}`, displayName: row.name, bytes: bytes.byteLength, expiresAt: row.expires });
         },
@@ -90,11 +94,14 @@ export function createSnapshotRegistry({ origin, now = Date.now, checkOwner = ()
     },
     acquire(token, head = false) {
       sweep(); checkOwner();
+      // Validate the bearer ticket BEFORE counting: unknown tickets cost nothing,
+      // so a flood of guesses cannot exhaust the window for real links. Valid
+      // tickets keep their own attempt/HEAD limits below.
+      const row = typeof token === 'string' && TICKET.test(token) ? tickets.get(token) : undefined;
+      if (!row) refuse('not-found');
+      assert(row);
       if (now() - windowStart >= 60_000) { windowStart = now(); requests = 0; }
       if (++requests > 64) refuse('rate-limited');
-      const row = tickets.get(token);
-      if (!row || !TICKET.test(token)) refuse('not-found');
-      assert(row);
       if (head) {
         if (++row.heads > 8) refuse('rate-limited');
         return Object.freeze({ name: row.name, size: row.bytes.byteLength, verify: () => verifyCurrent(row) });

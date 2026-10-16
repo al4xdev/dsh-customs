@@ -2,9 +2,10 @@ import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { DSH_CLI_PACKAGE } from '../../../plugins/session/host-paths.mjs';
 
 /** Public persistence metadata only: no agent service, write handle, or event log. */
-export async function createSessionCatalog({ root = join(homedir(), '.dsh/sessions'), runtimePackage = join(homedir(), '.local/share/dsh-cli/package.json') } = {}) {
+export async function createSessionCatalog({ root = join(homedir(), '.dsh/sessions'), runtimePackage = DSH_CLI_PACKAGE } = {}) {
   const require = createRequire(runtimePackage);
   const load = name => import(pathToFileURL(require.resolve(`@deepseek-ai/${name}`)).href);
   const [{ Context }, persistence] = await Promise.all([load('cordis'), load('dsh-session-persistence-jsonl')]);

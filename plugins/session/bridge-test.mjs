@@ -125,9 +125,31 @@ test('stale/corrupt discovery, PID reuse and path escape do not classify as aliv
   await fs.writeFile(path.join(dir, 'corrupt.json'), '{', { mode: 0o600 });
   await fs.writeFile(path.join(dir, 'stale.json'), JSON.stringify({ ...record, bridgeId: 'stale', startTime: '0', socketPath: path.join(dir, 'stale.sock') }), { mode: 0o600 });
   const result = await discoverBridges({ root });
-  assert.equal(result.bridges.length, 1); assert.equal(result.errors.length, 2);
+  // PID reuse (same pid, other start ticks) proves the record dead: removed, not an error.
+  assert.equal(result.bridges.length, 1); assert.equal(result.errors.length, 1); assert.equal(result.stale, 1);
+  await assert.rejects(fs.stat(path.join(dir, 'stale.json')), { code: 'ENOENT' });
+  assert.equal((await fs.stat(path.join(dir, 'corrupt.json'))).isFile(), true, 'unproven records are reported, never deleted');
   assert.equal((await queryBridge({ ...record, startTime: '0' }, { operation: 'list' })).error.code, 'bridge_unavailable');
   assert.equal((await queryBridge({ ...record, socketPath: '/tmp/other.sock' }, { operation: 'list' })).error.code, 'bridge_unavailable');
+});
+
+test('hundreds of dead hosts neither hide live bridges nor survive discovery', async t => {
+  const { root, record } = await fixture(t);
+  const dir = path.join(root, 'bridges');
+  // 260 crashed hosts leave 520 entries (.json + .sock): more than the old 512-file budget.
+  for (let index = 0; index < 260; index++) {
+    const bridgeId = `dead-${index}`;
+    await fs.writeFile(path.join(dir, `${bridgeId}.json`), JSON.stringify({ version: 1, bridgeId, pid: 2 ** 31 - 1 - index, startTime: '1', socketPath: path.join(dir, `${bridgeId}.sock`) }), { mode: 0o600 });
+    await fs.writeFile(path.join(dir, `${bridgeId}.sock`), '', { mode: 0o600 });
+  }
+  // A record written by another machine sharing this home is never judged by our /proc.
+  await fs.writeFile(path.join(dir, 'foreign-host.json'), JSON.stringify({ version: 1, bridgeId: 'foreign-host', pid: 2 ** 31 - 1, startTime: '1', host: `${os.hostname()}-other`, socketPath: path.join(dir, 'foreign-host.sock') }), { mode: 0o600 });
+  const first = await discoverBridges({ root });
+  assert.equal(first.ok, true); assert.equal(first.stale, 260); assert.equal(first.errors.length, 1);
+  assert.deepEqual(first.bridges.map(row => row.bridgeId), [record.bridgeId]);
+  assert.equal(record.host, os.hostname(), 'new records name their host');
+  assert.deepEqual((await fs.readdir(dir)).sort(), [`${record.bridgeId}.json`, `${record.bridgeId}.sock`, 'foreign-host.json'].sort());
+  assert.equal((await discoverBridges({ root })).stale, 0);
 });
 
 test('unsafe root/socket/key modes fail closed', async t => {
@@ -179,4 +201,52 @@ test('connection closes after possible send: delivery_unknown, never automatic r
   t.after(() => new Promise(resolve => { server.close(resolve); }));
   const result = await sendBridge(record, { sessionId: 'session-1', text: 'ambiguous network', requestId: 'lost-ack' });
   assert.equal(result.error.code, 'delivery_unknown'); assert.equal(result.retrySafe, false); assert.equal(connections, 1);
+});
+
+function rawFrame(record, request) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(record.socketPath, () => {
+      socket.write(JSON.stringify({ ...request, identity: { bridgeId: record.bridgeId, pid: record.pid, startTime: record.startTime } }) + '\n');
+      resolve(socket);
+    });
+    socket.on('error', reject);
+  });
+}
+
+test('a send queued behind a slow create never runs once its client connection is gone', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-br-'));
+  const calls = [];
+  const agent = { id: 'session-1', status: 'idle', session: { header: {} }, send: (...args) => calls.push(args) };
+  const ctx = { agents: { list: () => [agent], get: id => id === agent.id ? agent : undefined } };
+  let release; const gate = new Promise(resolve => { release = resolve; });
+  const createHost = () => ({ capabilities: () => ({ available: false }), handle: async () => { await gate; return { ok: false, error: { code: 'fixture' } }; }, close: async () => {} });
+  const bridge = await startBridge(ctx, { root, createHost });
+  t.after(async () => { release(); await bridge.close(); await fs.rm(root, { recursive: true, force: true }); });
+  const record = (await discoverBridges({ root })).bridges[0];
+  const slow = await rawFrame(record, { operation: 'prepare-create', proposal: {} });
+  // The client signs a valid grant, sends, then gives up before the queue drains.
+  const signedSend = await signed(record, { sessionId: 'session-1', text: 'late', requestId: 'late-request' });
+  const abandoned = await rawFrame(record, signedSend);
+  abandoned.destroy();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  release();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  slow.destroy();
+  assert.equal(calls.length, 0, 'no effect after the connection closed');
+  // A fresh request with a new ID is still served normally.
+  assert.equal((await sendBridge(record, { sessionId: 'session-1', text: 'fresh', requestId: 'fresh-request' })).ok, true);
+  assert.equal(calls.length, 1);
+});
+
+test('close unpublishes the record and socket even when the profile host never drains', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-br-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const ctx = { agents: { list: () => [], get: () => undefined } };
+  const createHost = () => ({ capabilities: () => ({ available: false }), handle: async () => ({ ok: false }), close: () => new Promise(() => {}) });
+  const bridge = await startBridge(ctx, { root, createHost, closeTimeoutMs: 50 });
+  const started = Date.now();
+  await bridge.close();
+  assert.ok(Date.now() - started < 2000, 'bounded shutdown');
+  assert.deepEqual(await fs.readdir(path.join(root, 'bridges')), []);
+  assert.equal(await bridge.close(), undefined, 'idempotent');
 });

@@ -4,8 +4,9 @@ import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createGoalPush } from './source.mjs';
 import { hash, publicConfig } from './contracts.mjs';
+import { DSH_CLI_PACKAGE } from '../session/host-paths.mjs';
 
-const require = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+const require = createRequire(DSH_CLI_PACKAGE);
 export const sdk = name => import(require.resolve(`@deepseek-ai/${name}`));
 export const { foldGoal } = await sdk('dsh-goal');
 export const config = { enabled: true, publicConfig: { projectId: 'authored-fixture-only', senderId: '123456789012',

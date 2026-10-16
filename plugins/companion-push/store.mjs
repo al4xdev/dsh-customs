@@ -2,6 +2,7 @@ import { constants, closeSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openS
 import { isAbsolute, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { digest, generation, hash, MAX_ATTEMPTS, MAX_DEVICES, MAX_EVENTS, refuse, uuid, validPayload, validReceipt } from './contracts.mjs';
+import { procReliableSync, processStartSync } from '../session/bridge-security.mjs';
 
 export const MAX_BYTES = 2 * 1024 * 1024;
 const exact = (x, names) => x && Object.keys(x).sort().join(',') === names.split(',').sort().join(',');
@@ -33,8 +34,23 @@ export function validState(s) {
   return true;
 }
 
+// The lock names its writer (pid + Linux start ticks) so a crash-left lock can be
+// told apart from a running sender. Unreadable/legacy locks stay "unknown".
+function lockOwnerState(lock) {
+  let owner;
+  try {
+    // O_NONBLOCK: a planted FIFO must not hang the constructor.
+    const fd = openSync(lock, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try { const stat = fstatSync(fd); if (stat.isFile() && stat.size <= 4096) owner = JSON.parse(readFileSync(fd, 'utf8')); } finally { closeSync(fd); }
+  } catch { return 'unknown'; }
+  if (!Number.isSafeInteger(owner?.pid) || owner.pid < 1 || typeof owner.startTime !== 'string' || !procReliableSync()) return 'unknown';
+  try { return processStartSync(owner.pid) === owner.startTime ? 'alive' : 'dead'; }
+  catch (error) { return error?.code === 'ENOENT' ? 'dead' : 'unknown'; }
+}
+
 /** Lifetime writer lock deliberately survives a crash. Never silently reclaim another sender's
- * authority or evict a delivered ID. Recovery requires the stopped-profile operator's review. */
+ * authority or evict a delivered ID. Recovery requires the stopped-profile operator's review;
+ * an orphaned lock (dead writer) is only REPORTED as `store-lock-orphaned`, never taken over. */
 export class PrivateStore {
   constructor(profileDirectory) {
     if (!isAbsolute(profileDirectory)) refuse('store-path');
@@ -46,9 +62,13 @@ export class PrivateStore {
     if (realpathSync(this.directory) !== this.directory) refuse('store-path');
     this.path = join(this.directory, 'state-v1.json');
     this.lock = join(this.directory, 'writer.lock');
-    this.lockFd = openSync(this.lock, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try { this.lockFd = openSync(this.lock, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); }
+    catch (error) { if (error.code === 'EEXIST') refuse(lockOwnerState(this.lock) === 'dead' ? 'store-lock-orphaned' : 'store-locked'); throw error; }
     this.closed = false;
     try {
+      let startTime = null;
+      try { startTime = processStartSync(process.pid); } catch { /* Non-Linux: the owner stays unverifiable. */ }
+      writeFileSync(this.lockFd, JSON.stringify({ version: 1, pid: process.pid, startTime })); fsyncSync(this.lockFd);
       let fd;
       try {
         fd = openSync(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -64,6 +84,11 @@ export class PrivateStore {
     } catch (error) { this.close(); throw error; }
   }
   read() { if (this.closed) refuse('store-closed'); return structuredClone(this.state); }
+  /** Capacity facts without cloning the (up to 2 MiB) state on every status call. */
+  usage(deviceId) {
+    if (this.closed) refuse('store-closed');
+    return { events: this.state.events.length, devices: this.state.devices.length, knownDevice: this.state.devices.some(d => d.deviceId === deviceId) };
+  }
   save(state) {
     if (this.closed || !validState(state)) refuse('store-invalid');
     const bytes = JSON.stringify(state) + '\n';

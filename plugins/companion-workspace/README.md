@@ -2,9 +2,10 @@
 
 ## Native creation and cwd
 
-The backend process may start in `/home/alex/git/my/dsh-customs` to resolve its
+The backend process may start in `~/git/my/dsh-customs` to resolve its
 plugins. An ordinary **Android-created companion Session/Agent** must instead have immutable
-`header.cwd = /home/alex/git/my/dsh-companion-workspace`; native FS execution and
+`header.cwd = ~/git/my/dsh-companion-workspace` (resolved from `HOME` in
+`plugins/session/host-paths.mjs`, never a fixed user directory); native FS execution and
 sandbox context resolve from that header, not the backend process cwd. The separately
 confirmed `session_create` owner may provision direct `projects/<name>` children with
 fresh scoped incarnation authority; it never changes the Android creation controller.
@@ -42,6 +43,18 @@ this; fake superclass tests alone did not detect it.
   review, including read-only or repeated commands. Limit:64KiB UTF-8. No
   escalation, auto-grant, background promotion or relaxed legacy-cwd execution.
   Cancellation/unknown policy/foreign preset still fail closed.
+- The Bash card shows the command's UTF-8 size and sha256 before the literal (last).
+  Tags, bidi controls, private use, CR and other controls except LF/TAB are refused
+  (`workspace-command-invisible-character`); rarer invisible characters are shown
+  escaped. The command still runs byte-for-byte as approved.
+- Denials are actionable text with a stable code prefix (`code: explanation`), since
+  the model sees them verbatim. The native bash/fs schemas still advertise
+  `sandbox_permissions`/`justification` and sandbox notes suggest retrying with them:
+  the SDK has no configuration to hide those fields in a confining composition, and
+  re-registering the tools would fork their contracts. So `workspace-escalation-denied`
+  says Companion never widens the sandbox, not to retry, and to explain the limit to the
+  owner (human); `workspace-cwd-denied` says to omit `workdir` (relative values are never
+  resolved) and `cd` inside the reviewed command.
 
 ## Optional confirmed project authority (task83)
 

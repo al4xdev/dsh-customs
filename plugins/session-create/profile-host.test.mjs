@@ -130,3 +130,27 @@ test('protocol has closed requests and does not treat model booleans as authorit
   const noGrant = await f.host.handle({ operation: 'create-session', preparationId: prepared.preparation.id, preparationHash: prepared.preparation.hash });
   assert.equal(noGrant.error.code, 'grant_invalid'); assert.equal(f.effects.create, 0);
 });
+test('close is bounded: a hung flush still disposes the root handle and returns', async () => {
+  const f = await fixture();
+  const { preparation } = await f.prepare(); assert.equal((await f.create(preparation)).ok, true);
+  f.ctx.sessions.flush = () => new Promise(() => {});
+  const started = Date.now();
+  await f.host.close({ timeoutMs: 50 });
+  assert.ok(Date.now() - started < 2000); assert.equal(f.effects.dispose, 1);
+  assert.equal(f.host.capabilities().available, false);
+});
+test('a create that outlives a bounded close still releases its own root handle', async () => {
+  const f = await fixture();
+  const { preparation } = await f.prepare();
+  const original = f.ctx.agents.create; let release, reached;
+  const gate = new Promise(resolve => { release = resolve; }), entered = new Promise(resolve => { reached = resolve; });
+  // Hold the native create AFTER setup passed its checks, as if publication were slow.
+  f.ctx.agents.create = options => original({ ...options, setup: async (...args) => { await options.setup(...args); reached(); await gate; } });
+  const pending = f.create(preparation);
+  await entered;
+  await f.host.close({ timeoutMs: 30 });
+  assert.equal(f.effects.dispose, 0, 'nothing to dispose yet');
+  release(); await pending;
+  assert.equal(f.effects.create, 1); assert.equal(f.effects.dispose, 1, 'late handle disposed by its own create');
+  assert.equal(f.live.size, 0);
+});

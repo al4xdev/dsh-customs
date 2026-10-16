@@ -1,7 +1,21 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { READ_OPERATIONS, parseReadRequest, usesReadRouter, validReadId } from './read-contracts.mjs';
+import { normalizeNewlines, refusedCharacter } from './approval-text.mjs';
 
-export const OPERATIONS = ['help', 'list', 'inspect', 'read', ...READ_OPERATIONS, 'send', 'resume'];
+export const OPERATIONS = ['help', 'list', 'inspect', 'read', ...READ_OPERATIONS, 'send', 'resume', 'ask', 'recap'];
+export const MAX_QUESTION_BYTES = 8 * 1024;
+const sessionIdParam = { type: 'string', description: 'Exact session ID of a principal dsh-tui conversation (from list).' };
+/** Exact contracts of the live-session operations, returned by describe. */
+export const LIVE_SCHEMAS = Object.freeze({
+  recap: { sessionId: sessionIdParam },
+  ask: { sessionId: sessionIdParam, question: { type: 'string', description: 'One self-contained question, at most 8 KiB UTF-8; answered once, no follow-up.' } },
+  send: { sessionId: sessionIdParam, text: { type: 'string', description: 'Literal next-turn message, at most 16 KiB UTF-8; needs the owner\'s (human) one-shot approval.' } },
+  resume: { sessionId: sessionIdParam, text: { type: 'string', description: 'Literal message for a verified cold resume, at most 16 KiB UTF-8; needs the owner\'s (human) one-shot approval.' } },
+});
+export function parseLiveDescription(input) {
+  if (input?.operation !== 'describe' || !Object.hasOwn(LIVE_SCHEMAS, input.targetOperation) || Object.keys(input).some(key => !['operation', 'targetOperation'].includes(key))) throw new Error('invalid describe request');
+  return input;
+}
 export const DEFAULT_BYTES = 8192;
 export const MAX_BYTES = 32768;
 export const MAX_TEXT = 16384;
@@ -14,18 +28,34 @@ const keys = {
   inspect: ['sessionId', 'view', 'limit', 'maxBytes'],
   read: ['sessionId', 'offset', 'textOffset', 'textLimit', 'cursor', 'revision', 'limit', 'maxBytes'],
   send: ['sessionId', 'text'], resume: ['sessionId', 'text'],
+  ask: ['sessionId', 'question'], recap: ['sessionId'],
 };
 export function validId(id) {
   return typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id);
 }
-export function parseRequest(input) {
-  if (usesReadRouter(input)) return parseReadRequest(input);
-  if (!input || typeof input !== 'object' || Array.isArray(input) || !OPERATIONS.includes(input.operation)) throw new Error('invalid operation');
+export function parseRequest(raw) {
+  if (usesReadRouter(raw)) return parseReadRequest(raw);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !OPERATIONS.includes(raw.operation)) throw new Error('invalid operation');
+  // The normalized literal is what the approval card shows, what its digest
+  // covers and what is delivered: callers must use the returned text.
+  const input = typeof raw.text === 'string' ? { ...raw, text: normalizeNewlines(raw.text) } : typeof raw.question === 'string' ? { ...raw, question: normalizeNewlines(raw.question) } : raw;
   const { operation } = input;
   for (const key of Object.keys(input)) if (key !== 'operation' && !keys[operation].includes(key)) throw new Error(`unexpected argument: ${key}`);
   if (['inspect', 'read'].includes(operation) && !validReadId(input.sessionId)) throw new Error('invalid sessionId');
   if (['send', 'resume'].includes(operation) && !validId(input.sessionId)) throw new Error('invalid sessionId');
   if (['send', 'resume'].includes(operation) && (typeof input.text !== 'string' || !input.text.trim() || Buffer.byteLength(input.text) > MAX_TEXT)) throw new Error('text must be nonempty and at most 16 KiB');
+  if (['ask', 'recap'].includes(operation) && !validId(input.sessionId)) throw new Error('invalid sessionId');
+  if (operation === 'ask') {
+    if (typeof input.question !== 'string' || !input.question.trim() || Buffer.byteLength(input.question) > MAX_QUESTION_BYTES) throw new Error('question must be nonempty and at most 8 KiB');
+    const refused = refusedCharacter(input.question);
+    if (refused) throw new Error(`question contains ${refused}, an invisible, bidirectional or control character; remove it and ask again`);
+  }
+  if (['send', 'resume'].includes(operation)) {
+    // The owner (human) approves what the card shows; these characters would
+    // hide or reorder text that the destination agent still reads.
+    const refused = refusedCharacter(input.text);
+    if (refused) throw new Error(`text contains ${refused}, an invisible, bidirectional or control character that the owner (human) cannot review; remove it (plain line breaks and tabs are fine) and send again`);
+  }
   for (const key of ['project', 'cursor', 'revision']) if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > 2048)) throw new Error(`invalid ${key}`);
   if (input.state !== undefined && !['alive', 'ended', 'waiting', 'unknown'].includes(input.state)) throw new Error('invalid state');
   if (input.writer !== undefined && !WRITER_STATES.includes(input.writer)) throw new Error('invalid writer');

@@ -1,5 +1,7 @@
 // STAGING ONLY: public metadata and pressure arithmetic, not a request hook or mutation API.
 export const BONSAI_ID = 'Ternary-Bonsai-2-27B-PQ2_0';
+// Model IDs exactly as the lab llama-server reports them (the GGUF path it loaded).
+// Compared literally against /v1/models; never opened or resolved as a local path.
 export const GEMMA_ID = '/home/alex/.cache/huggingface/hub/models--EZForever--gemma-4-26B-A4B-it-qat-uncensored-heretic-UDmerge-GGUF/snapshots/9567a9ca99f1ee12c9d43082c7351f24b4feef63/gemma-4-26B-A4B-it-qat-uncensored-heretic-UDmerge-Q4_K_XXL.gguf';
 export const localModels = Object.freeze([
   Object.freeze({ id: BONSAI_ID, name: 'Bonsai 2 27B (QW)', contextWindow: 131072, maxTokens: 32768,

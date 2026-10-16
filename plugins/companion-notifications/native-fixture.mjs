@@ -3,8 +3,9 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
-export const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+export const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 export const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 export async function fixture({ installed = true, driver = false, instructions = false } = {}) {

@@ -4,11 +4,12 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { profileFiles, serviceFile } from './profile.mjs';
+import { DSH_CLI_ANCHOR } from '../../plugins/session/host-paths.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const home = process.env.DSH_HOME ?? join(homedir(), '.dsh');
 const destination = join(home, 'profiles', 'companion');
-const cliPath = process.env.DSH_COMPANION_CLI ?? join(homedir(), '.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/lib/bin.js');
+const cliPath = process.env.DSH_COMPANION_CLI ?? join(dirname(DSH_CLI_ANCHOR), 'lib/bin.js');
 const servicePath = join(homedir(), '.config/systemd/user/dsh-companion.service');
 const write = process.argv.includes('--write');
 if (process.argv.slice(2).some(arg => !['--write', '--plan'].includes(arg))) throw new Error('Use --plan or --write');

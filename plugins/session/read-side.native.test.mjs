@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createReadSide } from './read-side.mjs';
 import { createController } from './controller.mjs';
+import { DSH_CLI_PACKAGE } from './host-paths.mjs';
 
-const require = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+const require = createRequire(DSH_CLI_PACKAGE);
 const load = id => import(require.resolve(`@deepseek-ai/${id}`));
 const exec = { signal: new AbortController().signal };
 async function authoredRoot() {

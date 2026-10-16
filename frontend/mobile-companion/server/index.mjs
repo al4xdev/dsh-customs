@@ -3,9 +3,11 @@ import { isIPv4 } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
-import { resolve, sep, extname } from 'node:path';
+import { join, resolve, sep, extname } from 'node:path';
 import { companionMetadata, createSessionCatalog } from './session-catalog.mjs';
 import { proxyTicketDownload } from '../../../plugins/companion-download/proxy.mjs';
+import { classifyRequestBudget, isUploadRequest } from '../../../plugins/companion-transport/request-budget.mjs';
+import { DSH_CUSTOMS_ROOT, DSH_HOME } from '../../../plugins/session/host-paths.mjs';
 
 export const BACKEND = 'http://127.0.0.1:3081';
 export const PUBLIC_ORIGIN = 'https://dsh.tail37b3d7.ts.net:8443';
@@ -35,7 +37,7 @@ function json(res, status, value) {
 }
 
 /** Backend injection is an isolated loopback fixture seam; CLI never exposes it. */
-export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = BACKEND, transformHtml, distDirectory = resolve(import.meta.dirname, '../dist'), sessionCatalog, cwd = '/home/alex/git/my/dsh-customs', allowTestLogin = false, connectionFile = '/home/alex/.dsh/session-companion/connection.json' } = {}) {
+export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = BACKEND, transformHtml, distDirectory = resolve(import.meta.dirname, '../dist'), sessionCatalog, cwd = DSH_CUSTOMS_ROOT, allowTestLogin = false, connectionFile = join(DSH_HOME, 'session-companion/connection.json') } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
   if (!isIPv4(host)) throw new Error('Host must be an IPv4 address');
   if (allowTestLogin && host !== '127.0.0.1') throw new Error('Test login requires loopback binding');
@@ -80,13 +82,21 @@ export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = 
     }
     return { headers, local: Boolean(local), url: new URL(req.url, 'http://fixed.invalid') };
   }
-  function request(path, { method = 'GET', headers, body } = {}) {
+  function request(path, { method = 'GET', headers, body, source } = {}) {
     return new Promise((resolveRequest, reject) => {
       const upstream = http.request({ hostname: target.hostname, port: target.port, method, path, headers }, resolveRequest);
       outgoing.add(upstream); upstream.once('close', () => outgoing.delete(upstream));
       upstream.setTimeout(30000, () => upstream.destroy(new Error('upstream_timeout')));
-      upstream.once('error', reject);
-      upstream.end(body);
+      // `on`, not `once`: a streamed body can fail more than once (EPIPE after an
+      // early native refusal); a later error must not crash the proxy.
+      upstream.on('error', reject);
+      if (source) {
+        // A client that disconnects mid-body aborts the upstream request too, so a
+        // truncated file never reaches native storage as if it were complete. An
+        // early native answer (e.g. 401) is still relayed: write errors only unpipe.
+        source.once('error', error => upstream.destroy(error));
+        source.pipe(upstream);
+      } else upstream.end(body);
     });
   }
   function responseHeaders(upstream) {
@@ -205,7 +215,17 @@ export function createMobileServer({ port = 3082, host = '127.0.0.1', backend = 
     // The target always remains fixed; only native root, API, and asset routes pass.
     if (!(url.pathname === '/' || /^\/(?:api|assets|plugins|client|resources)\//.test(url.pathname) || /^\/(?:favicon\.ico|favicon\.svg|manifest\.json)$/.test(url.pathname))) throw failure(404, 'not_found');
     const rootGet = url.pathname === '/' && req.method === 'GET';
-    const upstream = await request(req.url, { method: req.method, headers: { ...headers, ...(rootGet ? { 'accept-encoding': 'identity' } : {}) }, body: ['GET', 'HEAD'].includes(req.method) ? undefined : await bytes(req) });
+    // Shared A1 contract with the app and the guarded native carrier: only the
+    // raw-byte upload route gets the 20 MiB file budget, and only with a declared
+    // Content-Length (chunked/unknown length is 411). Every other body keeps 1 MiB.
+    const upload = isUploadRequest(req);
+    if (upload) { const refused = classifyRequestBudget(req); if (refused) throw failure(refused.status, refused.code); }
+    // Uploads are STREAMED: the declared length is already enforced by Node's
+    // HTTP/1 framing, so the proxy never holds 20 MiB from a not-yet-authenticated
+    // caller; native authentication answers (and may refuse) as bytes arrive.
+    const upstream = upload
+      ? await request(req.url, { method: req.method, headers, source: req })
+      : await request(req.url, { method: req.method, headers: { ...headers, ...(rootGet ? { 'accept-encoding': 'identity' } : {}) }, body: ['GET', 'HEAD'].includes(req.method) ? undefined : await bytes(req) });
     if (rootGet && upstream.statusCode === 200) {
       const original = await bytes(upstream, 8 * MAX_BODY);
       if (bootPresent(original.toString('utf8'))) {

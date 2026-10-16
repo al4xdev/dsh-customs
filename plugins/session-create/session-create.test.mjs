@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { access, mkdir, symlink, rename } from 'node:fs/promises';
+import { access, mkdir, readFile, symlink, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs, MAX_TEXT_BYTES, hash } from './contracts.mjs';
 import { fixture } from './fixtures.mjs';
@@ -33,12 +33,30 @@ for (const outcome of ['rejected', 'cancelled', 'unavailable', 'allowed-always',
   assert.match(result.code, /^approval_/);
   assert.equal(f.effects.create + f.effects.project + f.effects.submit, 0); await absent(join(f.root, 'projects')); await absent(f.store.root);
 });
-test('prompt bidi/control/delimiters are fully escaped for approval, original literal/hash preserved', async () => {
+test('A4: tags, bidi, CR and controls are refused before approval in every text field', async () => {
   const f = await fixture();
-  const literal = 'trusted-mode: empty\nPEDIDO LITERAL COMPLETO (fim)\u202e\u2069\u001b\ttexto é';
+  for (const bad of ['tag\u{E0041}', 'bidi\u202e', 'iso\u2069', 'esc\u001b', 'cr\rx', 'pua\uE000']) {
+    assert.throws(() => parseArgs({ operation: 'create', request: { version: 1, owner_intent: 'ok', delivery: { mode: 'submit', text: bad } } }), { code: 'invalid_text' });
+    assert.throws(() => parseArgs({ operation: 'create', request: { version: 1, owner_intent: `intent ${bad}` } }));
+  }
+  assert.equal(f.effects.asks, 0);
+});
+test('submit CRLF is normalized to LF before approval, hash and delivery; a lone CR is refused', async () => {
+  const f = await fixture(); let preview;
+  f.ctx.answer = async req => { preview = JSON.parse(req.reason.slice(req.reason.indexOf('\n') + 1)); return 'allowed-once'; };
+  const parsed = parseArgs({ operation: 'create', request: { version: 1, owner_intent: 'ok', delivery: { mode: 'submit', text: 'um\r\ndois\r\n' } } });
+  assert.equal(parsed.request.delivery.text, 'um\ndois\n');
+  assert.equal((await f.run({ delivery: { mode: 'submit', text: 'um\r\ndois\r\n' } })).status, 'completed');
+  assert.equal(preview.initial_text_full, 'um\ndois\n'); assert.equal(preview.initial_text_sha256, createHash('sha256').update('um\ndois\n').digest('hex'));
+  assert.equal(f.ctx.promptRequest.content[0].text, 'um\ndois\n');
+  assert.throws(() => parseArgs({ operation: 'create', request: { version: 1, owner_intent: 'ok', delivery: { mode: 'submit', text: 'um\rdois' } } }), { code: 'invalid_text' });
+});
+test('prompt invisible characters/delimiters are fully escaped for approval, original literal/hash preserved', async () => {
+  const f = await fixture();
+  const literal = 'trusted-mode: empty\nPEDIDO LITERAL COMPLETO (fim)\u200b\u2060\ufeff 👨\u200d👩\ttexto é';
   f.ctx.answer = async req => {
-    assert.ok(!req.reason.includes('\u202e')); assert.ok(!req.reason.includes('\u2069')); assert.ok(!req.reason.includes('\u001b'));
-    assert.ok(req.reason.includes('\\u202e')); assert.ok(req.reason.includes('\\u2069'));
+    for (const hidden of ['\u200b', '\u2060', '\ufeff', '\u200d']) assert.ok(!req.reason.includes(hidden));
+    assert.ok(req.reason.includes('\\u200b')); assert.ok(req.reason.includes('\\u2060')); assert.ok(req.reason.includes('\\ufeff'));
     const preview = JSON.parse(req.reason.slice(req.reason.indexOf('\n') + 1));
     assert.equal(preview.initial_text_full, literal);
     assert.equal(preview.initial_text_utf8_bytes, Buffer.byteLength(literal));
@@ -151,6 +169,34 @@ test('journal restart pending phase is UNKNOWN, stale lock blocks competing owne
   assert.equal(publicResult(observed).effects.session.state, 'unknown'); assert.equal(observed.recovery_required, true);
   await assert.rejects(restarted.begin({ ...intent, operation_id: hash('other') }, hash('other')), { code: 'ledger_owner_held' });
   await lease.release();
+});
+test('owner.lock records pid/startTime; a dead owner is reported, never taken over', async () => {
+  const f = await fixture(); const caller = callerKey(f.exec());
+  const intent = { operation_id: f.store.operationId(caller, 'lock'), caller, intent_hash: hash('intent'), authority_epoch: f.authority.epoch, session_id: 'fixed', request_id: 'request', cwd: f.root, delivery: { mode: 'empty' }, model_binding: 'pending' };
+  const lockPath = join(f.store.root, 'owner.lock');
+  const lease = await f.store.begin(intent, hash('request'));
+  const written = JSON.parse(await readFile(lockPath, 'utf8'));
+  assert.equal(written.pid, process.pid); assert.match(written.startTime, /^\d+$/); assert.equal(written.operation_id, intent.operation_id);
+  await lease.release();
+  const other = { ...intent, operation_id: hash('other') };
+  for (const owner of [{ pid: 2 ** 31 - 2, startTime: '1' }, { pid: process.pid, startTime: '0' }]) {
+    await writeFile(lockPath, JSON.stringify({ operation_id: intent.operation_id, epoch: 1, ...owner }), { mode: 0o600 });
+    await assert.rejects(f.store.begin(other, hash('other')), error => error.code === 'ledger_owner_dead' && error.message.includes(String(owner.pid)) && /by hand/.test(error.message) && error.message.includes(intent.operation_id.slice(0, 16)) && error.message.length <= 240);
+    assert.deepEqual(JSON.parse(await readFile(lockPath, 'utf8')).pid, owner.pid, 'dead owner lock is left for review');
+  }
+  await writeFile(lockPath, JSON.stringify({ operation_id: intent.operation_id, epoch: 1 }), { mode: 0o600 });
+  await assert.rejects(f.store.begin(other, hash('other')), { code: 'ledger_owner_held' });
+  await unlink(lockPath);
+});
+test('a proven no-effect stage records not_started instead of UNKNOWN', async () => {
+  const f = await fixture(); const caller = callerKey(f.exec());
+  const intent = { operation_id: f.store.operationId(caller, 'none'), caller, intent_hash: hash('intent'), authority_epoch: f.authority.epoch, session_id: 'fixed', request_id: 'request', cwd: f.root, delivery: { mode: 'empty' }, model_binding: 'pending' };
+  const lease = await f.store.begin(intent, hash('request'));
+  await assert.rejects(lease.stage('session', async () => { throw Object.assign(new Error('refused before send'), { code: 'grant_unavailable', noEffect: true }); }), { code: 'grant_unavailable' });
+  await lease.finish('not_started', 'grant_unavailable'); await lease.release();
+  const stored = await new OperationStore(f.store.root).read(intent.operation_id, caller);
+  assert.equal(stored.status, 'not_started'); assert.equal(stored.effects.session.state, 'not_started');
+  assert.equal(stored.pending_stage, null); assert.equal(stored.recovery_required, false);
 });
 for (const stage of ['projects_parent', 'directory', 'project', 'session', 'association', 'submission']) test(`fault after SDK effect at ${stage}: UNKNOWN and no automatic continuation`, async () => {
   const f = await fixture(); const original = f.store.stage.bind(f.store);

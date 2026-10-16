@@ -1,4 +1,4 @@
-import { createRequire } from 'node:module';
+import { resolveInstalled } from '../session/host-paths.mjs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -6,12 +6,7 @@ import { createHostController } from './controller.mjs';
 
 export const name = 'companion-native-host-unused-proposal';
 export const inject = ['connection', 'typert', 'typertGateway', 'agents', 'goals', 'sessionProjections', 'agentPresets', 'profileContext'];
-function resolveSdk(id) {
-  for (const base of [process.argv[1], '/home/alex/.local/share/dsh-cli/package.json']) {
-    try { return createRequire(base).resolve(id); } catch {}
-  }
-  throw new Error('Companion native host public SDK unavailable.');
-}
+const resolveSdk = id => resolveInstalled(id, 'Companion native host public SDK unavailable.');
 
 /** UNUSED host-plane assembly. Only explicit Parent-gated enablement acquires an SDK scope. */
 export async function createCompanionNativeHost(ctx, config = {}) {

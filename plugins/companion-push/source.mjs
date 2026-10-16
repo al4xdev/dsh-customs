@@ -23,7 +23,10 @@ export function createGoalPush(ctx, helpers = {}, config = {}) {
   let store, storeError = false, closed = false, flushing = false;
   // No private directory, credential read, sender request, or listener when unconfigured.
   if (enabled && p && typeof ownsSession === 'function' && sender.ready()) {
-    try { store = new PrivateStore(profile.dir); } catch { storeError = true; }
+    // A held or orphaned writer lock is a specific, actionable state for the
+    // operator; every other store failure stays the generic store-unavailable.
+    try { store = new PrivateStore(profile.dir); }
+    catch (error) { storeError = ['goalPush/store-locked', 'goalPush/store-lock-orphaned'].includes(error?.code) ? error.code.slice('goalPush/'.length) : 'store-unavailable'; }
   }
   const contextCurrent = () => !closed && ctx.get('profileContext') === profile && profile.name === 'companion' && profile.dir === directory &&
     identityOf(ctx.get('connection')) === identityOf(connection) && connection.operator === operator && !operator.ctx?.fiber?.isDisposed &&
@@ -37,13 +40,28 @@ export function createGoalPush(ctx, helpers = {}, config = {}) {
   const owned = sessionId => {
     try { return contextCurrent() && ownsSession(sessionId, connection.operator) === true; } catch { return false; }
   };
-  const status = () => ({ version: 1, profile: 'companion', enabled, configured: !!p,
-    registrationReady: ready(), reason: ready() ? 'ready' : !contextCurrent() ? 'source-changed' : storeError || store?.closed ? 'store-unavailable' : !enabled ? 'disabled' : !p ? 'unconfigured' :
-      typeof ownsSession !== 'function' ? 'ownership-unavailable' : sender.status?.() ?? 'unavailable' });
+  // Lifetime limits are never evicted (that would forget delivered IDs), so a
+  // full ledger must show in status instead of a misleading "ready".
+  // event-limit: no new completion can be recorded; device-limit: only devices
+  // the ledger already knows can (re)register.
+  const capacity = deviceId => {
+    if (!store || store.closed) return undefined;
+    const usage = store.usage(deviceId);
+    if (usage.events >= MAX_EVENTS) return 'event-limit';
+    if (usage.devices >= MAX_DEVICES && !usage.knownDevice) return 'device-limit';
+    return undefined;
+  };
+  const status = deviceId => {
+    const full = ready() ? capacity(deviceId) : undefined;
+    return { version: 1, profile: 'companion', enabled, configured: !!p,
+      registrationReady: ready() && !full, reason: ready() ? full ?? 'ready' : !contextCurrent() ? 'source-changed' : storeError ? storeError : store?.closed ? 'store-unavailable' : !enabled ? 'disabled' : !p ? 'unconfigured' :
+        typeof ownsSession !== 'function' ? 'ownership-unavailable' : sender.status?.() ?? 'unavailable' };
+  };
   function register(raw, peer) {
     human(peer);
     if (!ready()) refuse('not-ready');
     if (!validRegistration(raw)) refuse('invalid-request');
+    if (capacity(raw.deviceId) === 'event-limit') refuse('event-limit');
     if (raw.configDigest !== p.configDigest) refuse('config-mismatch');
     if (!raw.sessionIds.every(owned)) refuse('not-owned');
     const requestedSessions = [...raw.sessionIds].sort();
@@ -86,7 +104,7 @@ export function createGoalPush(ctx, helpers = {}, config = {}) {
     human(peer); fields(raw, ['version', 'deviceId', 'authGeneration']);
     if (raw.version !== 1 || !uuid(raw.deviceId) || !generation(raw.authGeneration)) refuse('invalid-request');
     const device = store?.read().devices.find(d => d.deviceId === raw.deviceId);
-    return { ...status(), receipt: ready() && device?.active && device.generation === raw.authGeneration &&
+    return { ...status(raw.deviceId), receipt: ready() && device?.active && device.generation === raw.authGeneration &&
       device.receipt.configDigest === p.configDigest && device.receipt.expiresAt > now() && device.receipt.sessionIds.every(owned) ? structuredClone(device.receipt) : null };
   }
   async function dispatch(endpoint, payload, signal, peer) {
@@ -168,6 +186,6 @@ export function createGoalPush(ctx, helpers = {}, config = {}) {
       ctx.logger?.warn('companion-push: delivery unavailable; native goal unchanged'); return false;
     }
   }
-  return Object.freeze({ dispatch, status, onGoalChanged, flush,
+  return Object.freeze({ dispatch, status: () => status(), onGoalChanged, flush,
     close() { if (closed) return; closed = true; sender.close?.(); store?.close(); } });
 }

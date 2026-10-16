@@ -6,10 +6,12 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { startBridge } from './bridge.mjs';
+import { discoverBridges, sideQueryBridge } from './bridge-client.mjs';
 import { preflightResume } from './resume-preflight.mjs';
 import { executeResume, waitForResumeWorkers } from './resume-client.mjs';
 import { persistedSnapshot } from './provenance.mjs';
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+import { DSH_CLI_ANCHOR, DSH_HOME } from './host-paths.mjs';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 const ROOT_CONFIG = '# dsh profile root — an empty entry list. The tree is composed as patches:\n# each bundle in package.json\'s dsh.profile.bundles, then cordis.patch.yml, then any\n# --patch overlays. Edit cordis.patch.yml, not this file.\n[]\n';
@@ -25,7 +27,7 @@ test('public profile cold resume preserves same log/cwd/model/policies with a re
   await fs.writeFile(adapter, `import {createRequire} from 'node:module';\nconst r=createRequire(${JSON.stringify(anchor)});\nconst {LlmAdapter}=await import(r.resolve('@deepseek-ai/dsh-llm'));\nclass Fixture extends LlmAdapter { async *stream(){yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text:'COLD_RESUME_OK'};yield {type:'block-end',index:0,block:{type:'text',text:'COLD_RESUME_OK'}};yield {type:'finish',reason:{kind:'stop'}};} }\nexport const inject=['llm']; export function apply(ctx){ctx.effect(()=>ctx.llm.registerAdapter(['resume-fixture'],new Fixture()));}\n`);
   const real = process.env.SESSION_RESUME_REAL === '1';
   const provider = real ? 'openai-codex' : 'resume-fixture', model = real ? 'gpt-6-sol' : 'fixture';
-  const providerRow = real ? { id: 'fixture-oauth', name: path.resolve('frontend/dsh-tui/lib/types/dsh-adapter/oauth/index.js'), config: { providers: ['openai-codex'], credentialsFile: '/home/alex/.dsh/dsh-auth/credentials.json', retryPolicies: { 'openai-codex': { mode: 'normal', maxRetries: 0 } } } } : { id: 'fixture-adapter', name: adapter };
+  const providerRow = real ? { id: 'fixture-oauth', name: path.resolve('frontend/dsh-tui/lib/types/dsh-adapter/oauth/index.js'), config: { providers: ['openai-codex'], credentialsFile: path.join(DSH_HOME, 'dsh-auth/credentials.json'), retryPolicies: { 'openai-codex': { mode: 'normal', maxRetries: 0 } } } } : { id: 'fixture-adapter', name: adapter };
   const patches = [{ id: 'hmr', disabled: true }, { id: 'plugin-manager', disabled: true }, { id: 'config-editor', disabled: true }, { id: 'session-title-llm', disabled: true }, { id: 'session-telemetry-otel', disabled: true }, { id: 'session-persistence-jsonl', config: { root: path.join(home, 'sessions'), compression: 'none' } }, { id: 'agent-default-model', config: { provider, model } }, { insert: [providerRow] }];
   await fs.writeFile(path.join(dir, 'package.json'), JSON.stringify({ name: 'synthetic-resume', private: true, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } }));
   await fs.writeFile(path.join(dir, 'cordis.patch.yml'), JSON.stringify(patches));
@@ -44,6 +46,18 @@ test('public profile cold resume preserves same log/cwd/model/policies with a re
     handle.agent.send({ id: randomUUID(), role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'Responda apenas COLD_INITIAL_OK. Não use ferramentas nem acesse arquivos.' }] }, 'next-turn', true);
     await handle.agent.whenIdle();
     await app.sessions.flush(handle.agent.session);
+    // ask/recap through the real bridge, LLM runtime and session APIs: the live
+    // agent's own route answers, and its log does not grow.
+    if (!real) {
+      const before = handle.agent.session.snapshotEvents().length;
+      const live = (await discoverBridges({ root: resumeRoot })).bridges[0];
+      const asked = await sideQueryBridge(live, { kind: 'ask', sessionId: id, question: 'What did you answer?', requestId: randomUUID() });
+      assert.equal(asked.ok, true, JSON.stringify(asked));
+      assert.deepEqual([asked.answer.text, asked.answer.route.provider, asked.answer.route.model], ['COLD_RESUME_OK', provider, model]);
+      const recap = await sideQueryBridge(live, { kind: 'recap', sessionId: id, requestId: randomUUID() });
+      assert.equal(recap.ok, true, JSON.stringify(recap)); assert.equal(recap.answer.summary, 'COLD_RESUME_OK');
+      assert.equal(handle.agent.session.snapshotEvents().length, before, 'side queries never append to the session log');
+    }
     const capture = await bridge.captureProvenance(handle.agent);
     assert.equal(capture.ok, true, capture.reason);
     const remoteView = { sessionPersistence: app.sessionPersistence, agents: { get: () => undefined } };
@@ -53,8 +67,13 @@ test('public profile cold resume preserves same log/cwd/model/policies with a re
     assert.equal(held.ok, false); assert.equal(held.effect, 'none'); assert.equal(held.error.code, 'writer_held');
     assert.equal((await waitForResumeWorkers())[0]?.code, 1);
     await assert.rejects(app.sessionPersistence.open(id, 'write'), /owned|owner/i);
+    // A proven no-effect refusal does not burn the checkpoint: a NEW approved
+    // attempt runs (and is refused by the native writer guard again), not deduplicated.
+    const again = await executeResume(heldPreparation, { requestId: randomUUID() });
+    assert.equal(again.error.code, 'writer_held'); assert.equal(again.effect, 'none');
+    assert.equal((await waitForResumeWorkers())[0]?.code, 1);
     // A fresh checkpoint must really come from the still-owned original agent;
-    // failed-attempt receipts are never deleted or turned into takeover rights.
+    // failed-none receipts are kept as history and never become takeover rights.
     assert.equal((await bridge.captureProvenance(handle.agent)).ok, true);
     await bridge.close(); bridge = undefined;
     await handle.dispose(); handle = undefined;

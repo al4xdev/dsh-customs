@@ -14,8 +14,8 @@ Contrato atual da tool pública `session` (plano125). Não exige SQLite nem varr
 
 ```json
 {"operation":"list"}
-{"operation":"list","project":"/home/alex/git/my/dsh-customs","limit":10}
-{"operation":"list","cursor":"<nextCursor>","project":"/home/alex/git/my/dsh-customs","limit":10}
+{"operation":"list","project":"/home/USER/git/my/dsh-customs","limit":10}
+{"operation":"list","cursor":"<nextCursor>","project":"/home/USER/git/my/dsh-customs","limit":10}
 ```
 
 ## Busca literal

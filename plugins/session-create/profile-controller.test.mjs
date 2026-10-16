@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fixture } from './fixtures.mjs';
 import { createProfileController } from './profile-controller.mjs';
 import { parseProfileArgs, profileParameters } from './profile-contracts.mjs';
@@ -29,6 +29,17 @@ test('profile contract selects dsh-tui standard and rejects Companion or invente
   assert.equal(parseProfileArgs(input).request.profile,'dsh-tui');assert.equal(parseProfileArgs(input).request.preset,'standard');
   assert.deepEqual(validateJsonSchemaValue(profileParameters,input),[]);
   for(const patch of [{preset:'companion'},{profile:'companion'},{host_id:'pid:1'},{confirmed:true}])assert.throws(()=>parseProfileArgs({...input,request:{...input.request,...patch}}));
+});
+
+test('advertised schema offers only current/existing_project and plain wording; new_project stays an explicit refusal',async()=>{
+  const branches=profileParameters.properties.request.properties.target.oneOf.map(branch=>branch.properties.kind.const);
+  assert.deepEqual(branches,['current','existing_project']);
+  const advertised=JSON.stringify(profileParameters);
+  for(const jargon of ['new_project','dedicatedRoot','registry ID'])assert.equal(advertised.includes(jargon),false,jargon);
+  assert.match(profileParameters.properties.request.properties.owner_intent.description,/owner's \(human\)/);
+  const input={operation:'create',request:{version:1,owner_intent:'x',target:{kind:'new_project',name:'Novo'}}};
+  assert.notDeepEqual(validateJsonSchemaValue(profileParameters,input),[]);
+  assert.equal(parseProfileArgs(input).request.target.kind,'new_project','internals still parse it for the explicit refusal');
 });
 
 test('empty creation dispatches to target after disclosure; never creates another Companion',async()=>{
@@ -72,12 +83,29 @@ test('destination preparation hash and requested model are checked before approv
 });
 
 test('submit literal is fully disclosed and idempotency does not repeat dispatch',async()=>{
-  const f=await setup(),text='Test "quoted"\nUnicode ação\u202eEND';let approved;
+  const f=await setup(),text='Test "quoted"\nUnicode ação\u200bEND';let approved;
   f.ctx.answer=async request=>{approved=JSON.parse(request.reason.slice(request.reason.indexOf('\n')+1));return 'allowed-once';};
   const request={idempotency_key:'one',delivery:{mode:'submit',text}};
   const first=await f.run(request),second=await f.run(request);
   assert.equal(approved.initial_text_full,text);assert.equal(first.status,'completed');assert.equal(second.session_id,first.session_id);assert.equal(f.calls.execute,1);assert.equal(f.effects.asks,1);
   assert.equal((await f.run({...request,delivery:{mode:'submit',text:'different'}})).code,'idempotency_conflict');
+});
+
+test('A4: approval shows submit size, sha256 and escaped invisibles; smuggling characters never reach approval',async()=>{
+  const f=await setup(),text='linha 1\nzero\u200bwidth 👨\u200d👩';let reason;
+  f.ctx.answer=async request=>{reason=request.reason;return 'allowed-once';};
+  assert.equal((await f.run({delivery:{mode:'submit',text}})).status,'completed');
+  const approved=JSON.parse(reason.slice(reason.indexOf('\n')+1));
+  for(const hidden of ['\u200b','\u200d'])assert.ok(!reason.includes(hidden));
+  assert.ok(reason.includes('\\u200b'));assert.equal(approved.initial_text_full,text);
+  assert.equal(approved.initial_text_utf8_bytes,Buffer.byteLength(text));assert.equal(approved.initial_text_sha256,createHash('sha256').update(text).digest('hex'));assert.equal(approved.initial_text_hidden_characters,2);
+  for(const bad of ['bidi\u202eEND','tag\u{E0041}','cr\rx'])await assert.rejects(f.run({delivery:{mode:'submit',text:bad}}),{code:'invalid_text'});
+  assert.equal(f.effects.asks,1);assert.equal(f.calls.execute,1);
+  // CRLF is folded before the card: the approved literal is the dispatched literal.
+  let dispatched;const real=f.client.execute;f.client.execute=async(record,preparation,signal)=>{dispatched=preparation.proposal.delivery.text;return real(record,preparation,signal);};
+  assert.equal((await f.run({delivery:{mode:'submit',text:'a\r\nb'}})).status,'completed');
+  const crlf=JSON.parse(reason.slice(reason.indexOf('\n')+1));
+  assert.equal(crlf.initial_text_full,'a\nb');assert.equal(dispatched,'a\nb');assert.equal(crlf.initial_text_sha256,createHash('sha256').update('a\nb').digest('hex'));
 });
 
 test('lost reply leaves durable UNKNOWN; same key and status never retry',async()=>{
@@ -86,6 +114,28 @@ test('lost reply leaves durable UNKNOWN; same key and status never retry',async(
   const result=await f.run(input);assert.equal(result.status,'unknown');assert.equal(result.recovery_required,true);assert.equal(result.effects.session.state,'unknown');
   const again=await f.run(input);assert.equal(again.status,'unknown');assert.equal(f.calls.execute,1);
   const status=await f.controller.execute({operation:'status',operation_id:result.operation_id},f.exec());assert.equal(status.status,'unknown');assert.equal(f.calls.execute,1);
+});
+
+test('proven no-effect replies are not_started, not UNKNOWN; lost replies stay UNKNOWN',async()=>{
+  for(const reply of [{ok:false,error:{code:'grant_invalid',message:'refused'},retrySafe:false,effect:'none'},{ok:false,error:{code:'bridge_unavailable',message:'not sent'},retrySafe:true}]){
+    const f=await setup();f.client.execute=async()=>{f.calls.execute++;return reply;};
+    const result=await f.run({idempotency_key:`none-${reply.error.code}`});
+    assert.equal(result.status,'not_started',JSON.stringify(result));assert.equal(result.effects.session.state,'not_started');
+    assert.equal(result.recovery_required,false);assert.equal(result.code,reply.error.code);
+    assert.equal((await f.controller.execute({operation:'status',operation_id:result.operation_id},f.exec())).status,'not_started');
+  }
+  const f=await setup();f.client.execute=async()=>({ok:false,error:{code:'creation_unknown'},retrySafe:false});
+  assert.equal((await f.run()).status,'unknown');
+});
+
+test('real client: failures before the frame is sent are retrySafe no-effects',async()=>{
+  const {executeProfileCreate}=await import('./profile-client.mjs');
+  const record={bridgeId:randomUUID(),pid:process.pid,startTime:'1',root:'/nonexistent-profile-client-root'};
+  const preparation={id:randomUUID(),hash:'a'.repeat(64),expiresAt:Date.now()+60000};
+  const missingKey=await executeProfileCreate(record,preparation,new AbortController().signal);
+  assert.equal(missingKey.ok,false);assert.equal(missingKey.retrySafe,true);assert.equal(missingKey.error.code,'grant_unavailable');
+  const cancelled=await executeProfileCreate(record,preparation,AbortSignal.abort());
+  assert.equal(cancelled.error.code,'cancelled');assert.equal(cancelled.retrySafe,true);
 });
 
 test('foreign or malformed ACK cannot report successful target creation',async()=>{

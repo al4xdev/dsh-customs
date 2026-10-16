@@ -6,8 +6,9 @@ import { realpathSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json', require = createRequire(anchor);
+const anchor = DSH_CLI_ANCHOR, require = createRequire(anchor);
 const sdk = name => import(require.resolve(`@deepseek-ai/${name}`));
 // Android now contains an owned native-source candidate, not a canonical dependency link.
 // The unchanged push dependency still anchors other canonical fixture modules independently of cwd.

@@ -8,8 +8,9 @@ import { randomUUID } from 'node:crypto';
 import { config, root, sdk } from './test-fixture.mjs';
 import { createGoalPush } from './source.mjs';
 import { hash, publicConfig } from './contracts.mjs';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const ref = goal => ({ id: goal.id, revision: goal.revision });
 

@@ -34,7 +34,7 @@ export function createController(ctx, { authority, store, installModelSelection,
       return publicResult(lease.record);
     } catch (error) {
       if (lease) return publicResult(lease.record);
-      return { code: error.code ?? (exec.signal.aborted ? 'cancelled' : 'create_unavailable'), effect: 'none', retry_safe: false, operation_id: operationId, recovery_required: error.code === 'operation_exists' || error.code === 'ledger_owner_held' };
+      return { code: error.code ?? (exec.signal.aborted ? 'cancelled' : 'create_unavailable'), effect: 'none', retry_safe: false, operation_id: operationId, recovery_required: ['operation_exists', 'ledger_owner_held', 'ledger_owner_dead'].includes(error.code) };
     } finally { await lease?.release(); phase = 'idle'; }
   }
   return {

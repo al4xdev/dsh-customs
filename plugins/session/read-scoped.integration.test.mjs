@@ -8,8 +8,9 @@ import { YAML } from '../../tools/session-companion/profile.mjs';
 import { compositionProposal } from '../session-create/composition-proposal.mjs';
 import { createReadSide } from './read-side.mjs';
 import { parseReadRequest } from './read-contracts.mjs';
+import { DSH_CLI_ANCHOR } from './host-paths.mjs';
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 const load = name => import(require.resolve(`@deepseek-ai/${name}`));
 const local = path => resolve('plugins', path);

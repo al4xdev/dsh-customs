@@ -6,8 +6,8 @@ export const inject = ['tools', 'fs', 'companionFileDownloads'];
 export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: 'download_file',
-    description: 'Offer one owner-requested PC file as a private browser download. Requires explicit one-shot file-share approval. Maximum 20 MiB; link expires in five minutes. Never use for credentials or private profiles. No automatic retries.',
-    parameters: { path: { type: 'string', required: true, description: 'Exact regular PC file requested by the owner; relative to the current Session workspace. Not a folder, URL or glob.' } },
+    description: 'Offer one PC file that the owner (human) asked for as a private browser download. The owner approves each file in a one-shot file-share card. Maximum 20 MiB; the link expires five minutes after it is created. Known credential stores, keys, shell histories and private profiles are refused; never offer such files anyway. No automatic retries.',
+    parameters: { path: { type: 'string', required: true, description: 'Exact regular PC file the owner (human) requested; relative to the current Session workspace. Not a folder, URL or glob.' } },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { download: {
         type: 'object', required: true, additionalProperties: false, properties: {

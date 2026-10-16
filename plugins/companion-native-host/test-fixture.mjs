@@ -4,8 +4,9 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { createCompanionNativeHost, inject as hostInject } from './index.mjs';
+import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 
-const anchor = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json';
+const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 export const sdk = name => import(require.resolve(`@deepseek-ai/${name}`));
 const [{ TypertRemoteService }, { LlmAdapter }, { boot }] = await Promise.all([sdk('dsh-typert-protocol'), sdk('dsh-llm'), sdk('dsh-app-boot')]);
