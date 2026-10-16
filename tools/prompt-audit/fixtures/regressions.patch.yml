@@ -1,0 +1,22 @@
+# Test-only overlay (audit.test.mjs): re-creates the 2026-10-16 regressions on top of a
+# real profile, to prove the audit reports each one. Never apply this to a profile.
+- id: working-activity
+  config:
+    publish: false
+    publishIntervalMs: 500
+    narrate: true
+- id: system-prompt
+  config:
+    includeHarnessIdentity: true
+    personaPrefix: ''
+# The default preset's persona shadows the root personaPrefix, so the preset persona
+# regression is re-created on the preset itself (only its persona row is mounted).
+- id: preset-standard
+  config:
+    id: standard
+    order: 1
+    plugins:
+      - id: persona
+        name: '@deepseek-ai/dsh-persona'
+        config:
+          prefix: You are a coding agent powered by the {{model}} model.

@@ -74,6 +74,7 @@ dotfiles, para não levar dados de uma máquina ao git nem quebrar a outra.
 - `tools/clean-install/host.mjs`: instalação no host (acima); `install.mjs` é a do Docker.
 - `tools/profile-portable.mjs` + `tools/profile-paths.mjs`: caminhos relativos ao perfil.
 - `tools/dsh-launcher/local-model-launch.mjs`: launcher que o `dsh.fish` do dotfiles chama.
+- `tools/prompt-audit/`: auditoria offline do texto que o harness manda ao modelo (abaixo).
 - `frontend/dsh-tui/` e `plugins/dsh-antigravity/`: checkouts locais separados, gitignored.
 - `.plan/`: histórico de tarefas. `.dumps/`: evidência/fixtures locais, gitignored.
 
@@ -302,9 +303,23 @@ ou dependências no produto. Consulte [contrato e preparação](plugins/browser/
 A ativação continua controlada pelo manifest e pelos gates de smoke dos perfis;
 existência do módulo ou um doctor pronto não comprova rollout.
 
+## Auditoria de prompt
+
+Depois de atualizar DSH, forks, plugins, presets ou perfis, ou de reinstalar o runtime,
+rode `npm run prompt:audit`. Ele compõe offline (sem rede, credenciais ou chamada de
+modelo) a primeira requisição de uma sessão nova dos perfis `dsh-tui` e `companion`,
+falha se texto do harness contiver frase proibida (contrato "playful" do status line,
+identidade "powered by DeepSeek Harness", persona dos presets, wrapper de AGENTS como
+"guidance") e compara o texto do harness com `tools/prompt-audit/baseline/<perfil>.txt`.
+Arquivos AGENTS/CLAUDE e skills pessoais entram só como placeholder. O boot usa uma
+cópia do perfil em `/tmp`, nunca o perfil real: reescrever o `cordis.yml` real recarrega
+o Companion do lab. O que fazer com cada falha, e quem aprova `--update`, está no
+[AGENTS.md](AGENTS.md).
+
 ## Validação
 
 ```fish
+npm run test:prompt-audit
 npm run test:workshop
 npm run test:lts:contracts
 npm run test:project-mcp
