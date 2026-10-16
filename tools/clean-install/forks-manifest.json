@@ -8,7 +8,7 @@
       "package": "@deepseek-harness-tui/dsh-tui",
       "version": "0.14.0",
       "repository": "https://github.com/al4xdev/dsh-TUI.git",
-      "commit": "ebea5d738481bbc7c35006410ad9ce1a998dc883",
+      "commit": "4d0b808f782c03da9a19922936119990c2228081",
       "strategy": "source-compile",
       "submodule": {
         "path": "vendor/dsh-std",

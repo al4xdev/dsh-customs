@@ -8,12 +8,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildForks } from './forks.mjs';
 import { preparePi } from './pi.mjs';
 import { installProtocol } from './protocol.mjs';
-import { seedProfile } from './profile.mjs';
 
 const repoDefault = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 export const snapshotDigest = 'e228f62a3176b980617656e94795518b467b32512da4f6044bea2c066fb6ae48';
-export const versions = Object.freeze({ dsh: '0.2.0-rc.2', npm: '12.2.0', pnpm: '11.21.0', esbuild: '0.28.2', nodePty: '1.2.0-beta.15' });
+export const versions = Object.freeze({ dsh: '0.2.0-rc.2', cordis: '4.0.4', npm: '12.2.0', pnpm: '11.21.0', esbuild: '0.28.2', nodePty: '1.2.0-beta.15' });
 
 export function installationPaths(home, repo = repoDefault) {
   assert.equal(home, resolve(home), 'HOME must be absolute and normalized');
@@ -41,7 +40,10 @@ export function runtimePackage({ tui, antigravity, pi }) {
     dependencies: { '@deepseek-ai/dsh': versions.dsh, '@deepseek-harness-tui/dsh-tui': `file:${tui}`, '@deepseek-ai/dsh-llm-pi-ai-antigravity': `file:${antigravity}`, '@earendil-works/pi-ai': `file:${pi}`, '@modelcontextprotocol/server': '2.3.1', yaml: '2.9.1', pnpm: versions.pnpm },
     // All callers, including AG's older ^0.82 range, must see this same public
     // SDK. A second physical copy would split terminal failure subscriptions.
-    overrides: { '@earendil-works/pi-ai': '$@earendil-works/pi-ai' } };
+    overrides: { '@earendil-works/pi-ai': '$@earendil-works/pi-ai',
+      // AG pins cordis 4.0.4 exactly while dsh asks ~4.0.4; once 4.0.5 shipped,
+      // npm nested a second copy under dsh and split the shared Cordis identity.
+      '@deepseek-ai/cordis': versions.cordis } };
 }
 
 export async function sharedGraph(install) {
@@ -202,7 +204,10 @@ export async function installFresh({ home = process.env.HOME, repo = repoDefault
   const unifiedRecovery = await prepareUnifiedRecovery({ repo, esbuildModule: join(toolchain, 'node_modules/esbuild/lib/main.js') }, { build: io.buildUnifiedRecovery });
   const graph = await sharedGraph(paths.install);
   await symlink(join(paths.install, 'node_modules'), join(repo, 'node_modules'), 'dir');
-  const profile = await (io.seedProfile ?? seedProfile)({ home, installRoot: paths.install, repo }, { run });
+  // Lazy: profile.mjs loads yaml at import time, which a fresh machine only has
+  // after the runtime install above; an eager import fails before any work.
+  const seedProfile = io.seedProfile ?? (await import('./profile.mjs')).seedProfile;
+  const profile = await seedProfile({ home, installRoot: paths.install, repo }, { run });
   await mkdir(paths.bin, { recursive: true, mode: 0o700 });
   await symlink(join(paths.install, 'node_modules/.bin/dsh'), join(paths.bin, 'dsh'));
   const receipt = { schemaVersion: 1, status: 'installed-not-booted', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, unifiedRecovery, native, graph, profile, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0, qualification: 'AG host source-built; auxiliary faces committed-prebuilt. No CLI boot, OAuth login or inference acceptance.' };
