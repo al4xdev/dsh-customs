@@ -262,6 +262,13 @@ function planRuns(runs) {
   return { primary, folded: runs.filter(run => run !== primary) };
 }
 
+const canonical = value => Array.isArray(value) ? value.map(canonical)
+  : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+function sameYaml(YAML, a, b) {
+  const parse = text => canonical(YAML.parseDocument(text, { logLevel: 'error' }).toJS());
+  return JSON.stringify(parse(a)) === JSON.stringify(parse(b));
+}
+
 function splice(src, edits) {
   let out = src;
   for (const edit of [...edits].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.replacement + out.slice(edit.end);
@@ -387,6 +394,10 @@ function syncFile(path, label, entries, options, YAML, manifest, migrate) {
     }
   }
 
+  // Equivalent YAML is already current: the Cordis Loader's own write-back reformats
+  // rows (e.g. `config: {}`), and rewriting a live profile only to restyle it would
+  // trigger a hot reload (the Companion host then latches stale).
+  if (exists && next !== src && sameYaml(YAML, src, next)) next = src;
   result.changed = next !== src;
   if (result.changed && options.write) pendingWrites.push({ path, next, result });
   return result;

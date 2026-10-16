@@ -267,3 +267,16 @@ test('a standalone managed insert is folded and research-activation rows stay it
   assert.equal(run(['--check', '--profile', 'dsh-tui']).status, 0);
   assert.equal(text('dsh-tui'), final);
 });
+
+test('a loader-reformatted managed block is current and is not rewritten', () => {
+  const { text, run, root } = fixture({ profiles: ['web'] });
+  assert.equal(run(['--write', '--profile', 'web']).status, 0);
+  // Same rows in the Cordis Loader's write-back style (`config: {}` inline).
+  const restyled = text('web').replace(/config:\n\s+\{\}/g, 'config: {}');
+  assert.notEqual(restyled, text('web'));
+  write(join(dirname(join(root, '..', '.dsh/profiles/web/cordis.patch.yml')), 'cordis.patch.yml'), restyled);
+  const check = run(['--check', '--profile', 'web']);
+  assert.equal(check.status, 0, JSON.stringify(check.report.reports));
+  assert.equal(run(['--write', '--profile', 'web']).status, 0);
+  assert.equal(text('web'), restyled, 'equivalent YAML keeps the existing bytes');
+});
