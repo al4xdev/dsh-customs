@@ -69,8 +69,8 @@ for (const profile of RESILIENCE_PROFILES) test(`${profile}: fresh controller ac
   assert(final.includes(protection)); assert.equal(native(final).disabled, true);
   assert(!rows.some(row => row.id === 'antigravity-quota-retry'));
   for (const id of ['alex-llm-resilience', 'alex-codex-transient-close', 'alex-agent-self-heal']) assert.equal(rows.filter(row => row.id === id).length, 1);
-  assert(rows.find(row => row.id === 'alex-agent-self-heal').name.endsWith('/lib/index-v6-unified.mjs'));
-  assert(rows.find(row => row.id === 'alex-llm-resilience').name.endsWith('/lib/index-v5-unified.mjs'));
+  assert(rows.find(row => row.id === 'alex-agent-self-heal').name.endsWith('/lib/index-v7-unified.mjs'));
+  assert(rows.find(row => row.id === 'alex-llm-resilience').name.endsWith('/lib/index-v6-unified.mjs'));
   assert.equal(f.run(['--check', '--profile', profile]).status, 0);
   assert.equal(f.text(profile), final);
 });
@@ -229,7 +229,8 @@ test('profile rows are written relative to the profile, so another HOME with the
     assert(row.name.startsWith('../'), row.name);
     assert(resolve(profileDir, row.name).startsWith(join(root, 'plugins') + '/'), row.name);
   }
-  assert.equal(rows.find(row => row.id === 'alex-llm-resilience').name, '../../../repo/plugins/llm-resilience/lib/index-v5-unified.mjs');
+  assert.equal(rows.find(row => row.id === 'alex-llm-resilience').name, '../../../repo/plugins/llm-resilience/lib/index-v6-unified.mjs');
+  assert.equal(rows.find(row => row.id === 'alex-agent-self-heal').name, '../../../repo/plugins/agent-self-heal/lib/index-v7-unified.mjs');
   const second = run(['--check']);
   assert.equal(second.status, 0);
   assert(second.report.reports.every(report => !report.changed), JSON.stringify(second.report.reports));

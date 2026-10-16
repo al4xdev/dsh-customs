@@ -1,6 +1,6 @@
 import { resolveHost } from '../common.mjs';
 import { createController } from './controller.mjs';
-import { resolveConfig, RECOVERY_CODES, MAX_RETRIES, MAX_DELAY_MS } from './policy.mjs';
+import { resolveConfig, RECOVERY_CODES, MAX_RETRIES, MAX_DELAY_MS, MAX_PROVIDER_WAIT_MS } from './policy.mjs';
 import { installMainDriver } from './main-driver.mjs';
 import { installAuxDriver } from './aux-driver.mjs';
 const { default: z } = await import(resolveHost('@deepseek-ai/schemastery'));
@@ -13,6 +13,8 @@ const patch = () => z.object({
   initialDelayMs: positiveDelay(), maxDelayMs: positiveDelay(),
   jitterRatio: z.number().min(0).max(1),
   retryableCodes: z.array(z.union(RECOVERY_CODES.map(code => z.const(code)))).default(undefined),
+  // Generic provider-minimum (Retry-After/quota reset) ceiling; absent = 24h.
+  maxProviderWaitMs: z.number().min(1).max(MAX_PROVIDER_WAIT_MS),
 });
 // Schemastery arrays otherwise default to [] even without an explicit default.
 // Preserve absence: only the central resolver may supply policy/purpose lists;
@@ -30,13 +32,11 @@ export function apply(ctx, config = {}, internals = {}) {
   installAuxDriver(ctx, controller);
   // Required consumers may start synchronously when the service is published.
   // The accounting projections must already exist before they can admit work.
-  ctx.provide('llmResilience', controller);
-  // The old controller also provided llmResilience. A new capability name keeps
-  // v4 consumers waiting during warm HMR instead of binding to that old owner.
-  ctx.provide('llmRecovery', controller);
-  // A history-aware owner must not attach to an earlier accounting-v1 service
-  // during replacement. All three names refer to this one controller.
-  ctx.provide('llmRecoveryHistory', controller);
+  // Contract 3 (unbounded chains, accounting v3, audit v2) is published ONLY
+  // under a new name: contract-2 owners (llmResilience/llmRecovery/
+  // llmRecoveryHistory) keep waiting during warm HMR instead of binding to a
+  // controller whose durable schemas they cannot read. One controller, one engine.
+  ctx.provide('llmRecoveryUnbounded', controller);
 }
 
 export { createController };

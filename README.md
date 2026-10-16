@@ -161,6 +161,18 @@ antigas em cache. SDK, perfis e bundles têm promoção/backup próprios; módul
 já abertos continuam em cache até uma abertura nova, sem restart automático.
 Isso não altera os pins históricos acima nem prova saúde/inferência ao vivo.
 
+A tarefa131 revoga dois pontos da112 ("não há tentativa 11" e "um aviso por falha").
+Controller6/self-heal7 (contrato 3, `llmRecoveryUnbounded`) não têm limite de
+contagem para classes transitórias: as dez primeiras esperas mantêm a escala acima
+e as seguintes ficam em 60min indefinidamente; terminais continuam terminais e
+`maxRetries: 0`/limites finitos explícitos valem. Mínimos tipados do provedor
+(Retry-After, reset de cota AGY) são esperados até o teto genérico de 24h. Cada
+cadeia recebe um único aviso curto, sem contador (novo só se o código mudar), e
+toda recusa registra um motivo fixo no log. Audits passam a payload v2/policy3
+(v1 continua legível); voltar a controller5/self-heal6 depois disso não é downgrade
+seguro. `node tools/resilience/doctor.mjs` confere ponte do SDK, bundles e perfis
+sem escrever nada.
+
 A tarefa 33 acrescenta usage ao fork Antigravity local: `/antigravity-usage`
 mostra percentuais reportados por modelo, reset e janela desconhecida;
 `/antigravity-usage --refresh` ignora o cache de 60s. É metadata sob demanda,

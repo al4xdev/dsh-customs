@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installationPaths, assertFresh, runtimePackage, prepareUnifiedRecovery, versions, main } from './install.mjs';
@@ -58,21 +58,25 @@ async function recoveryFixture(t) {
   const { home, repo } = await fixture(t), esbuildModule = join(home, 'compiler.mjs');
   await writeFile(esbuildModule, 'throw new Error("REAL_COMPILER_MUST_NOT_RUN_IN_UNIT_FIXTURE");\n');
   const specs = {
-    controller: { entry: 'plugins/llm-resilience/index.mjs', output: 'plugins/llm-resilience/lib/index-v5-unified.mjs', rollback: 'plugins/llm-resilience/lib/index-v1-resilience.mjs' },
-    selfHeal: { entry: 'plugins/agent-self-heal/index.mjs', output: 'plugins/agent-self-heal/lib/index-v6-unified.mjs', rollback: 'plugins/agent-self-heal/lib/index-v3-resilience.mjs' },
+    controller: { entry: 'plugins/llm-resilience/index.mjs', output: 'plugins/llm-resilience/lib/index-v6-unified.mjs', rollback: 'plugins/llm-resilience/lib/index-v5-unified.mjs' },
+    selfHeal: { entry: 'plugins/agent-self-heal/index.mjs', output: 'plugins/agent-self-heal/lib/index-v7-unified.mjs', rollback: 'plugins/agent-self-heal/lib/index-v6-unified.mjs' },
   };
   const put = async (relative, bytes) => { const target = join(repo, relative); await mkdir(join(target, '..'), { recursive: true }); await writeFile(target, bytes); };
   const rollbackHashes = {};
-  for (const path of ['plugins/agent-self-heal/lib/index-v2-persistence.mjs', ...Object.values(specs).map(spec => spec.rollback)]) {
+  for (const path of ['plugins/agent-self-heal/lib/index-v2-persistence.mjs', 'plugins/agent-self-heal/lib/index-v3-resilience.mjs', 'plugins/llm-resilience/lib/index-v1-resilience.mjs', ...Object.values(specs).map(spec => spec.rollback)]) {
     const bytes = `immutable synthetic rollback ${path}\n`; await put(path, bytes); rollbackHashes[path] = digest(bytes);
   }
+  // Reviewed rollback chain records: controller5 -> 1, owner6 -> 3 -> 2.
+  const chain = { [specs.controller.rollback]: 'plugins/llm-resilience/lib/index-v1-resilience.mjs', [specs.selfHeal.rollback]: 'plugins/agent-self-heal/lib/index-v3-resilience.mjs',
+    'plugins/agent-self-heal/lib/index-v3-resilience.mjs': 'plugins/agent-self-heal/lib/index-v2-persistence.mjs' };
+  for (const [path, previous] of Object.entries(chain)) await put(path.replace(/\.mjs$/, '.build.json'), JSON.stringify({ schema: 1, output: path.split('/').at(-1), sha256: rollbackHashes[path], rollbackSha256: rollbackHashes[previous] }) + '\n');
   const records = {}, contents = {};
   for (const [id, spec] of Object.entries(specs)) {
     const source = `public synthetic ${id} entry\n`; await put(spec.entry, source);
     contents[id] = `// reviewed closed ${id} artifact\n`;
     records[id] = { schema: 1, output: spec.output.split('/').at(-1), sha256: digest(contents[id]), sourceHashes: { [spec.entry]: digest(source) }, compilerVersion: versions.esbuild, target: 'node24', rollbackSha256: rollbackHashes[spec.rollback] };
     await put(spec.output.replace(/\.mjs$/, '.build.json'), JSON.stringify(records[id], null, 2) + '\n');
-    if (id === 'selfHeal') await put(spec.output, contents[id]);
+    await put(spec.output, contents[id]);
   }
   let calls = 0;
   const build = async args => {
@@ -80,35 +84,35 @@ async function recoveryFixture(t) {
     const artifacts = {};
     for (const [id, spec] of Object.entries(specs)) {
       const output = join(repo, spec.output), manifest = output.replace(/\.mjs$/, '.build.json');
-      try { assert.equal(await readFile(output, 'utf8'), contents[id]); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; await writeFile(output, contents[id], { flag: 'wx' }); }
-      artifacts[id] = { ...records[id], output, manifest, reused: id === 'selfHeal' };
+      assert.equal(await readFile(output, 'utf8'), contents[id]);
+      artifacts[id] = { ...records[id], output, manifest, reused: true };
     }
     return { schema: 1, kind: 'unified-recovery-build', artifacts, compiler: esbuildModule, rollbackHashes, modelCalls: 0, profilesModified: false };
   };
   return { repo, esbuildModule, specs, records, contents, put, build, get calls() { return calls; }, async saveRecord(id) { await put(specs[id].output.replace(/\.mjs$/, '.build.json'), JSON.stringify(records[id], null, 2) + '\n'); } };
 }
 
-test('reviewed controller5 builds through the interface with existing exact owner6', async t => {
+test('reviewed controller6/owner7 are reproduced through the interface, never rebuilt', async t => {
   const f = await recoveryFixture(t);
   const first = await prepareUnifiedRecovery(f, { build: f.build });
   assert.equal(first.reviewed, true); assert.equal(f.calls, 1);
-  assert.deepEqual(first.outputBeforeHashes, { controller: null, selfHeal: f.records.selfHeal.sha256 });
+  assert.deepEqual(first.outputBeforeHashes, { controller: f.records.controller.sha256, selfHeal: f.records.selfHeal.sha256 });
   const second = await prepareUnifiedRecovery(f, { build: f.build });
-  assert.equal(f.calls, 2);
-  assert.deepEqual(second.outputBeforeHashes, { controller: f.records.controller.sha256, selfHeal: f.records.selfHeal.sha256 });
+  assert.equal(f.calls, 2); assert.deepEqual(second.outputBeforeHashes, first.outputBeforeHashes);
 });
 
-for (const drift of ['source', 'second-record', 'rollback', 'existing-output', 'source-escape']) test(`${drift} drift rejects both builds before the compiler or first new output`, async t => {
+for (const drift of ['source', 'second-record', 'rollback', 'rollback-record', 'existing-output', 'missing-output', 'source-escape', 'historical']) test(`${drift} drift rejects before the compiler runs`, async t => {
   const f = await recoveryFixture(t);
   if (drift === 'source') await f.put(f.specs.selfHeal.entry, 'changed source');
   if (drift === 'second-record') { f.records.selfHeal.compilerVersion = 'unreviewed'; await f.saveRecord('selfHeal'); }
   if (drift === 'rollback') await f.put(f.specs.selfHeal.rollback, 'changed immutable rollback');
+  if (drift === 'rollback-record') await f.put(f.specs.controller.rollback.replace(/\.mjs$/, '.build.json'), JSON.stringify({ output: 'index-v5-unified.mjs', sha256: 'a'.repeat(64) }));
   if (drift === 'existing-output') await f.put(f.specs.controller.output, 'unknown preexisting output');
+  if (drift === 'missing-output') await rename(join(f.repo, f.specs.controller.output), join(f.repo, 'moved-aside.mjs'));
   if (drift === 'source-escape') { f.records.selfHeal.sourceHashes['plugins/../.dsh/private.mjs'] = 'a'.repeat(64); await f.saveRecord('selfHeal'); }
+  if (drift === 'historical') await f.put('plugins/llm-resilience/lib/index-v1-resilience.mjs', 'changed history');
   await assert.rejects(prepareUnifiedRecovery(f, { build: f.build })); assert.equal(f.calls, 0);
   assert.equal(await readFile(join(f.repo, f.specs.selfHeal.output), 'utf8'), f.contents.selfHeal);
-  if (drift !== 'existing-output') await assert.rejects(readFile(join(f.repo, f.specs.controller.output)), { code: 'ENOENT' });
 });
 
 test('post-compile source changes invalidate the result without pretending multi-file atomicity', async t => {
@@ -117,9 +121,9 @@ test('post-compile source changes invalidate the result without pretending multi
   assert.equal(f.calls, 1);
 });
 
-test('clean install refuses a claimed owner rebuild even with matching output hashes', async t => {
+for (const id of ['controller', 'selfHeal']) test(`clean install refuses a claimed ${id} rebuild even with matching output hashes`, async t => {
   const f = await recoveryFixture(t);
   await assert.rejects(prepareUnifiedRecovery(f, { build: async args => {
-    const result = await f.build(args); result.artifacts.selfHeal.reused = false; return result;
-  } }), /Owner must be reused/);
+    const result = await f.build(args); result.artifacts[id].reused = false; return result;
+  } }), /reproduced byte-for-byte/);
 });

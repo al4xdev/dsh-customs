@@ -1,14 +1,17 @@
 # Antigravity quota-reset retry engine (retired historical fork)
 
 **Do not activate `index.mjs`.** All five managed profiles use the shared
-`llmResilience` recovery authority instead. Plan112 unifies the custom LLM
-algorithms: ten retries, one contextual warning/admission per retry, and nominal
-exponential waits with retry9 at30min and retry10 at60min. There is no independent
-24h quota timer. A typed server minimum above the shared60min cap is a visible
-suspension, not permission to retry earlier or start another engine.
+recovery controller (`alex-llm-resilience`, contract 3: `llmRecoveryUnbounded`)
+instead. Task131 supersedes plan112's limits: no retry count limit for transient
+classes (60min steady interval after the tenth), one contextual warning per
+failure chain, and typed provider minima (including the Antigravity reset hint)
+waited up to the shared 24h provider-wait ceiling by that single controller.
+There is still no independent quota timer; a minimum above the ceiling is a
+visible suspension, not permission to retry earlier or start another engine.
 
 `retired.mjs` is an inert compatibility marker: it requires the shared contract2
-and refuses legacy configuration or an absent controller. It owns no listener,
+(`llmResilience`, which controller6 no longer publishes, so the marker refuses
+under contract 3 by design) and refuses legacy configuration or an absent controller. It owns no listener,
 projection, counter or timer. It is not added to any profile. The original
 `index.mjs` remains byte-identical for provenance and historical rollback
 evidence, **not** as another supported active policy. Native retry must also stay

@@ -3,10 +3,13 @@
 import { readFile, open, mkdir, rename, copyFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const root = '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh-session';
-const backup = '/home/alex/.local/share/dsh-customs-backups/self-heal-persistence-task50';
+// Same runtime location rule as the fish `dsh` launcher: XDG_DATA_HOME, else ~/.local/share.
+const dataHome = process.env.XDG_DATA_HOME || join(homedir(), '.local/share');
+const root = join(dataHome, 'dsh-cli/node_modules/@deepseek-ai/dsh-session');
+const backup = join(dataHome, 'dsh-customs-backups/self-heal-persistence-task50');
 const targets = [
   { path: join(root, 'lib/index.js'), name: 'session-index.js',
     before: '87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d',
@@ -51,7 +54,8 @@ if (!['--apply', '--verify', '--rollback', '--backup-session'].includes(mode)) {
 }
 await mkdir(backup, { recursive: true, mode: 0o700 });
 if (mode === '--backup-session') {
-  const source = '/home/alex/.dsh/sessions/--home-alex-git-my-alex-tavern--/e8d530cf-b66a-46c9-82f2-272317e6f0ce/session.v4.jsonl.zstd';
+  // Historical task84 session (its directory name is the recorded workspace slug, not this machine's path).
+  const source = process.env.SELF_HEAL_TASK84_SESSION ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions/--home-alex-git-my-alex-tavern--/e8d530cf-b66a-46c9-82f2-272317e6f0ce/session.v4.jsonl.zstd');
   const before = hash(await readFile(source));
   const destination = join(backup, `task84-${Date.now()}-${process.pid}.jsonl.zstd`);
   await copyFile(source, destination, constants.COPYFILE_EXCL);

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { recoveryAccountingProjection as projection, recoveryBudget } from './recovery-accounting.mjs';
+import { recoveryAccountingProjection as projection, recoveryBudget, MAX_MIRRORS, RecoveryHistoryError } from './recovery-accounting.mjs';
 import { llmRetryProjection } from './main-driver.mjs';
-import { policyKey } from './policy.mjs';
+import { policyKey, UNBOUNDED_RETRIES } from './policy.mjs';
 import { INITIAL_STATE, foldState, healthyStepProof, recoveredState, manualResumeState } from '../agent-self-heal/logic.mjs';
 const policy = { mode: 'normal', maxRetries: 10, initialDelayMs: 7031.25, maxDelayMs: 3600000, jitterRatio: 0, retryableCodes: ['SERVER', 'TRANSPORT', 'PI_AI_ERROR'] };
 const old = maxRetries => ({ ...policy, maxRetries, initialDelayMs: 5000, maxDelayMs: 1200000, jitterRatio: .1 });
@@ -16,7 +16,7 @@ function fixture() {
     retry(retry, { turn = 1, step = 1, provider = 'p', retryId = 'legacy', captured = old(9) } = {}) {
       return this.append('llm/retry', { turn, step, provider, retryId, policyKey: policyKey(captured), retry }); },
     budget() { return recoveryBudget(owner, accounting, ledger, policy, 'p'); },
-    audit(action, state, progress, recoveryOwnership) { return this.append('agent/self-heal', { version: 1, action,
+    audit(action, state, progress, recoveryOwnership, version = 1) { return this.append('agent/self-heal', { version, action,
       turn: progress?.turn ?? state.chain?.turn ?? 1, step: progress?.step ?? state.chain?.step ?? 1,
       causalSeq: progress?.claimSeq ?? progress?.stepEndSeq ?? state.chain?.attemptSeq,
       state, ...(progress ? { progress } : {}), ...(recoveryOwnership ? { recoveryOwnership } : {}) }); },
@@ -40,9 +40,47 @@ function unified() {
   f.audit('reserved', { ...f.owner, chain, seen: { attemptSeq: attempt.seq, emptyCount: 0 } }, undefined, ownership);
   return { f, ownership };
 }
-test('history v2 rebuilds old checkpoint instead of accepting its empty v1 budget', () => {
-  assert.equal(projection.stateVersion, 2); assert.throws(() => projection.stateSchema.parse({ mirrors: [] }));
-  const f = fixture(); assert.equal(f.budget().consumed, 0);
+test('history v3 rebuilds old checkpoints instead of accepting their implied cap10 budget', () => {
+  assert.equal(projection.stateVersion, 3); assert.throws(() => projection.stateSchema.parse({ mirrors: [] }));
+  const f = fixture(); assert.equal(f.budget().consumed, 0); assert.equal(projection.init().legacyCap, UNBOUNDED_RETRIES);
+  assert.equal(recoveryBudget({}, projection.init(), {}, { ...policy, maxRetries: UNBOUNDED_RETRIES }, 'p').cap, UNBOUNDED_RETRIES);
+});
+test('unbounded unified ordinals beyond ten keep exact continuity; mirrors use a bounded sliding window', () => {
+  const unbounded = { ...policy, maxRetries: UNBOUNDED_RETRIES };
+  const f = fixture(); f.start(1);
+  let owner;
+  for (let cycle = 1; cycle <= 30; cycle++) {
+    const attempt = f.append('assistant/attempt', { turn: 1, step: 1 });
+    const chain = { turn: 1, step: 1, cycle, maxCycles: UNBOUNDED_RETRIES, status: 'reserved', attemptSeq: attempt.seq };
+    owner = { version: 1, kind: 'unified-agent-warning', origin: { turn: 1, step: 1 }, provider: 'p', retryId: 'endless',
+      policyKey: policyKey(unbounded), retry: cycle, legacyNativeConsumed: 0, legacySemanticConsumed: 0, importedConsumed: 0 };
+    f.audit('reserved', { ...f.owner, chain, seen: { attemptSeq: attempt.seq, emptyCount: 0 } }, undefined, owner, 2);
+    f.retry(cycle, { retryId: 'endless', captured: unbounded });
+    assert.equal(f.history.unsafe, false, `cycle ${cycle}`);
+  }
+  assert.equal(f.history.mirrors.length, MAX_MIRRORS); assert.equal(f.history.legacyConsumed, 0);
+  const budget = recoveryBudget(f.owner, f.history, f.ledger, unbounded, 'p');
+  assert.equal(budget.consumed, 30); assert.equal(budget.cap, UNBOUNDED_RETRIES); assert.equal(budget.retryId, 'endless');
+  // A skipped ordinal is still refused, with a fixed reason.
+  const attempt = f.append('assistant/attempt', { turn: 1, step: 1 });
+  f.audit('reserved', { ...f.owner, chain: { ...f.owner.chain, cycle: 32, attemptSeq: attempt.seq }, seen: { attemptSeq: attempt.seq, emptyCount: 0 } }, undefined, { ...owner, retry: 32 }, 2);
+  assert.equal(f.history.unsafe, true); assert.equal(f.history.unsafeReason, 'invalid-ownership-provenance');
+  assert.throws(() => f.budget(), error => error instanceof RecoveryHistoryError && error.reason === 'invalid-ownership-provenance');
+});
+test('old v1 audits and new v2 audits fold together; unknown payload versions still refuse', () => {
+  const { f } = unified();
+  const v1 = f.owner.chain;
+  const attempt = f.append('assistant/attempt', { turn: 1, step: 1 });
+  f.audit('retry-requested', { ...f.owner, chain: { ...v1, status: 'retry-requested', warnedCode: 'SERVER', warnings: 1 }, seen: { attemptSeq: attempt.seq, emptyCount: 0 }, policyVersion: 3 }, undefined, undefined, 2);
+  assert.equal(f.owner.chain.warnedCode, 'SERVER'); assert.equal(f.history.witness.chain.warnedCode, 'SERVER');
+  assert.throws(() => f.audit('observed', f.owner, undefined, undefined, 3), /unsupported required audit version/);
+});
+test('budget refusals carry fixed reasons for logging', () => {
+  const reasons = [];
+  for (const [ledger, accounting] of [[null, projection.init()], [{ malformed: { retry: 1, retryId: 'x' } }, projection.init()], [{}, { mirrors: [] }]]) {
+    try { recoveryBudget({}, accounting, ledger, policy, 'p'); } catch (error) { reasons.push(error.reason); }
+  }
+  assert.deepEqual(reasons, ['missing-native-ledger', 'unknown-native-scope', 'invalid-accounting-state']);
 });
 test('nine legacy cumulative ordinals are nine, survive error finally/end and cold replay', () => {
   const f = fixture(); f.start(1);

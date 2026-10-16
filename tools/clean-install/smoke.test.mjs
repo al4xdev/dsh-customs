@@ -26,9 +26,10 @@ test('observer checks pure source categories and callback disposal without selec
   assert.throws(() => syntheticObserver({ ...observerSource, PROVIDER_FAILURE_OBSERVER_VERSION: 0 }));
 });
 
-test('current harness metadata uses ten contextual retries rather than historical SDK retry defaults', () => {
+test('current harness metadata is the unbounded contextual schedule rather than historical SDK retry defaults', () => {
   const result = syntheticRecoveryPolicy(policySource);
-  assert.equal(result.maxRetries, 10); assert.equal(result.nominalDelaysMs[9], 3600000);
+  assert.equal(result.maxRetries, 'unbounded'); assert.equal(result.nominalDelaysMs[9], 3600000); assert.equal(result.laterDelayMs, 3600000);
+  assert.equal(result.recoveryVersion, 3); assert.equal(result.maxProviderWaitMs, 86400000);
   assert.equal(result.legacySdkMetadataIsAuthority, false);
   assert.throws(() => syntheticRecoveryPolicy({ ...policySource, DEFAULT_POLICY: { ...policySource.DEFAULT_POLICY, maxRetries: 9 } }));
 });
@@ -74,7 +75,7 @@ test('DI smoke imports only validators, observer helper and pure current policy,
   assert.equal(compatibility, true);
   assert.equal(result.sdk50SyntheticRoundtrip, true);
   assert.equal(result.observer38Synthetic, true);
-  assert.equal(result.unifiedRecoveryPolicy.maxRetries, 10);
+  assert.equal(result.unifiedRecoveryPolicy.maxRetries, 'unbounded');
   assert.equal(result.modelCalls, 0);
   assert.equal(result.credentialsRead, false);
   assert.equal(result.cliBooted, false);

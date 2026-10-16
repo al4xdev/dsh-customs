@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { filterPreset } from '../task10-profile/promotion.mjs';
 import { DEFAULT_POLICY } from '../../plugins/llm-resilience/policy.mjs';
-import { migrateResilienceProfile } from '../resilience/profile.mjs';
+import { migrateResilienceProfile, RESILIENCE_MODULES } from '../resilience/profile.mjs';
 
 export function profilePackage() {
   return { name: 'dsh-profile-dsh-tui', private: true, dependencies: { '@deepseek-ai/dsh-base': '0.2.0-rc.2', '@deepseek-harness-tui/dsh-tui': '0.14.0', yaml: '2.9.1' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-harness-tui/dsh-tui'] } } };
@@ -63,8 +63,10 @@ export async function seedProfile({ home, installRoot, repo }, { run } = {}) {
   await run(process.execPath, [join(repo, 'tools/activate.mjs'), '--check', '--profile', 'dsh-tui', '--root', repo], repo);
   const finalManifest = JSON.parse(await readFile(join(repo, 'plugins/activation.json'), 'utf8'));
   const selfheal = finalManifest.plugins.find(plugin => plugin.id === 'alex-agent-self-heal');
-  assert.equal(selfheal?.module, 'agent-self-heal/lib/index-v6-unified.mjs', 'Unified contextual self-heal activation missing');
-  assert.equal(finalManifest.plugins.find(plugin => plugin.id === 'alex-llm-resilience')?.module, 'llm-resilience/lib/index-v5-unified.mjs', 'Immutable unified recovery controller activation missing');
+  // Literal reviewed contract-3 pair, and the migrator must target the same one.
+  assert.equal(selfheal?.module, 'agent-self-heal/lib/index-v7-unified.mjs', 'Unified contextual self-heal activation missing');
+  assert.equal(finalManifest.plugins.find(plugin => plugin.id === 'alex-llm-resilience')?.module, 'llm-resilience/lib/index-v6-unified.mjs', 'Immutable unified recovery controller activation missing');
+  for (const id of ['alex-agent-self-heal', 'alex-llm-resilience']) assert.equal(finalManifest.plugins.find(plugin => plugin.id === id).module, RESILIENCE_MODULES[id], 'Activation and profile migrator recovery targets differ');
   assert.equal(await realpath(join(profile, 'node_modules')), await realpath(join(installRoot, 'node_modules')));
-  return { profile, bundles: pkg.dsh.profile.bundles, publicRetryPolicy: DEFAULT_POLICY, retryAuthority: 'alex-llm-resilience', recoveryVersion: 2, planning: 'Native root/preset planning removed; minimal unchanged', sharedPhysicalModules: true, credentialsSeeded: false, booted: false };
+  return { profile, bundles: pkg.dsh.profile.bundles, publicRetryPolicy: DEFAULT_POLICY, retryAuthority: 'alex-llm-resilience', recoveryVersion: 3, planning: 'Native root/preset planning removed; minimal unchanged', sharedPhysicalModules: true, credentialsSeeded: false, booted: false };
 }

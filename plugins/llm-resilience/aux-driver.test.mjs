@@ -67,7 +67,7 @@ test('buffered retry uses next once then full redispatch; only complete winner e
       const { messages: originalMessages, ...originalIntent } = before;
       assert.deepEqual(intent, originalIntent); assert.notEqual(attempt, original); assert(Object.isFrozen(attempt));
       assert.deepEqual(messages.slice(0, originalMessages.length), originalMessages);
-      assert.equal(messages.length, originalMessages.length + index + 1);
+      assert.equal(messages.length, originalMessages.length + 1, 'one replaced notice, never accumulated');
       for (const warning of messages.slice(originalMessages.length)) {
         assert.equal(warning.role, 'user'); assert.match(warning.content[0].text, /^harness warning:/);
         assert(!warning.content[0].text.includes('CANARY'));
@@ -125,8 +125,8 @@ test('buffered permanent, unsupported, aborted and max-tokens never retry or pub
   }
 });
 
-test('one ten-retry budget applies to any provider; exhaustion remains an explicit safe error', async () => {
-  const h = fixture(() => from([text('discard'), failed('TIMEOUT')]));
+test('an explicit finite budget applies to any provider; exhaustion remains an explicit safe error', async () => {
+  const h = fixture(() => from([text('discard'), failed('TIMEOUT')]), { config: { policy: { maxRetries: 10 } } });
   try {
     const result = await collect(h.service.stream(request({ provider: 'previously-unknown-adapter' })));
     assert.equal(h.calls.length, 11); assert.equal(result.length, 1); assert.equal(result[0].reason.failure.code, 'TIMEOUT');
@@ -134,8 +134,27 @@ test('one ten-retry budget applies to any provider; exhaustion remains an explic
     assert(!result[0].reason.failure.message.includes('CANARY'));
     assertDelays(h.timers, recoveryDelays);
     assert.equal(h.timers[8], 1800000); assert.equal(h.timers[9], 3600000);
-    assert.deepEqual(h.calls.map(call => call.messages.length), Array.from({ length: 11 }, (_, index) => index + 1));
+    assert.deepEqual(h.calls.map(call => call.messages.length), Array.from({ length: 11 }, (_, index) => Math.min(index, 1) + 1));
+    assert(h.logs.length > 0);
   } finally { await h.close(); }
+});
+
+test('auxiliary terminal refusals log a fixed reason, never failure prose', async () => {
+  const h = fixture(() => from([failed('SERVER', { providerRetryAfterMs: 86_400_001 })]));
+  const info = h.ctx.logger.info, warn = h.ctx.logger.warn, lines = [];
+  h.ctx.logger.info = value => { lines.push(['info', value]); };
+  h.ctx.logger.warn = value => { lines.push(['warn', value]); };
+  try {
+    await collect(h.service.stream(request()));
+    assert.deepEqual(lines, [['warn', 'llm-resilience: auxiliary recovery refused (provider-wait-over-cap).']]);
+  } finally { h.ctx.logger.info = info; h.ctx.logger.warn = warn; await h.close(); }
+  for (const [chunks, reason] of [[[failed('AUTH')], 'ineligible-failure'], [[text('visible'), failed()], 'output-exposed']]) {
+    const k = fixture(() => from(chunks)), seen = [];
+    const original = k.ctx.logger.info;
+    k.ctx.logger.info = value => { seen.push(value); };
+    try { await collect(k.service.stream(request({ purpose: 'foreign-purpose' }))); assert.deepEqual(seen, [`llm-resilience: auxiliary recovery refused (${reason}).`]); }
+    finally { k.ctx.logger.info = original; await k.close(); }
+  }
 });
 
 test('registered explicit opt-out is respected and effective policy is captured once', async () => {
@@ -149,11 +168,14 @@ test('registered explicit opt-out is respected and effective policy is captured 
   finally { await k.close(); }
 });
 
-test('Retry-After cannot shorten the nominal delay and hints above60min do not start another timer', async () => {
+test('Retry-After cannot shorten the nominal delay; above 60min it is honored up to the 24h cap, never beyond', async () => {
   const h = fixture((_options, n) => from(n === 1 ? [failed('RATE_LIMIT', { providerRetryAfterMs: 6000, status: 429 })] : [finish()]));
   try { await collect(h.service.stream(request())); assertDelays(h.timers, recoveryDelays.slice(0, 1)); }
   finally { await h.close(); }
-  const k = fixture(() => from([failed('SERVER', { providerRetryAfterMs: 3600001 })]));
+  const j = fixture((_options, n) => from(n === 1 ? [failed('SERVER', { providerRetryAfterMs: 3600001 })] : [finish()]));
+  try { await collect(j.service.stream(request())); assert.equal(j.calls.length, 2); assert.deepEqual(j.timers, [3600001]); }
+  finally { await j.close(); }
+  const k = fixture(() => from([failed('SERVER', { providerRetryAfterMs: 86_400_001 })]));
   try { await collect(k.service.stream(request())); assert.equal(k.calls.length, 1); assert.deepEqual(k.timers, []); }
   finally { await k.close(); }
 });

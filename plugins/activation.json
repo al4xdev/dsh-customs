@@ -18,9 +18,9 @@
   "isolatedProfiles": ["companion"],
   "plugins": [
     { "id": "alex-research", "module": "research/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
-    { "id": "alex-llm-resilience", "module": "llm-resilience/lib/index-v5-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
+    { "id": "alex-llm-resilience", "module": "llm-resilience/lib/index-v6-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
     { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
-    { "id": "alex-agent-self-heal", "module": "agent-self-heal/lib/index-v6-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
+    { "id": "alex-agent-self-heal", "module": "agent-self-heal/lib/index-v7-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
     { "id": "alex-session-bridge", "module": "session/bridge.mjs", "profiles": ["dsh-tui"], "overlay": false },
     { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-apply-patch", "module": "apply-patch/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },

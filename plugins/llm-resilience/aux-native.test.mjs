@@ -20,7 +20,8 @@ function assertWarningPreparations(calls) {
   const original = calls[0];
   for (const [index, request] of calls.entries()) {
     assert.equal(request.system, original.system);
-    assert.equal(request.messages.length, original.messages.length + index);
+    // One notice per operation, replaced only on a code change: never accumulated.
+    assert.equal(request.messages.length, original.messages.length + Math.min(index, 1));
     assert.deepEqual(request.messages.slice(0, original.messages.length), original.messages);
     for (const warning of request.messages.slice(original.messages.length)) {
       assert.equal(warning.role, 'user'); assert.match(warning.content[0].text, /^harness warning:/);
@@ -36,7 +37,7 @@ async function runtime(factory, settings = {}) {
     setTimeout(callback, delay) { const timer = { delay, cancelled: false }; timers.push(timer); queueMicrotask(() => { if (!timer.cancelled) callback(); }); return timer; },
     clearTimeout(timer) { if (timer) timer.cancelled = true; },
   });
-  const scheduler = { ...controller, plan(input) { plans.push(input); return controller.plan(input); } };
+  const scheduler = { ...controller, plan(input) { plans.push(input); return controller.plan(input); }, schedule(input) { plans.push(input); return controller.schedule(input); } };
   const adapter = new class extends llm.LlmAdapter {
     providerRetryPolicy() { return settings.registeredPolicy && llm.resolveRetryPolicy(settings.registeredPolicy, 'aux fixture'); }
     async resolveModel(provider, model) { return { provider, id: model, name: model, contextWindow: 100000, maxTokens: 1000, inputModalities: ['text'] }; }
@@ -92,8 +93,7 @@ test('native adapter throw is normalized by the native boundary before auxiliary
 });
 
 test('native malformed status and hint facts stop before the shared planner with a visible warning', async () => {
-  for (const facts of [{ status: 600 }, { status: '503' }, { status: 599.5 }, { status: null },
-    { providerRetryAfterMs: -1 }, { providerRetryAfterMs: '7000' }]) {
+  for (const facts of [{ status: 600 }, { status: '503' }, { status: 599.5 }, { status: null }]) {
     const h = await runtime(() => from([text('MALFORMED_PREFIX_CANARY'), failed('SERVER', { ...facts, message: 'UNTRUSTED_ERROR_CANARY' })]));
     try {
       const result = await collect(h.ctx.llm.stream(options()));
@@ -104,6 +104,16 @@ test('native malformed status and hint facts stop before the shared planner with
       assert.equal(h.calls.length, 1); assert.equal(h.preparations.length, 1);
       assert.deepEqual(h.timers, []); assert.deepEqual(h.plans, [], 'AUX admission must reject invalid facts even before controller validation');
       assert.equal(h.events.filter(event => event.type.startsWith('llm/retry')).length, 0);
+    } finally { await h.close(); }
+  }
+});
+
+test('native malformed provider minima are ignored: the local schedule applies, never a terminal error', async () => {
+  for (const facts of [{ providerRetryAfterMs: -1 }, { providerRetryAfterMs: '7000' }, { providerRetryAfterMs: 0 }]) {
+    const h = await runtime((_request, n) => from(n === 1 ? [failed('SERVER', facts)] : [text('ok'), finish()]));
+    try {
+      assert.deepEqual(await collect(h.ctx.llm.stream(options())), [text('ok'), finish()]);
+      assert.equal(h.calls.length, 2); assert.deepEqual(h.timers.map(timer => timer.delay), [Math.ceil(7031.25)]);
     } finally { await h.close(); }
   }
 });

@@ -1,14 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateConfig, decide, foldState, transition, INITIAL_STATE, AUDIT_EVENT, chainKey, healthyStepProof, recoveredState, manualResumeState, MAX_HUMAN_GRANTS } from '../logic.mjs';
+import { validateConfig, decide, foldState, transition, INITIAL_STATE, AUDIT_EVENT, chainKey, healthyStepProof, recoveredState, manualResumeState, MAX_HUMAN_GRANTS, MAX_CHAIN_WARNINGS, shouldWarn, warned } from '../logic.mjs';
+import { UNBOUNDED_RETRIES } from '../../llm-resilience/policy.mjs';
 const facts = { code: 'PI_AI_ERROR', summary: 'fixed' };
 const position = { turn: 1, step: 1 };
 const event = state => ({ type: AUDIT_EVENT, data: { version: 1, state } });
-test('default3/disabled0 and safe configurable ceiling', () => {
-  assert.equal(validateConfig().maxCycles, 3); assert.equal(validateConfig({ maxCycles: 0 }).maxCycles, 0); assert.equal(validateConfig({ maxCycles: 10 }).maxCycles, 10);
+test('default unbounded, disabled0 and any explicit finite opt-down', () => {
+  assert.equal(validateConfig().maxCycles, UNBOUNDED_RETRIES); assert.equal(validateConfig({ maxCycles: 0 }).maxCycles, 0);
+  assert.equal(validateConfig({ maxCycles: 10 }).maxCycles, 10); assert.equal(validateConfig({ maxCycles: 11 }).maxCycles, 11);
   assert.equal(decide(INITIAL_STATE, position, 10, facts, 0).kind, 'ignore');
 });
-for (const maxCycles of [-1, 11, 1.5, NaN, Infinity, null, '3']) test(`invalid configurable budget ${maxCycles}`, () => assert.throws(() => validateConfig({ maxCycles })));
+for (const maxCycles of [-1, 1.5, NaN, Infinity, null, '3', Number.MAX_SAFE_INTEGER + 2]) test(`invalid configurable budget ${maxCycles}`, () => assert.throws(() => validateConfig({ maxCycles })));
+test('unbounded chains continue far beyond ten cycles and survive durable reload', () => {
+  let state = INITIAL_STATE;
+  for (let cycle = 1; cycle <= 25; cycle++) {
+    const result = decide(state, position, cycle * 10, facts, UNBOUNDED_RETRIES);
+    assert.equal(result.kind, 'heal'); assert.equal(result.state.chain.cycle, cycle);
+    state = JSON.parse(JSON.stringify(foldState(state, event(result.state))));
+  }
+  assert.equal(state.chain.cycle, 25); assert.equal(state.chain.maxCycles, UNBOUNDED_RETRIES);
+  // An explicit finite cap still suspends, and a pinned finite chain cannot grow.
+  assert.equal(decide(state, position, 999, facts, 25).kind, 'suspended');
+  const finite = decide(INITIAL_STATE, position, 10, facts, 10).state;
+  assert.equal(decide(finite, position, 20, facts, UNBOUNDED_RETRIES).state.chain.maxCycles, 10);
+});
+test('one warning per chain: first failure, then only a changed code, bounded per chain', () => {
+  const first = decide(INITIAL_STATE, position, 10, facts, UNBOUNDED_RETRIES).state.chain;
+  assert.equal(shouldWarn(first, 'TRANSPORT'), true);
+  const announced = warned(first, 'TRANSPORT', 'message-1', 11);
+  assert.deepEqual([announced.warnedCode, announced.warnings, announced.messageId, announced.observationSeq], ['TRANSPORT', 1, 'message-1', 11]);
+  // The next cycle carries the admitted reference instead of dropping it.
+  const next = decide({ ...INITIAL_STATE, seen: { attemptSeq: 10, emptyCount: 0 }, chain: announced }, position, 20, facts, UNBOUNDED_RETRIES).state.chain;
+  assert.deepEqual([next.cycle, next.warnedCode, next.messageId, next.observationSeq], [2, 'TRANSPORT', 'message-1', 11]);
+  assert.equal(shouldWarn(next, 'TRANSPORT'), false); assert.equal(shouldWarn(next, 'SERVER'), true);
+  let chain = next;
+  for (let i = 1; i < MAX_CHAIN_WARNINGS; i++) chain = warned(chain, i % 2 ? 'SERVER' : 'TRANSPORT');
+  assert.equal(chain.warnings, MAX_CHAIN_WARNINGS); assert.equal(shouldWarn(chain, chain.warnedCode === 'SERVER' ? 'TRANSPORT' : 'SERVER'), false);
+  // Terminal: announced once per suspension; a suspended same-code chain is quiet.
+  assert.equal(shouldWarn(next, 'TRANSPORT', true), true);
+  assert.equal(shouldWarn({ ...next, status: 'suspended' }, 'TRANSPORT', true), false);
+  assert.equal(shouldWarn({ ...next, status: 'suspended' }, 'SERVER', true), true);
+  // Audit snapshots cannot rewind the warning count of the same chain.
+  const state = { ...INITIAL_STATE, chain: next };
+  assert.equal(foldState(state, event({ ...state, chain: { ...next, warnings: undefined, warnedCode: undefined } })), state);
+});
 test('config accessors and foreign knobs rejected without invocation', () => {
   let invoked = false;
   assert.throws(() => validateConfig({ get maxCycles() { invoked = true; return 10; } }));

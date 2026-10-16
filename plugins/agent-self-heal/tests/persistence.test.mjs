@@ -3,18 +3,21 @@ import assert from 'node:assert/strict';
 import { createRequire, registerHooks } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve, join } from 'node:path';
+import { homedir } from 'node:os';
 import { mkdir, mkdtemp, readFile, readdir, stat } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { INITIAL_STATE, POLICY_VERSION, PROJECTION_KEY, AUDIT_EVENT, decide, foldState, transition } from '../logic.mjs';
+import { INITIAL_STATE, POLICY_VERSION, PROJECTION_KEY, AUDIT_EVENT, AUDIT_VERSION, decide, foldState, transition, warned } from '../logic.mjs';
 import { createController } from '../../llm-resilience/controller.mjs';
 import { installMainDriver } from '../../llm-resilience/main-driver.mjs';
-import { policyKey } from '../../llm-resilience/policy.mjs';
+import { policyKey, UNBOUNDED_RETRIES } from '../../llm-resilience/policy.mjs';
 import { ACCOUNTING_KEY, recoveryBudget } from '../../llm-resilience/recovery-accounting.mjs';
 
-// Pin the backend and its dependencies to the installation the bridge patches.
-const hostRequire = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+// Pin the backend and its dependencies to the installation the bridge patches
+// (same location rule as the dsh launcher: XDG_DATA_HOME, else ~/.local/share).
+const dataHome = process.env.XDG_DATA_HOME || join(homedir(), '.local/share');
+const hostRequire = createRequire(join(dataHome, 'dsh-cli/package.json'));
 const host = id => import(pathToFileURL(hostRequire.resolve(`@deepseek-ai/${id}`)).href);
 if (process.argv[2] === '--self-heal-original-guard') {
   // Serve exact backed-up bytes at the original module URL: dependencies still
@@ -45,15 +48,44 @@ function installOwner(ctx) {
   // Detached restores never emit live agent events, so no agent/provider is needed.
   const controller = createController();
   installMainDriver(ctx, controller);
-  ctx.provide('llmResilience', controller);
-  ctx.provide('llmRecovery', controller);
-  ctx.provide('llmRecoveryHistory', controller);
+  ctx.provide('llmRecoveryUnbounded', controller);
   ctx.effect(() => () => controller.dispose());
   selfHeal.apply(ctx, { maxCycles: 10 });
   return controller;
 }
 
+function unboundedFixture() {
+  // Policy-3 / payload-2 history: one warned unbounded chain far beyond ten.
+  const id = randomUUID();
+  const session = Session.create(id, undefined, { version: 4, id, createdAt: 0, isSeeded: false });
+  session.append('turn/start', { turn: 1 });
+  session.append('step/start', position);
+  let state = initial();
+  const policy = { ...createController().policyFor('fixture'), maxRetries: UNBOUNDED_RETRIES };
+  for (let cycle = 1; cycle <= 14; cycle++) {
+    const attempt = session.append('assistant/attempt', { ...position, stream: [] });
+    const reserved = decide(state, position, attempt.seq, { code: 'TRANSPORT' }, UNBOUNDED_RETRIES, false, true).state;
+    session.append(AUDIT_EVENT, { version: AUDIT_VERSION, action: 'reserved', ...position, causalSeq: attempt.seq, state: reserved,
+      recoveryOwnership: { version: 2, kind: 'unified-agent-warning', origin: position, provider: 'fixture', retryId: 'unbounded-fixture',
+        policyKey: policyKey(policy), retry: cycle, mirrorRetry: cycle, legacyNativeConsumed: 0, legacySemanticConsumed: 0, importedConsumed: 0 } });
+    state = reserved;
+    if (cycle === 1) {
+      const message = session.append('user/message', { id: randomUUID(), role: 'user', source: { kind: 'self-heal-observation' },
+        content: [{ type: 'text', text: 'harness warning: fixture' }] }, { surfaceOp: 'append', sourceEventSeqs: [attempt.seq] });
+      state = { ...state, chain: warned({ ...state.chain, status: 'admitted' }, 'TRANSPORT', message.data.id, message.seq) };
+      session.append(AUDIT_EVENT, { version: AUDIT_VERSION, action: 'observation-admitted', ...position, causalSeq: attempt.seq, state });
+    }
+    // The native llm/retry UI mirror needs a real request/header; the durable
+    // owner/accounting provenance under test lives in the audits alone.
+    state = transition(state, 'retry-requested');
+    session.append(AUDIT_EVENT, { version: AUDIT_VERSION, action: 'retry-requested', ...position, causalSeq: attempt.seq, state });
+  }
+  const events = session.snapshotEvents();
+  return { header: session.header, events, state: events.reduce(foldState, initial()) };
+}
+
 function fixture(kind) {
+  if (kind === 'unbounded-v2') return unboundedFixture();
   const reservedOnly = kind.endsWith('reserved');
   const unified = kind === 'unified-reserved';
   const id = randomUUID();
@@ -167,7 +199,9 @@ if (process.argv[2] === '--self-heal-original-guard') {
   assert.throws(assertPersistenceCompatible, /cannot reopen required agent\/self-heal/);
   let registrations = 0;
   const untouched = {
-    get() { return { recoveryVersion: 2, recoveryHistoryVersion: 2 }; },
+    // A contract-3 controller is present, so the refusal under test is the missing
+    // persistence bridge, not the controller check that runs first.
+    get() { return { recoveryVersion: 3, recoveryHistoryVersion: 3, schedule() {} }; },
     sessionProjections: { register() { registrations++; } },
     on() { registrations++; }, effect() { registrations++; },
   };
@@ -180,7 +214,7 @@ if (process.argv[2] === '--self-heal-original-guard') {
 } else {
   test('exact original SDK backup refuses plugin before hooks/projection registration', async t => {
     const original = process.env.SELF_HEAL_ORIGINAL_SESSION_INDEX
-      ?? '/home/alex/.local/share/dsh-customs-backups/self-heal-persistence-task50/session-index.js';
+      ?? join(dataHome, 'dsh-customs-backups/self-heal-persistence-task50/session-index.js');
     try { await stat(original); } catch (error) {
       if (error.code === 'ENOENT') { t.skip('original SDK backup absent; set SELF_HEAL_ORIGINAL_SESSION_INDEX'); return; }
       throw error;
@@ -202,7 +236,9 @@ if (process.argv[2] === '--self-heal-original-guard') {
   test('required owner audits refuse unknown protocol versions, actions and invalid state', () => {
     const event = { type: AUDIT_EVENT, data: { version: 1, action: 'observed', state: initial() } };
     assert.doesNotThrow(() => assertAuditReadable(event, selfHeal.stateSchema));
-    for (const change of [{ version: 2 }, { action: 'unknown-action' }, { state: { lastHealthyTurn: 0, hiddenBudget: 10 } }]) {
+    // Payload 1 (old) and 2 (policy 3) are readable; anything newer refuses.
+    assert.doesNotThrow(() => assertAuditReadable({ ...event, data: { ...event.data, version: 2 } }, selfHeal.stateSchema));
+    for (const change of [{ version: 3 }, { action: 'unknown-action' }, { state: { lastHealthyTurn: 0, hiddenBudget: 10 } }, { state: { lastHealthyTurn: 0, policyVersion: 4 } }]) {
       assert.throws(() => assertAuditReadable({ ...event, data: { ...event.data, ...change } }, selfHeal.stateSchema));
     }
   });
@@ -228,7 +264,7 @@ if (process.argv[2] === '--self-heal-original-guard') {
     }
   });
 
-  for (const compression of ['none', 'zstd']) for (const kind of ['reserved', 'exhausted', 'unified-reserved']) {
+  for (const compression of ['none', 'zstd']) for (const kind of ['reserved', 'exhausted', 'unified-reserved', 'unbounded-v2']) {
     test(`${compression}: real filesystem ${kind} roundtrip across fresh process and absent/late owner`, async () => {
       await mkdir(scratch, { recursive: true });
       const root = await mkdtemp(join(scratch, `${compression}-${kind}-`));
@@ -254,6 +290,14 @@ if (process.argv[2] === '--self-heal-original-guard') {
       const loaded = await freshReader({ root, compression, id: source.header.id });
       assert.equal(loaded.access, 'read');
       assert.equal(loaded.count, source.events.length);
+      if (kind === 'unbounded-v2') {
+        assert.equal(loaded.auditCount, 29); assert.deepEqual(loaded.state, source.state);
+        assert.equal(loaded.state.chain.cycle, 14); assert.equal(loaded.state.chain.maxCycles, UNBOUNDED_RETRIES); assert.equal(loaded.state.chain.warnedCode, 'TRANSPORT');
+        assert.equal(loaded.accounting.ownership.retry, 14); assert.equal(loaded.accounting.unsafe, false);
+        assert.equal(loaded.budget.consumed, 14); assert.equal(loaded.budget.cap, UNBOUNDED_RETRIES); assert.equal(loaded.unifiedCanRetry, true);
+        assert.equal(digest(await readFile(path)), before);
+        return;
+      }
       assert.equal(loaded.auditCount, kind.endsWith('reserved') ? 1 : 10);
       assert.equal(loaded.eventHash, digest(JSON.stringify(source.events)), 'all audits, messages and causal sequences survive');
       assert.deepEqual(loaded.state, source.state);
@@ -269,9 +313,10 @@ if (process.argv[2] === '--self-heal-original-guard') {
   test('native task84 read-only load, full owner replay, original artifact hashes unchanged', {
     skip: process.env.SELF_HEAL_NATIVE_TASK84 !== '1', timeout: 180000,
   }, async t => {
-    const root = '/home/alex/.dsh/sessions';
+    // Opt-in only (never in regular runs): the original task84 session location.
+    const root = process.env.SELF_HEAL_TASK84_ROOT ?? join(homedir(), '.dsh/sessions');
     const id = 'e8d530cf-b66a-46c9-82f2-272317e6f0ce';
-    const directory = resolve(root, '--home-alex-git-my-alex-tavern--', id);
+    const directory = resolve(root, process.env.SELF_HEAL_TASK84_WORKSPACE ?? '--home-alex-git-my-alex-tavern--', id);
     const before = await directoryFingerprint(directory);
     let loaded;
     try {

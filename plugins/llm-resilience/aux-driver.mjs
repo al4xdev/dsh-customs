@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { resolveHost } from '../common.mjs';
 import { sanitizeFailure, harnessWarningText } from '../agent-self-heal/sanitizer.mjs';
+import { REFUSAL_REASONS } from './controller.mjs';
 const { isAgentLoopRequest, LlmError, createUserMessage } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 
 const terminalKinds = new Set(['stop', 'tool-calls', 'max-tokens', 'error', 'aborted']);
@@ -21,16 +22,18 @@ function requestSnapshot(options) {
   try { return freeze(structuredClone(intent)); }
   catch { throw failure('AUXILIARY_RETRY_UNSAFE', 'Auxiliary request cannot be safely snapshotted.'); }
 }
-function recoveryWarning(facts, decision, purpose, terminal = false) {
+function recoveryWarning(facts, purpose, terminal = false) {
   const label = ['compaction', 'session-title', 'grammar-fix'].includes(purpose) ? purpose : 'auxiliary';
-  const text = harnessWarningText(facts, { retry: decision.retry, maxRetries: decision.policy.maxRetries,
-    delayMs: decision.delayMs, purpose: label, terminal });
+  // No ordinal/wait counters: an unchanged code keeps byte-identical text.
+  const text = harnessWarningText(facts, { purpose: label, terminal });
   if (typeof text !== 'string' || !text.startsWith('harness warning:') || Buffer.byteLength(text, 'utf8') > 8192) {
     throw failure('AUXILIARY_WARNING_UNSAFE', 'Auxiliary recovery could not admit its harness warning.');
   }
   return text;
 }
 function contextualIntent(intent, warnings, text) {
+  // At most one notice per operation: it is replaced only when the code changes,
+  // so unbounded retries cannot grow the auxiliary request.
   const messages = intent.messages ?? [];
   if (!Array.isArray(messages)) throw failure('AUXILIARY_WARNING_UNSAFE', 'Auxiliary messages cannot safely admit a harness warning.');
   const pendingCalls = new Set();
@@ -51,7 +54,7 @@ function contextualIntent(intent, warnings, text) {
   if (pendingCalls.size) throw failure('AUXILIARY_WARNING_UNSAFE', 'Auxiliary recovery stopped because tool results are still outstanding.');
   const message = createUserMessage({ source: { kind: 'self-heal-observation', label: 'Harness warning', form: 'notice',
     summary: 'Auxiliary model request recovery.' }, content: [{ type: 'text', text }] });
-  warnings.push(message);
+  warnings.splice(0, warnings.length, message);
   return freeze({ ...intent, messages: [...messages, ...warnings] });
 }
 function jsonBytes(value, limit) {
@@ -167,6 +170,13 @@ export function installAuxDriver(ctx, controller) {
     // Never log options, provider messages, bodies, usage, replay or credentials.
     try { ctx.logger?.debug?.(`llm-resilience: auxiliary retry ${decision.retry}; wait ${Math.round(decision.delayMs)}ms`); } catch {}
   };
+  // Fixed reasons only; terminal auxiliary failures are not silent. Levels match
+  // the main owner: anomalies warn, expected terminal outcomes are informational.
+  const anomalies = new Set(['provider-wait-over-cap', 'unrepresentable-policy', 'invalid-retry-ordinal', 'invalid-failure-facts']);
+  const refusal = reason => {
+    const known = REFUSAL_REASONS.includes(reason) || reason === 'output-exposed' ? reason : 'unclassified';
+    try { ctx.logger?.[anomalies.has(known) || known === 'unclassified' ? 'warn' : 'info']?.(`llm-resilience: auxiliary recovery refused (${known}).`); } catch {}
+  };
 
   stops.push(ctx.on('llm/stream', function auxiliary(options, next) {
     // Check the native identity brand BEFORE any clone: purpose is not authority.
@@ -188,7 +198,7 @@ export function installAuxDriver(ctx, controller) {
         const policy = controller.policyFor(intent.provider, registeredPolicy);
         const initialGeneration = generation;
         const warnings = [];
-        let previousRetry = 0, exposed = false, first = true, retryIntent = intent;
+        let previousRetry = 0, exposed = false, first = true, retryIntent = intent, warnedCode;
         while (true) {
           if (signal.aborted) throw cancelled();
           if (!first && generation !== initialGeneration) throw unsafeReplay();
@@ -220,11 +230,14 @@ export function installAuxDriver(ctx, controller) {
           iterator = undefined;
           if (retryRequest) { owned.delete(retryRequest); retryRequest = undefined; }
           if (!terminal) throw failure('AUXILIARY_PROTOCOL_INVALID', 'Auxiliary LLM ended without a terminal outcome.');
+          if (terminal.reason.kind === 'error' && exposed) refusal('output-exposed');
           if (terminal.reason.kind === 'error' && !exposed) {
             const originalFailure = terminal.reason.failure;
             const facts = sanitizeFailure(originalFailure, intent.provider);
             const classified = facts && Object.freeze({ ...originalFailure, diagnosticCategory: facts.diagnosticCategory });
-            const decision = facts && !facts.invalidFailureFacts && controller.plan({ provider: intent.provider, failure: classified, previousRetry, registeredPolicy, policy });
+            const scheduled = facts && !facts.invalidFailureFacts && controller.schedule({ provider: intent.provider, failure: classified, previousRetry, registeredPolicy, policy });
+            const decision = scheduled?.kind === 'wait' ? scheduled : undefined;
+            if (!decision) refusal(!facts ? 'ineligible-failure' : scheduled ? scheduled.reason : 'invalid-failure-facts');
             if (decision) {
               // Public APIs do not expose the generation captured by an earlier
               // prepared handle. This conservative fence catches every observed
@@ -232,9 +245,12 @@ export function installAuxDriver(ctx, controller) {
               // to a registration generation changed during this operation.
               if (generation !== initialGeneration) throw unsafeReplay();
               previousRetry = decision.retry;
-              // The same operation owns the counter even though each preparation
-              // receives a new notice. No session/agent journal is fabricated here.
-              retryIntent = contextualIntent(intent, warnings, recoveryWarning(facts, decision, intent.purpose));
+              // The same operation owns the counter. Its notice changes only with
+              // the error code; no session/agent journal is fabricated here.
+              if (facts.code !== warnedCode) {
+                retryIntent = contextualIntent(intent, warnings, recoveryWarning(facts, intent.purpose));
+                warnedCode = facts.code;
+              }
               // Release failed output before a possibly long backoff, not only
               // when the next iteration happens to let its scope be collected.
               chunks.length = 0; terminal = undefined;
@@ -243,7 +259,7 @@ export function installAuxDriver(ctx, controller) {
               continue;
             }
             if (facts) {
-              const text = recoveryWarning(facts, { retry: previousRetry, policy, delayMs: 0 }, intent.purpose, true);
+              const text = recoveryWarning(facts, intent.purpose, true);
               // Keep original routing/permanence facts; only replace unsafe display
               // prose. A terminal warning is not a synthetic successful answer.
               terminal = Object.freeze({ ...terminal, reason: Object.freeze({ kind: 'error',

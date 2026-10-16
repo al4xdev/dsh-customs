@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildForks } from './forks.mjs';
 import { preparePi } from './pi.mjs';
 import { installProtocol } from './protocol.mjs';
+import { installAgentInstructions } from './agent-instructions.mjs';
 
 const repoDefault = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -70,9 +71,10 @@ export async function sharedGraph(install) {
   return proof;
 }
 
-/** Both reviewed records are checked before the builder can publish the new
- * controller. The owner must already exist and is verified, never rebuilt;
- * this wrapper independently binds its result to the checked-in review records.
+/** Both reviewed contract-3 records AND their checked-in artifacts are verified
+ * before the builder runs. The builder must then reproduce both artifacts
+ * byte-for-byte (reused, never published); this wrapper independently binds its
+ * result to the checked-in review records, sources and rollback chain.
  */
 export async function prepareUnifiedRecovery({ repo, esbuildModule }, { build } = {}) {
   assert.equal(repo, await realpath(repo), 'Recovery repository must be canonical');
@@ -84,11 +86,20 @@ export async function prepareUnifiedRecovery({ repo, esbuildModule }, { build } 
     return readFile(path);
   };
   const specs = {
-    controller: { entry: 'plugins/llm-resilience/index.mjs', output: 'plugins/llm-resilience/lib/index-v5-unified.mjs', rollback: 'plugins/llm-resilience/lib/index-v1-resilience.mjs' },
-    selfHeal: { entry: 'plugins/agent-self-heal/index.mjs', output: 'plugins/agent-self-heal/lib/index-v6-unified.mjs', rollback: 'plugins/agent-self-heal/lib/index-v3-resilience.mjs' },
+    controller: { entry: 'plugins/llm-resilience/index.mjs', output: 'plugins/llm-resilience/lib/index-v6-unified.mjs', rollback: 'plugins/llm-resilience/lib/index-v5-unified.mjs' },
+    selfHeal: { entry: 'plugins/agent-self-heal/index.mjs', output: 'plugins/agent-self-heal/lib/index-v7-unified.mjs', rollback: 'plugins/agent-self-heal/lib/index-v6-unified.mjs' },
   };
-  const historicPaths = ['plugins/agent-self-heal/lib/index-v2-persistence.mjs', ...Object.values(specs).map(spec => spec.rollback)];
+  const historicPaths = ['plugins/agent-self-heal/lib/index-v2-persistence.mjs', 'plugins/agent-self-heal/lib/index-v3-resilience.mjs', 'plugins/llm-resilience/lib/index-v1-resilience.mjs', ...Object.values(specs).map(spec => spec.rollback)];
   const historicHashes = Object.fromEntries(await Promise.all(historicPaths.map(async path => [path, sha(await publicFile(join(repo, path)))])));
+  // Walk the reviewed rollback chain (controller6 -> 5 -> 1, owner7 -> 6 -> 3 -> 2):
+  // each artifact must still match its own record, and every recorded rollback
+  // hash must name a present, unchanged historical artifact.
+  for (const path of [...Object.values(specs).map(spec => spec.rollback), 'plugins/agent-self-heal/lib/index-v3-resilience.mjs']) {
+    const rollbackRecord = JSON.parse(await publicFile(join(repo, path.replace(/\.mjs$/, '.build.json'))));
+    assert.equal(rollbackRecord.output, basename(path), 'Rollback record output differs');
+    assert.equal(rollbackRecord.sha256, historicHashes[path], 'Rollback artifact differs from its reviewed record');
+    assert(Object.values(historicHashes).includes(rollbackRecord.rollbackSha256), 'Rollback chain names an unknown or changed historical artifact');
+  }
   const checked = {};
   for (const [id, spec] of Object.entries(specs)) {
     const output = join(repo, spec.output), manifest = output.replace(/\.mjs$/, '.build.json');
@@ -106,9 +117,11 @@ export async function prepareUnifiedRecovery({ repo, esbuildModule }, { build } 
       assert.match(expected, /^[a-f0-9]{64}$/);
       assert.equal(sha(await publicFile(path)), expected, 'Recovery source record drift');
     }
+    // A fresh install verifies the checked-in reviewed artifact; it never
+    // publishes a first build of its own.
     const outputBeforeHash = await statOrNull(output) ? sha(await publicFile(output)) : null;
-    if (id === 'selfHeal') assert(outputBeforeHash !== null, 'Existing reviewed immutable owner required');
-    if (outputBeforeHash !== null) assert.equal(outputBeforeHash, record.sha256, 'Versioned recovery output differs; refuse overwrite');
+    assert(outputBeforeHash !== null, 'Existing reviewed immutable recovery artifact required');
+    assert.equal(outputBeforeHash, record.sha256, 'Versioned recovery output differs; refuse overwrite');
     checked[id] = { output, manifest, manifestSha256: sha(manifestBytes), record, outputBeforeHash };
   }
   // Lazy import keeps help/tests inert and never invokes the historical builder.
@@ -117,11 +130,12 @@ export async function prepareUnifiedRecovery({ repo, esbuildModule }, { build } 
   assert.equal(built.schema, 1); assert.equal(built.kind, 'unified-recovery-build');
   assert.equal(built.compiler, compiler, 'Unexpected recovery compiler');
   assert.equal(built.modelCalls, 0); assert.equal(built.profilesModified, false);
-  assert.deepEqual(built.rollbackHashes, historicHashes, 'Historical recovery records differ');
+  for (const [path, hash] of Object.entries(built.rollbackHashes)) assert.equal(historicHashes[path], hash, 'Historical recovery records differ');
+  for (const spec of Object.values(specs)) assert.equal(built.rollbackHashes[spec.rollback], historicHashes[spec.rollback], 'Rollback hash missing from build');
   assert.deepEqual(Object.keys(built.artifacts).sort(), Object.keys(specs).sort(), 'Both recovery artifacts required');
   for (const [id, expected] of Object.entries(checked)) {
     const artifact = built.artifacts[id];
-    if (id === 'selfHeal') assert.equal(artifact.reused, true, 'Owner must be reused without rebuilding');
+    assert.equal(artifact.reused, true, 'Reviewed recovery artifact must be reproduced byte-for-byte, not rebuilt');
     assert.equal(artifact.output, expected.output); assert.equal(artifact.manifest, expected.manifest);
     assert.equal(artifact.sha256, expected.record.sha256); assert.deepEqual(artifact.sourceHashes, expected.record.sourceHashes);
     assert.equal(artifact.rollbackSha256, expected.record.rollbackSha256);
@@ -201,6 +215,8 @@ export async function installFresh({ home = process.env.HOME, repo = repoDefault
     native = { package: 'node-pty', version: pty.version, rebuilt: true, nodeHeaders: '/usr/local' };
   }
   const protocol = await (io.installProtocol ?? installProtocol)({ sessionRoot: join(paths.install, 'node_modules/@deepseek-ai/dsh-session') });
+  // Owner's AGENTS files as standing rules, not optional guidance (agent-instructions.mjs).
+  const agentInstructions = await (io.installAgentInstructions ?? installAgentInstructions)({ packageRoot: join(paths.install, 'node_modules/@deepseek-ai/dsh-agent-instructions') });
   const unifiedRecovery = await prepareUnifiedRecovery({ repo, esbuildModule: join(toolchain, 'node_modules/esbuild/lib/main.js') }, { build: io.buildUnifiedRecovery });
   const graph = await sharedGraph(paths.install);
   await symlink(join(paths.install, 'node_modules'), join(repo, 'node_modules'), 'dir');
@@ -210,7 +226,7 @@ export async function installFresh({ home = process.env.HOME, repo = repoDefault
   const profile = await seedProfile({ home, installRoot: paths.install, repo }, { run });
   await mkdir(paths.bin, { recursive: true, mode: 0o700 });
   await symlink(join(paths.install, 'node_modules/.bin/dsh'), join(paths.bin, 'dsh'));
-  const receipt = { schemaVersion: 1, status: 'installed-not-booted', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, unifiedRecovery, native, graph, profile, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0, qualification: 'AG host source-built; auxiliary faces committed-prebuilt. No CLI boot, OAuth login or inference acceptance.' };
+  const receipt = { schemaVersion: 1, status: 'installed-not-booted', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, agentInstructions, unifiedRecovery, native, graph, profile, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0, qualification: 'AG host source-built; auxiliary faces committed-prebuilt. No CLI boot, OAuth login or inference acceptance.' };
   await writeFile(join(paths.install, 'clean-install-receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   return receipt;
 }

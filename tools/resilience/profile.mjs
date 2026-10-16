@@ -17,10 +17,19 @@ function loadYaml() {
 const YAML = loadYaml();
 export const RESILIENCE_PROFILES = Object.freeze(['web', 'headless', 'tui', 'dsh-tui', 'companion']);
 export const RESILIENCE_MODULES = Object.freeze({
-  'alex-llm-resilience': 'llm-resilience/lib/index-v5-unified.mjs',
+  'alex-llm-resilience': 'llm-resilience/lib/index-v6-unified.mjs',
   'alex-codex-transient-close': 'codex-transient-close/index.mjs',
-  'alex-agent-self-heal': 'agent-self-heal/lib/index-v6-unified.mjs',
+  'alex-agent-self-heal': 'agent-self-heal/lib/index-v7-unified.mjs',
 });
+// Older owned module paths stay recognized so existing profiles migrate in place.
+export const LEGACY_RESILIENCE_MODULES = Object.freeze({
+  'alex-llm-resilience': Object.freeze(['index.mjs', 'lib/index-v2-unified.mjs', 'lib/index-v3-unified.mjs', 'lib/index-v4-unified.mjs', 'lib/index-v5-unified.mjs'].map(name => `llm-resilience/${name}`)),
+  'alex-agent-self-heal': Object.freeze(['index-v2-persistence.mjs', 'index-v3-resilience.mjs', 'index-v4-unified.mjs', 'index-v5-unified.mjs', 'index-v6-unified.mjs'].map(name => `agent-self-heal/lib/${name}`)),
+});
+// Shared comment for an enabled AGY reset row. The superseded note (from the
+// 60-minute contract) is replaced in place rather than left contradicting it.
+export const QUOTA_NOTE = '# Harness recovery: provider reset hints are waited up to the shared 24h provider-wait cap; larger minimums suspend.';
+const LEGACY_QUOTA_NOTES = Object.freeze(['# Harness recovery: reset hints never extend the shared cap (at most 60min); larger minimums suspend.']);
 export class ProfileMigrationError extends Error {
   constructor(code, path) { super(`Resilience profile migration refused: ${code} at ${path}`); this.name = 'ProfileMigrationError'; this.code = code; this.path = path; }
 }
@@ -96,8 +105,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
     'antigravity-quota-retry': join(root, 'plugins/antigravity-quota-retry/index.mjs'),
   };
   const acceptedPaths = Object.fromEntries(Object.entries(paths).map(([id, module]) => [id, [module,
-    ...(id === 'alex-llm-resilience' ? ['index.mjs', 'lib/index-v2-unified.mjs', 'lib/index-v3-unified.mjs', 'lib/index-v4-unified.mjs'].map(name => join(root, 'plugins/llm-resilience', name)) : []),
-    ...(id === 'alex-agent-self-heal' ? ['index-v2-persistence.mjs', 'index-v3-resilience.mjs', 'index-v4-unified.mjs', 'index-v5-unified.mjs'].map(name => join(root, 'plugins/agent-self-heal/lib', name)) : []),
+    ...(LEGACY_RESILIENCE_MODULES[id] ?? []).map(legacy => join(root, 'plugins', legacy)),
   ].flatMap(path => [path, pathToFileURL(path).href, ...(profileDir ? [profileRelative(profileDir, path)] : [])])]));
   // With a profile directory, owned rows are emitted relative to it so the same
   // profile text resolves under any HOME; without one, legacy absolute output.
@@ -151,7 +159,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
     }
     const otherOwnedModule = ownedModuleIds.get(name);
     if (otherOwnedModule && !['alex-llm-resilience', 'antigravity-quota-retry'].includes(otherOwnedModule) && id !== otherOwnedModule) refuse('foreign-owned-plugin-id', location);
-    if (name === '@deepseek-ai/dsh-llm-retry' || (typeof name === 'string' && /\/(?:llm-resilience\/(?:index|lib\/index-v[2345]-unified)|antigravity-quota-retry\/index)\.mjs$/.test(name))) {
+    if (name === '@deepseek-ai/dsh-llm-retry' || (typeof name === 'string' && /\/(?:llm-resilience\/(?:index|lib\/index-v[2-6]-unified)|antigravity-quota-retry\/index)\.mjs$/.test(name))) {
       const expected = name === '@deepseek-ai/dsh-llm-retry' ? 'llm-retry' : /\/llm-resilience\//.test(name) ? 'alex-llm-resilience' : 'antigravity-quota-retry';
       if (id !== expected) refuse('foreign-retry-engine-id', location);
     }
@@ -227,10 +235,19 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
       }
     } else {
       const quota = child(config, 'quotaResetRetry');
-      const quotaNote = '# Harness recovery: reset hints never extend the shared cap (at most 60min); larger minimums suspend.';
-      if (YAML.isMap(quota) && !quota.tag && !quota.anchor && child(quota, 'enabled')?.value === true && child(quota, 'maxWaitMs')?.value === 86400000 && !sourceText.includes(quotaNote)) {
-        const start = lineStart(row.node.range[0]);
-        edit(start, start, quotaNote + newline, `${row.location}.quotaResetRetry`, 'clarify-shared-quota-cap');
+      if (YAML.isMap(quota) && !quota.tag && !quota.anchor && child(quota, 'enabled')?.value === true && child(quota, 'maxWaitMs')?.value === 86400000 && !sourceText.includes(QUOTA_NOTE)) {
+        let replaced = false;
+        for (const legacy of LEGACY_QUOTA_NOTES) {
+          const at = sourceText.indexOf(legacy);
+          // Only an exact whole comment line is rewritten; anything else is left alone.
+          if (at < 0 || lineStart(at) !== at || !/^\r?\n/.test(sourceText.slice(at + legacy.length))) continue;
+          edit(at, at + legacy.length, QUOTA_NOTE, `${row.location}.quotaResetRetry`, 'clarify-shared-quota-cap');
+          replaced = true; break;
+        }
+        if (!replaced) {
+          const start = lineStart(row.node.range[0]);
+          edit(start, start, QUOTA_NOTE + newline, `${row.location}.quotaResetRetry`, 'clarify-shared-quota-cap');
+        }
       }
       const pair = pairOf(config, 'retryPolicy');
       if (!pair) continue;
@@ -249,7 +266,9 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
   }
   const existingConfigNode = controllerRow && child(controllerRow.node, 'config');
   const existingConfig = existingConfigNode ? plain(mapping(existingConfigNode, 'alex-llm-resilience.config'), 'alex-llm-resilience.config') : {};
-  if ((existingConfig.selfHeal?.maxCycles ?? 3) > 10) refuse('unsupported-self-heal-cap', 'alex-llm-resilience.config.selfHeal.maxCycles');
+  // Counts are unbounded by default; an explicit cap is any nonnegative safe integer.
+  const legacyCap = existingConfig.selfHeal?.maxCycles;
+  if (legacyCap !== undefined && (!Number.isSafeInteger(legacyCap) || legacyCap < 0)) refuse('unsupported-self-heal-cap', 'alex-llm-resilience.config.selfHeal.maxCycles');
   try { resolveConfig(existingConfig); } catch { refuse('invalid-central-config', 'alex-llm-resilience.config'); }
   const additions = Object.create(null);
   const finalProviders = Object.assign(Object.create(null), existingConfig.providers ?? {});
@@ -303,7 +322,7 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
     const configNode = child(heal.node, 'config');
     const config = configNode ? plain(mapping(configNode, 'alex-agent-self-heal.config'), 'alex-agent-self-heal.config') : {};
     exactKeys(config, ['maxCycles'], 'alex-agent-self-heal.config');
-    if (own(config, 'maxCycles') && (!Number.isInteger(config.maxCycles) || config.maxCycles < 0 || config.maxCycles > 10)) refuse('invalid-local-self-heal-cap', 'alex-agent-self-heal.config.maxCycles');
+    if (own(config, 'maxCycles') && (!Number.isSafeInteger(config.maxCycles) || config.maxCycles < 0)) refuse('invalid-local-self-heal-cap', 'alex-agent-self-heal.config.maxCycles');
     // A written cap remains an opt-down, including the previous default of 3.
     // Only omission inherits the unified budget; migration cannot grant credits.
     if (!configNode) queueAppend(heal.node, { config: {} }, heal.location, 'declare-central-self-heal-default');
@@ -344,5 +363,5 @@ export function migrateResilienceProfile(sourceText, { repoRoot, profile, profil
   const parsed = YAML.parseDocument(candidate, { uniqueKeys: true });
   if (parsed.errors.length) refuse('candidate-yaml-invalid', 'document');
   const changes = Object.freeze(edits.map(({ priority, ...change }) => Object.freeze(change)));
-  return Object.freeze({ candidate, changed: candidate !== sourceText, changes, sourceSha256: digest(sourceText), candidateSha256: digest(candidate), profile, offsetEncoding: 'utf16', recoveryVersion: 2, requiresCompatValidation: true });
+  return Object.freeze({ candidate, changed: candidate !== sourceText, changes, sourceSha256: digest(sourceText), candidateSha256: digest(candidate), profile, offsetEncoding: 'utf16', recoveryVersion: 3, requiresCompatValidation: true });
 }

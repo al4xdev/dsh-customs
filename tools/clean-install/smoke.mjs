@@ -36,17 +36,20 @@ export function syntheticObserver(observer) {
 
 /** Current harness authority only. The unchanged SDK recipe's historical 9/20m
  * fixture is neither an active profile override nor an additional retry budget.
+ * Contract 3: no count limit by default; ten doubling intervals reach the hour
+ * cap, which every later retry keeps; provider minima are honored up to 24h.
  */
 export function syntheticRecoveryPolicy(policyModule) {
   const { DEFAULT_POLICY, localDelay } = policyModule;
-  assert.equal(DEFAULT_POLICY.maxRetries, 10);
+  assert.equal(DEFAULT_POLICY.maxRetries, Number.MAX_SAFE_INTEGER, 'Unbounded default retry count required');
   assert.equal(DEFAULT_POLICY.initialDelayMs, 7031.25);
   assert.equal(DEFAULT_POLICY.maxDelayMs, 3600000);
   assert.equal(DEFAULT_POLICY.jitterRatio, 0);
-  const delays = Array.from({ length: DEFAULT_POLICY.maxRetries }, (_, index) => localDelay(DEFAULT_POLICY, index + 1, () => 0.5));
-  assert.deepEqual(delays, [7031.25, 14062.5, 28125, 56250, 112500, 225000, 450000, 900000, 1800000, 3600000]);
-  assert.equal(delays.reduce((sum, delay) => sum + delay, 0), 7192968.75);
-  return { authority: 'alex-llm-resilience', recoveryVersion: 2, maxRetries: 10, nominalDelaysMs: delays, accumulatedWaitMs: 7192968.75, legacySdkMetadataIsAuthority: false };
+  assert.equal(DEFAULT_POLICY.maxProviderWaitMs, 86400000);
+  const delays = Array.from({ length: 12 }, (_, index) => localDelay(DEFAULT_POLICY, index + 1, () => 0.5));
+  assert.deepEqual(delays, [7031.25, 14062.5, 28125, 56250, 112500, 225000, 450000, 900000, 1800000, 3600000, 3600000, 3600000]);
+  assert.equal(delays.slice(0, 10).reduce((sum, delay) => sum + delay, 0), 7192968.75);
+  return { authority: 'alex-llm-resilience', recoveryVersion: 3, maxRetries: 'unbounded', nominalDelaysMs: delays.slice(0, 10), laterDelayMs: 3600000, firstTenWaitMs: 7192968.75, maxProviderWaitMs: 86400000, legacySdkMetadataIsAuthority: false };
 }
 
 /** Imports only selected public validators/helper modules, never SDK root/index,

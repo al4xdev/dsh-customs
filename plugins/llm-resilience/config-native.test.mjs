@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { resolveHost } from '../common.mjs';
-import { RECOVERY_CODES, DEFAULT_AUXILIARY } from './policy.mjs';
+import { RECOVERY_CODES, DEFAULT_AUXILIARY, UNBOUNDED_RETRIES } from './policy.mjs';
 
 const plugin = await import(process.env.RESILIENCE_CONTROLLER_MODULE
   ? pathToFileURL(process.env.RESILIENCE_CONTROLLER_MODULE).href : './index.mjs');
@@ -18,13 +18,13 @@ async function configured(raw) {
     // Unlike direct apply(ctx, {}), native plugin loading applies Config first.
     // Schemastery's implicit [] used to disable every recoverable error here.
     await ctx.plugin(plugin, raw);
-    const controller = ctx.get('llmRecoveryHistory');
+    const controller = ctx.get('llmRecoveryUnbounded');
     assert(controller, 'real native plugin must provide its readiness service');
-    assert.equal(controller, ctx.get('llmRecovery'));
-    assert.equal(controller, ctx.get('llmResilience'));
-    assert.equal(controller.recoveryVersion, 2);
-    assert.equal(controller.recoveryHistoryVersion, 2);
-    assert(projections.some(definition => definition.key === 'llmRecoveryAccounting' && definition.stateVersion === 2));
+    // Contract-2 aliases are deliberately not published by contract 3.
+    for (const old of ['llmRecovery', 'llmResilience', 'llmRecoveryHistory']) assert.equal(ctx.get(old), undefined, old);
+    assert.equal(controller.recoveryVersion, 3);
+    assert.equal(controller.recoveryHistoryVersion, 3);
+    assert(projections.some(definition => definition.key === 'llmRecoveryAccounting' && definition.stateVersion === 3));
     return { ctx, controller, async close() { await ctx.fiber.dispose(); } };
   } catch (error) { await ctx.fiber.dispose(); throw error; }
 }
@@ -60,7 +60,21 @@ test('native sparse provider overrides inherit error lists and preserve route ca
     assert(h.controller.plan({ provider: 'arbitrary', failure: { code: 'TRANSPORT' }, previousRetry: 1 }));
     assert.equal(h.controller.plan({ provider: 'arbitrary', failure: { code: 'TRANSPORT' }, previousRetry: 2 }), undefined);
     assert(h.controller.plan({ provider: 'another', failure: { code: 'SERVER' }, previousRetry: 9 }));
+    assert(h.controller.plan({ provider: 'another', failure: { code: 'SERVER' }, previousRetry: 99 }), 'unlisted routes are unbounded');
   } finally { await h.close(); }
+});
+
+test('native Config accepts the unbounded default, explicit finite caps and the provider-wait ceiling', async () => {
+  const h = await configured({ policy: { maxRetries: 25, maxProviderWaitMs: 7_200_000 }, providers: { patient: { maxProviderWaitMs: 86_400_000 } } });
+  try {
+    assert.equal(h.controller.config.policy.maxRetries, 25);
+    assert.equal(h.controller.plan({ provider: 'x', failure: { code: 'SERVER' }, previousRetry: 25 }), undefined);
+    assert.equal(h.controller.schedule({ provider: 'x', failure: { code: 'RATE_LIMIT', providerRetryAfterMs: 7_200_001 } }).reason, 'provider-wait-over-cap');
+    assert.equal(h.controller.plan({ provider: 'patient', failure: { code: 'RATE_LIMIT', providerRetryAfterMs: 80_000_000 } }).delayMs, 80_000_000);
+  } finally { await h.close(); }
+  const d = await configured({});
+  try { assert.equal(d.controller.config.policy.maxRetries, UNBOUNDED_RETRIES); } finally { await d.close(); }
+  for (const raw of [{ policy: { maxProviderWaitMs: 86_400_001 } }, { policy: { maxRetries: -1 } }]) await assert.rejects(configured(raw));
 });
 
 test('native explicit empty global lists are still opt-outs, not absent defaults', async () => {

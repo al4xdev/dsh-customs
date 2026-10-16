@@ -20,6 +20,7 @@ import { installationPaths, prepareUnifiedRecovery, runtimePackage, sharedGraph,
 import { buildForks, loadForkManifest } from './forks.mjs';
 import { preparePi } from './pi.mjs';
 import { installProtocol } from './protocol.mjs';
+import { installAgentInstructions } from './agent-instructions.mjs';
 
 const repoDefault = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -100,6 +101,8 @@ export async function installHost({ home = process.env.HOME, repo = repoDefault 
     native = { package: 'node-pty', version: pty.version, rebuilt: true, nodeHeaders: nodePrefix };
   }
   const protocol = await installProtocol({ sessionRoot: join(paths.install, 'node_modules/@deepseek-ai/dsh-session') });
+  // Owner's AGENTS files as standing rules, not optional guidance (agent-instructions.mjs).
+  const agentInstructions = await installAgentInstructions({ packageRoot: join(paths.install, 'node_modules/@deepseek-ai/dsh-agent-instructions') });
   const unifiedRecovery = await prepareUnifiedRecovery({ repo, esbuildModule: join(toolchain, 'node_modules/esbuild/lib/main.js') });
   const graph = await sharedGraph(paths.install);
   await symlink(join(paths.install, 'node_modules'), join(repo, 'node_modules'), 'dir');
@@ -124,7 +127,7 @@ export async function installHost({ home = process.env.HOME, repo = repoDefault 
     wiring.push({ link, state: 'linked' });
   }
 
-  const receipt = { schemaVersion: 1, status: 'installed-not-booted', variant: 'host (dotfiles-owned ~/.dsh)', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, unifiedRecovery, native, graph, wiring, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0 };
+  const receipt = { schemaVersion: 1, status: 'installed-not-booted', variant: 'host (dotfiles-owned ~/.dsh)', paths, tools: versions, node: process.version, platform: process.platform, arch: process.arch, forks, pi, protocol, agentInstructions, unifiedRecovery, native, graph, wiring, packageLockSha256: sha(await readFile(join(paths.install, 'package-lock.json'))), commands, accountsUsed: false, credentialsUsed: false, modelCalls: 0 };
   await writeFile(join(paths.install, 'host-install-receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   return { status: receipt.status, node: receipt.node, native, graph, wiring };
 }

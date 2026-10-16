@@ -1,9 +1,19 @@
 import { positiveInteger, own } from './sanitizer.mjs';
-export const MAX_CONFIG_CYCLES = 10;
-export const DEFAULT_MAX_CYCLES = 3;
+import { UNBOUNDED_RETRIES } from '../llm-resilience/policy.mjs';
+// Cycle counts are unbounded; an explicit local cap is any finite opt-down.
+export const MAX_CONFIG_CYCLES = UNBOUNDED_RETRIES;
+export const DEFAULT_MAX_CYCLES = UNBOUNDED_RETRIES;
 export const PROJECTION_KEY = 'agentSelfHeal';
 export const AUDIT_EVENT = 'agent/self-heal';
-export const POLICY_VERSION = 2;
+// Policy 3 / audit payload 2: unbounded cycles and one warning per chain. Policy-2
+// state and payload-1 audits remain readable; older bundles refuse the new ones.
+export const POLICY_VERSION = 3;
+export const LEGACY_POLICY_VERSIONS = Object.freeze([2]);
+export const AUDIT_VERSION = 2;
+export const READABLE_AUDIT_VERSIONS = Object.freeze([1, AUDIT_VERSION]);
+// Bounds pathological alternation (A,B,A,B...) inside one chain; the code-change
+// rule alone would otherwise add a durable notice on every alternating retry.
+export const MAX_CHAIN_WARNINGS = 8;
 export const MAX_STEP_CALLS = 4096;
 export const MAX_HUMAN_GRANTS = 128;
 export const INITIAL_STATE = Object.freeze({ lastHealthyTurn: 0 });
@@ -13,13 +23,28 @@ export function validateConfig(config = {}) {
   const descriptor = Object.getOwnPropertyDescriptor(config, 'maxCycles');
   if (descriptor && !('value' in descriptor)) throw new Error('Invalid self-heal configuration.');
   const maxCycles = descriptor?.value === undefined ? DEFAULT_MAX_CYCLES : descriptor.value;
-  if (!Number.isInteger(maxCycles) || maxCycles < 0 || maxCycles > MAX_CONFIG_CYCLES) throw new Error('Invalid self-heal cycle budget.');
+  if (!Number.isSafeInteger(maxCycles) || maxCycles < 0 || maxCycles > MAX_CONFIG_CYCLES) throw new Error('Invalid self-heal cycle budget.');
   return Object.freeze({ maxCycles });
 }
 export function chainKey(chain) { return `${chain.turn}:${chain.step}`; }
 export function transition(state, status, changes = {}) {
   return { ...state, chain: { ...state.chain, ...changes, status } };
 }
+/** Warn on a chain's first failure and again only for a changed code (bounded).
+ * A terminal stop is announced once per suspension unless the code changes. */
+export function shouldWarn(chain, code, terminal = false) {
+  if (!chain?.warnedCode) return true;
+  const changed = chain.warnedCode !== code && (chain.warnings ?? 1) < MAX_CHAIN_WARNINGS;
+  return terminal ? chain.status !== 'suspended' || changed : changed;
+}
+/** Record an admitted notice; the warning reference survives later cycles. */
+export function warned(chain, code, messageId, observationSeq) {
+  return { ...chain, warnedCode: code, warnings: Math.min(MAX_CHAIN_WARNINGS, (chain.warnings ?? 0) + 1),
+    ...(typeof messageId === 'string' ? { messageId } : {}), ...(positiveInteger(observationSeq) ? { observationSeq } : {}) };
+}
+const warningFields = chain => ({ ...(chain.warnedCode === undefined ? {} : { warnedCode: chain.warnedCode, warnings: chain.warnings ?? 1 }),
+  ...(chain.messageId === undefined ? {} : { messageId: chain.messageId }),
+  ...(chain.observationSeq === undefined ? {} : { observationSeq: chain.observationSeq }) });
 /** Consume a cycle before admission. A surface/log exception never refunds it. */
 export function decide(state, position, attemptSeq, facts, maxCycles, delegated = false, unified = false) {
   if (!positiveInteger(position.turn) || !positiveInteger(position.step) || !positiveInteger(attemptSeq) || maxCycles === 0) return { kind: 'ignore' };
@@ -34,8 +59,11 @@ export function decide(state, position, attemptSeq, facts, maxCycles, delegated 
   if ((!unified && (facts.providerRetryAfterMs ?? 0) > 0) || chain.cycle >= cap) return {
     kind: 'suspended', state: { ...observed, chain: { ...chain, maxCycles: cap, status: 'suspended', attemptSeq } },
   };
+  // Carry the chain's last admitted notice: a cycle without a new warning keeps
+  // referring to it rather than losing which observation the model already has.
   return { kind: 'heal', state: { ...observed, chain: {
     turn: chain.turn, step: chain.step, cycle: chain.cycle + 1, maxCycles: cap, status: 'reserved', attemptSeq,
+    ...warningFields(chain),
   } } };
 }
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
@@ -145,7 +173,7 @@ export function manualResumeState(state, progress) {
  * proof. The producer's deferred, live-signal-checked acknowledgement commits it. */
 export function foldState(state, event) {
   if (event.type !== AUDIT_EVENT) return foldNative(state, event);
-  if (event.data?.version !== 1 || !event.data.state) return state;
+  if (!READABLE_AUDIT_VERSIONS.includes(event.data?.version) || !event.data.state) return state;
   if (event.data.action === 'manual-resumed') {
     const progress = event.data.progress;
     if (!progress || event.data.turn !== progress.turn || event.data.step !== progress.step
@@ -186,7 +214,8 @@ export function foldState(state, event) {
   if (!state.chain && next.chain && next.chain.attemptSeq <= Math.max(state.lastHealthyStep?.stepEndSeq ?? 0,
     state.lastManualResume?.stepStartSeq ?? 0)) return state;
   if (state.chain && (!next.chain || chainKey(next.chain) !== chainKey(state.chain)
-    || next.chain.cycle < state.chain.cycle || next.chain.maxCycles > state.chain.maxCycles)) return state;
+    || next.chain.cycle < state.chain.cycle || next.chain.maxCycles > state.chain.maxCycles
+    || (next.chain.warnings ?? 0) < (state.chain.warnings ?? 0))) return state;
   return { ...next, policyVersion: POLICY_VERSION,
     ...(state.pendingStep ? { pendingStep: state.pendingStep } : {}),
     ...(state.lastHealthyStep ? { lastHealthyStep: state.lastHealthyStep } : {}),

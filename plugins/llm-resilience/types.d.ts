@@ -5,7 +5,10 @@ export type TransientCode = 'EMPTY_RESPONSE' | 'RATE_LIMIT' | 'SERVER' | 'TIMEOU
 export type RecoveryCode = TransientCode | 'PI_AI_ERROR' | 'INVALID_REQUEST';
 /** Explicit plugin-owned overrides, not a native provider's resolved defaults. */
 export interface PolicyPatch {
+  /** Nonnegative safe integer; omitted everywhere = no count limit (Number.MAX_SAFE_INTEGER sentinel). */
   maxRetries?: number;
+  /** Largest honored provider minimum (Retry-After/quota reset), 1..86400000; default 86400000. */
+  maxProviderWaitMs?: number;
   initialDelayMs?: number;
   maxDelayMs?: number;
   jitterRatio?: number;
@@ -36,13 +39,19 @@ export interface EffectivePolicy extends Readonly<Required<Omit<PolicyPatch, 're
   readonly sourceExtension: Readonly<{ antigravityQuotaReset: boolean }>;
 }
 export interface RetryPlan {
+  readonly kind: 'wait';
   readonly phase: 'recovery';
   readonly provider: string;
   readonly policy: EffectivePolicy;
   readonly policyKey: string;
   readonly retry: number;
   readonly delayMs: number;
+  /** Provider-declared minimum; a wake never ends the wait before it. */
+  readonly minimumDelayMs?: number;
 }
+export type RefusalReason = 'route-opt-out' | 'unrepresentable-policy' | 'controller-disposed' | 'invalid-retry-ordinal'
+  | 'retries-disabled' | 'retry-budget-exhausted' | 'ineligible-failure' | 'quota-reset-without-hint' | 'provider-wait-over-cap' | 'invalid-failure-facts';
+export interface RetryRefusal { readonly kind: 'refused'; readonly reason: RefusalReason }
 export interface SelfHealPlan {
   readonly phase: 'self-heal';
   readonly policyKey: string;
@@ -53,14 +62,22 @@ export interface ControllerInternals {
   random?: () => number;
   setTimeout?: (callback: () => void, delayMs: number) => unknown;
   clearTimeout?: (timer: unknown) => void;
+  /** Monotonic milliseconds (default performance.now). */
+  now?: () => number;
+  /** Wall-clock milliseconds (default Date.now); keeps advancing through suspend. */
+  wallNow?: () => number;
+  /** Re-check period for real timers (default 60000; injected timers: no slicing). */
+  wallClockSliceMs?: number;
   clock?: {
     setTimeout(callback: () => void, delayMs: number): unknown;
     clearTimeout(timer: unknown): void;
+    now?(): number;
+    wallNow?(): number;
   };
 }
 export interface ResilienceController {
-  readonly recoveryVersion: 2;
-  readonly recoveryHistoryVersion: 2;
+  readonly recoveryVersion: 3;
+  readonly recoveryHistoryVersion: 3;
   readonly config: Readonly<{
     policy: Readonly<Required<PolicyPatch> & { mode: 'normal' }>;
     providers: Readonly<Record<string, Readonly<PolicyPatch>>>;
@@ -70,9 +87,12 @@ export interface ResilienceController {
   readonly signal: AbortSignal;
   policyFor(provider: string, registeredPolicy?: ResolvedRetryPolicy): EffectivePolicy;
   plan(input: { provider: string; failure: LlmFailure | RecoveryFacts; previousRetry?: number; registeredPolicy?: ResolvedRetryPolicy; policy?: EffectivePolicy }): RetryPlan | undefined;
+  /** Same decision as plan(), with a fixed loggable reason when refused. */
+  schedule(input: { provider: string; failure: LlmFailure | RecoveryFacts; previousRetry?: number; registeredPolicy?: ResolvedRetryPolicy; policy?: EffectivePolicy }): RetryPlan | RetryRefusal;
   /** Deprecated compatibility view of the same backoff; never another allowance. */
   selfHealPlan(cycle: number): SelfHealPlan | undefined;
-  wait(plan: RetryPlan | SelfHealPlan, signal?: AbortSignal): Promise<boolean>;
+  /** An aborted `wake` ends the local backoff early, never before `minimumDelayMs`. */
+  wait(plan: RetryPlan | SelfHealPlan, signal?: AbortSignal, options?: { wake?: AbortSignal; onWoken?: () => void; notBeforeMs?: number }): Promise<boolean>;
   dispose(): Promise<void>;
 }
 export interface RecoveryFacts {
@@ -95,10 +115,9 @@ export declare function apply(ctx: Context, config?: ResilienceConfig, internals
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    llmResilience: ResilienceController;
-    /** Contextual-recovery capability; absent on the legacy technical owner. */
-    llmRecovery: ResilienceController;
-    /** Ready only after the history-v2 projection is registered. */
-    llmRecoveryHistory: ResilienceController;
+    /** Contract 3, ready after the accounting-v3 projection is registered. The
+     * older llmResilience/llmRecovery/llmRecoveryHistory names (contract 2) are
+     * deliberately not published by this controller. */
+    llmRecoveryUnbounded: ResilienceController;
   }
 }

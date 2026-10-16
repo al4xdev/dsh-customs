@@ -30,7 +30,9 @@
     "host:install": "node tools/clean-install/host.mjs --fresh",
     "profile:portable": "node tools/profile-portable.mjs",
     "test:clean-install": "node --test tools/clean-install/*.test.mjs",
-    "test:portable": "node --test tools/profile-portable.test.mjs tools/activate.test.mjs tools/resilience/profile.test.mjs"
+    "test:portable": "node --test tools/profile-portable.test.mjs tools/activate.test.mjs tools/resilience/profile.test.mjs",
+    "test:resilience": "node --test --test-timeout=120000 plugins/llm-resilience/*.test.mjs plugins/agent-self-heal/tests/*.test.mjs plugins/codex-transient-close/*.test.mjs tools/resilience/*.test.mjs",
+    "resilience:doctor": "node tools/resilience/doctor.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

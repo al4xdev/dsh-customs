@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEFAULT_POLICY, QUOTA_CODE, isEligibleFailure, policyFromKey, policyKey, resolveConfig, resolvePolicy } from './policy.mjs';
+import { DEFAULT_POLICY, QUOTA_CODE, UNBOUNDED_RETRIES, MAX_PROVIDER_WAIT_MS, isEligibleFailure, policyFromKey, policyKey, providerMinimum, resolveConfig, resolvePolicy } from './policy.mjs';
 
 const defaults = resolveConfig();
 const resolve = (provider, registered) => resolvePolicy(defaults, provider, registered);
@@ -17,7 +17,8 @@ test('every route inherits one global baseline independently of native resolved 
   }
   assert.equal(defaults.auxiliary.maxBufferBytes, 16777216);
   assert.deepEqual(defaults.auxiliary.replaySafePurposes, ['compaction', 'session-title']);
-  assert.deepEqual(defaults.selfHeal, { maxCycles: 10, initialDelayMs: 7031.25, maxDelayMs: 3600000, jitterRatio: 0 });
+  assert.deepEqual(defaults.selfHeal, { maxCycles: UNBOUNDED_RETRIES, initialDelayMs: 7031.25, maxDelayMs: 3600000, jitterRatio: 0 });
+  assert.equal(DEFAULT_POLICY.maxRetries, UNBOUNDED_RETRIES); assert.equal(DEFAULT_POLICY.maxProviderWaitMs, MAX_PROVIDER_WAIT_MS);
 });
 
 test('sparse explicit global/provider patches detach inputs; normal zero is always honored', () => {
@@ -40,7 +41,7 @@ test('quota extension requires exact provider and registered captured normal cod
     const effective = resolve(provider, policy);
     assert.equal(effective.sourceExtension.antigravityQuotaReset, expected);
     assert.equal(effective.retryableCodes.includes(QUOTA_CODE), expected);
-    assert.equal(effective.maxRetries, 10);
+    assert.equal(effective.maxRetries, UNBOUNDED_RETRIES);
   }
 });
 
@@ -56,13 +57,16 @@ test('native finite keys roundtrip captured budgets without provider-default heu
     const policy = resolve(provider, { mode: 'normal', retryableCodes: [QUOTA_CODE] });
     const key = policyKey(policy);
     assert.equal(policyKey(policyFromKey(provider, key)), key);
-    assert.equal(policyFromKey(provider, key).maxRetries, 10);
+    assert.equal(policyFromKey(provider, key).maxRetries, UNBOUNDED_RETRIES);
+    // Old finite chains keep their exact pinned key and cap.
+    const finite = policyKey({ ...policy, maxRetries: 10 });
+    assert.equal(policyFromKey(provider, finite).maxRetries, 10); assert.equal(policyKey(policyFromKey(provider, finite)), finite);
   }
   for (const key of ['null', '{}', '["always",5,10,0.1]', '["normal",-1,[],1,1,0]', '["normal",1,[],10,1,0]', '["normal",1,[],1,1,0,"extra"]']) assert.equal(policyFromKey('new', key), undefined);
 });
 
 test('configuration rejects misspellings, unknown codes, invalid or unbounded values', () => {
-  for (const config of [{ retryPolicy: {} }, { policy: { backoff: {} } }, { policy: { mode: 'always' } }, { policy: { retryableCodes: ['UNKNOWN'] } }, { policy: { maxRetries: Infinity } }, { policy: { maxRetries: -1 } }, { policy: { maxRetries: 1.2 } }, { policy: { maxRetries: 11 } }, { policy: { jitterRatio: 2 } }, { policy: { initialDelayMs: 3600001 } }, { policy: { maxDelayMs: 3600001 } }, { auxiliary: { maxChunks: 0 } }, { auxiliary: { maxBufferBytes: Infinity } }, { selfHeal: { maxCycles: -1 } }, { selfHeal: { initialDelayMs: 30000 } }, { policy: null }, { providers: null }]) assert.throws(() => resolveConfig(config), TypeError);
+  for (const config of [{ retryPolicy: {} }, { policy: { backoff: {} } }, { policy: { mode: 'always' } }, { policy: { retryableCodes: ['UNKNOWN'] } }, { policy: { maxRetries: Infinity } }, { policy: { maxRetries: -1 } }, { policy: { maxRetries: 1.2 } }, { policy: { maxRetries: Number.MAX_SAFE_INTEGER + 2 } }, { policy: { maxProviderWaitMs: 0 } }, { policy: { maxProviderWaitMs: MAX_PROVIDER_WAIT_MS + 1 } }, { policy: { jitterRatio: 2 } }, { policy: { initialDelayMs: 3600001 } }, { policy: { maxDelayMs: 3600001 } }, { auxiliary: { maxChunks: 0 } }, { auxiliary: { maxBufferBytes: Infinity } }, { selfHeal: { maxCycles: -1 } }, { selfHeal: { initialDelayMs: 30000 } }, { policy: null }, { providers: null }]) assert.throws(() => resolveConfig(config), TypeError);
 });
 
 test('self-heal compatibility fields cannot create a second backoff or extra allowance', () => {
@@ -84,4 +88,17 @@ test('main admission derives a route envelope, never an accidental second base-p
     assert.equal(resolvePolicy(config, 'enabled', { mode: 'normal', maxRetries: 0 }).maxRetries, 0);
   }
   assert.equal(resolveConfig({ policy: { maxRetries: 0 }, providers: { enabled: { maxRetries: 9 } }, selfHeal: { maxCycles: 3 } }).selfHeal.maxCycles, 3);
+});
+
+test('omitted counts are unbounded; explicit finite counts above ten are honored caps', () => {
+  assert.equal(resolveConfig().policy.maxRetries, UNBOUNDED_RETRIES);
+  for (const maxRetries of [0, 10, 11, 500]) assert.equal(resolveConfig({ policy: { maxRetries } }).policy.maxRetries, maxRetries);
+  assert.equal(resolveConfig({ policy: { maxRetries: 10 }, providers: { slow: { maxRetries: 40 } } }).selfHeal.maxCycles, 40);
+  assert.equal(resolveConfig({ selfHeal: { maxCycles: 12 } }).selfHeal.maxCycles, 12);
+});
+
+test('provider minimum is generic typed data: malformed or zero values impose none', () => {
+  for (const hint of [1, .5, 7_200_000, 1e20]) assert.equal(providerMinimum({ providerRetryAfterMs: hint }), hint);
+  for (const hint of [undefined, null, 0, -1, NaN, Infinity, '1000']) assert.equal(providerMinimum({ providerRetryAfterMs: hint }), undefined);
+  assert.equal(providerMinimum(undefined), undefined);
 });

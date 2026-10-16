@@ -4,6 +4,11 @@ import { resolveHost } from '../common.mjs';
 import { applyWithObserver } from './index.mjs';
 import { bridgeRequestFailures, captureProviderFailure, providerFailureCapabilities } from './failure-bridge.mjs';
 import { resolveHostSdkEntry } from './sdk-host.mjs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+// Same runtime location rule as the dsh launcher: XDG_DATA_HOME, else ~/.local/share.
+const hostRoot = join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'dsh-cli');
 const { Context } = await import(resolveHost('@deepseek-ai/cordis'));
 const { markAgentLoopRequest, isAgentLoopRequest } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 const options = (extra = {}, marked = true) => Object.freeze(marked ? markAgentLoopRequest({ provider: 'openai-codex', messages: [], ...extra }) : { provider: 'openai-codex', messages: [], ...extra });
@@ -25,7 +30,7 @@ async function wrap(request, factory, observer = sdk()) {
 test('adapter-anchored resolver loads exact host root rather than private SDK', async () => {
   const entry = resolveHostSdkEntry();
   assert(entry.endsWith('/@earendil-works/pi-ai/dist/index.js'));
-  assert.strictEqual(await import(entry), await import('file:///home/alex/.local/share/dsh-cli/node_modules/@earendil-works/pi-ai/dist/index.js'));
+  assert.strictEqual(await import(entry), await import(pathToFileURL(join(hostRoot, 'node_modules/@earendil-works/pi-ai/dist/index.js')).href));
 });
 test('known DTO projects only terminal error, freezes failure, preserves partial chunks and metadata', async () => {
   const partial = Object.freeze({ type: 'text-delta', text: 'partial', signature: 'fixture' });

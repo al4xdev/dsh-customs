@@ -29,10 +29,10 @@ test('preset wrappers preserve public filtered YAML via include and leave minima
   const candidate = migrateResilienceProfile(patch, { repoRoot: '/fixture/repo', profile: 'dsh-tui' }).candidate;
   for (const id of ['alex-llm-resilience', 'alex-codex-transient-close', 'alex-agent-self-heal']) assert.equal(candidate.split('id: ' + id).length, 2);
   assert.match(candidate, /id: llm-retry\n  disabled: true/);
-  assert.match(candidate, /agent-self-heal\/lib\/index-v6-unified\.mjs/);
-  assert.match(candidate, /llm-resilience\/lib\/index-v5-unified\.mjs/);
+  assert.match(candidate, /agent-self-heal\/lib\/index-v7-unified\.mjs/);
+  assert.match(candidate, /llm-resilience\/lib\/index-v6-unified\.mjs/);
   assert.doesNotMatch(candidate, /retryPolicies|maxRetries|maxDelayMs|antigravity-quota-retry/);
-  assert.equal(DEFAULT_POLICY.maxRetries, 10);
+  assert.equal(DEFAULT_POLICY.maxRetries, Number.MAX_SAFE_INTEGER, 'contract 3: no default retry count limit');
   assert.equal(DEFAULT_POLICY.initialDelayMs, 7031.25);
   assert.equal(DEFAULT_POLICY.maxDelayMs, 3600000);
   assert.equal(DEFAULT_POLICY.jitterRatio, 0);

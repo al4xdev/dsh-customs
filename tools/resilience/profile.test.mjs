@@ -85,8 +85,8 @@ test('canonical targeted migration removes known baselines/fork and upgrades exa
   assert.equal(inserts.some(row => row.id === 'antigravity-quota-retry'), false);
   assert.deepEqual(find(result.candidate, 'alex-llm-resilience').config, {});
   assert.equal(find(result.candidate, 'alex-codex-transient-close').name, modulePath('codex-transient-close/index.mjs'));
-  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v5-unified.mjs'));
-  assert.equal(find(result.candidate, 'alex-agent-self-heal').name, modulePath('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v6-unified.mjs'));
+  assert.equal(find(result.candidate, 'alex-agent-self-heal').name, modulePath('agent-self-heal/lib/index-v7-unified.mjs'));
   assert.deepEqual(find(result.candidate, 'alex-agent-self-heal').config, { maxCycles: 3 });
 });
 
@@ -190,7 +190,7 @@ ${normal}        retryableCodes: [SERVER]
   assert.deepEqual(find(result.candidate, 'alex-llm-resilience').config.providers['openai-codex'].retryableCodes, ['SERVER']);
 });
 
-for (const cap of [0, 1, 2, 3, 4, 10]) test(`explicit local self-heal cap ${cap} stays local without broadening global defaults`, () => {
+for (const cap of [0, 1, 2, 3, 4, 10, 11, 25]) test(`explicit local self-heal cap ${cap} stays local without broadening global defaults`, () => {
   const source = `- insert:
     - id: alex-agent-self-heal
       name: ${modulePath('agent-self-heal/lib/index-v2-persistence.mjs')} # pointer comment
@@ -327,7 +327,7 @@ test('renamed bridges/self-heal and nested or inserted native engines require re
 test('tagged/anchored owned config and deliberately disabled owned plugins refuse', () => {
   assertRefuses('- id: dsh-tui-auth\n  config:\n    retryPolicies:\n      local: &owner { mode: normal, maxRetries: 0 }\n', 'expected-literal-map');
   assertRefuses(`- insert:\n    - id: alex-agent-self-heal\n      name: ${modulePath('agent-self-heal/lib/index-v2-persistence.mjs')}\n      disabled: true\n`, 'owned-plugin-disabled');
-  assertRefuses(`- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath('llm-resilience/index.mjs')}\n      config: { selfHeal: { maxCycles: 11 } }\n`, 'unsupported-self-heal-cap');
+  assertRefuses(`- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath('llm-resilience/index.mjs')}\n      config: { selfHeal: { maxCycles: -1 } }\n`, 'unsupported-self-heal-cap');
 });
 
 test('duplicates, malformed YAML, nested-owned entries and unsupported profile names refuse', () => {
@@ -353,10 +353,10 @@ ${policy}    - id: alex-codex-transient-close
       config: { maxCycles: 3 } # no new credits
 `;
   const result = migrate(source);
-  assert.equal(result.recoveryVersion, 2); assert.equal(result.changes.length, 2);
+  assert.equal(result.recoveryVersion, 3); assert.equal(result.changes.length, 2);
   assert(result.candidate.includes(policy)); assert(result.candidate.includes(permissions));
   assert(result.candidate.includes('config: { maxCycles: 3 } # no new credits'));
-  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v5-unified.mjs'));
+  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v6-unified.mjs'));
   assert.equal(migrate(result.candidate).changed, false);
 });
 
@@ -369,25 +369,26 @@ test('canonical file URL ownership upgrades without accepting query/hash aliases
 test('unified code allowlist remains sparse and unknown explicit caps cannot bypass the new hard ceilings', () => {
   const source = '- id: dsh-tui-auth\n  config:\n    retryPolicies:\n      custom: { mode: normal, maxRetries: 2, retryableCodes: [SERVER, PI_AI_ERROR, INVALID_REQUEST] }\n';
   assert.deepEqual(find(migrate(source).candidate, 'alex-llm-resilience').config.providers.custom.retryableCodes, ['SERVER', 'PI_AI_ERROR', 'INVALID_REQUEST']);
-  for (const policy of ['maxRetries: 11', 'maxDelayMs: 86400000']) assertRefuses(`- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath('llm-resilience/index.mjs')}\n      config: { policy: { ${policy} } }\n`, 'invalid-central-config');
+  for (const policy of ['maxRetries: -1', 'maxRetries: 1.5', 'maxDelayMs: 86400000', 'maxProviderWaitMs: 86400001']) assertRefuses(`- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath('llm-resilience/index.mjs')}\n      config: { policy: { ${policy} } }\n`, 'invalid-central-config');
   assertRefuses(`- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath('llm-resilience/index.mjs')}\n      config: { selfHeal: { initialDelayMs: 5000 } }\n`, 'invalid-central-config');
 });
 
-for (const [controller, owner] of [[2, 4], [3, 5], [4, 6]]) test(`historical candidate ${controller}/${owner} pointers upgrade without changing explicit caps`, () => {
+for (const [controller, owner] of [[2, 4], [3, 5], [4, 6], [5, 6]]) test(`historical candidate ${controller}/${owner} pointers upgrade without changing explicit caps`, () => {
   const source = `- insert:\n    - id: alex-llm-resilience\n      name: ${modulePath(`llm-resilience/lib/index-v${controller}-unified.mjs`)}\n      config: { policy: { maxRetries: 2 } }\n    - id: alex-agent-self-heal\n      name: ${modulePath(`agent-self-heal/lib/index-v${owner}-unified.mjs`)}\n      config: { maxCycles: 3 }\n`;
   const result = migrate(source);
-  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v5-unified.mjs'));
-  assert.equal(find(result.candidate, 'alex-agent-self-heal').name, modulePath('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(result.candidate, 'alex-llm-resilience').name, modulePath('llm-resilience/lib/index-v6-unified.mjs'));
+  assert.equal(find(result.candidate, 'alex-agent-self-heal').name, modulePath('agent-self-heal/lib/index-v7-unified.mjs'));
   assert.equal(find(result.candidate, 'alex-llm-resilience').config.policy.maxRetries, 2);
   assert.equal(find(result.candidate, 'alex-agent-self-heal').config.maxCycles, 3);
   assert.equal(migrate(result.candidate).changed, false);
 });
 
-for (const prefix of ['', 'file://']) test(`controller4 input ${prefix || 'absolute'} upgrades only its literal pointer with current owner6`, () => {
+for (const prefix of ['', 'file://']) test(`controller4 input ${prefix || 'absolute'} upgrades only its literal pointers (and the owner6 pointer) to the contract-3 pair`, () => {
   const before = permissions + `- id: llm-retry\n  disabled: true\n- insert:\n    - id: alex-llm-resilience\n      name: ${prefix}${modulePath('llm-resilience/lib/index-v4-unified.mjs')} # retained comment\n      config: { policy: { retryableCodes: [] }, auxiliary: { replaySafePurposes: [] } }\n    - id: alex-codex-transient-close\n      name: ${modulePath('codex-transient-close/index.mjs')}\n    - id: alex-agent-self-heal\n      name: ${modulePath('agent-self-heal/lib/index-v6-unified.mjs')}\n      config: {}\n`;
   const result = migrate(before);
-  assert.equal(result.changes.length, 1);
-  assert.equal(result.candidate, before.replace(`${prefix}${modulePath('llm-resilience/lib/index-v4-unified.mjs')}`, modulePath('llm-resilience/lib/index-v5-unified.mjs')));
+  assert.equal(result.changes.length, 2);
+  assert.equal(result.candidate, before.replace(`${prefix}${modulePath('llm-resilience/lib/index-v4-unified.mjs')}`, modulePath('llm-resilience/lib/index-v6-unified.mjs'))
+    .replace(modulePath('agent-self-heal/lib/index-v6-unified.mjs'), modulePath('agent-self-heal/lib/index-v7-unified.mjs')));
   assert.equal(migrate(result.candidate).changed, false);
   assertRefuses(before.replace('index-v4-unified.mjs', 'index-v4-unified.mjs?alias'), 'foreign-owned-module');
   assertRefuses(before.replace('id: alex-llm-resilience', 'id: renamed-controller'), 'foreign-retry-engine-id');
@@ -398,15 +399,33 @@ test('a profile directory makes owned rows profile-relative and accepts them bac
   const relative = suffix => `../../../../repo/plugins/${suffix}`;
   const migrateIn = source => migrateResilienceProfile(source, { repoRoot: root, profile: 'dsh-tui', profileDir });
   const first = migrateIn('[]\n');
-  assert.equal(find(first.candidate, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v5-unified.mjs'));
-  assert.equal(find(first.candidate, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(first.candidate, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v6-unified.mjs'));
+  assert.equal(find(first.candidate, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v7-unified.mjs'));
   assert.equal(find(first.candidate, 'alex-codex-transient-close').name, relative('codex-transient-close/index.mjs'));
   assert.equal(migrateIn(first.candidate).changed, false);
   // Existing absolute rows stay owned; versioned controller/self-heal names are
   // rewritten to the portable form (activate re-renders the rest of its run).
   const upgraded = migrateIn(migrate('[]\n').candidate).candidate;
-  assert.equal(find(upgraded, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v5-unified.mjs'));
-  assert.equal(find(upgraded, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v6-unified.mjs'));
+  assert.equal(find(upgraded, 'alex-llm-resilience').name, relative('llm-resilience/lib/index-v6-unified.mjs'));
+  assert.equal(find(upgraded, 'alex-agent-self-heal').name, relative('agent-self-heal/lib/index-v7-unified.mjs'));
   assert.equal(find(upgraded, 'alex-codex-transient-close').name, modulePath('codex-transient-close/index.mjs'));
   assert.throws(() => migrateResilienceProfile('[]\n', { repoRoot: root, profile: 'dsh-tui', profileDir: 'relative/dir' }), TypeError);
+});
+
+test('the superseded 60min quota note is replaced in place; the new note is idempotent', () => {
+  const legacy = '# Harness recovery: reset hints never extend the shared cap (at most 60min); larger minimums suspend.';
+  const row = '- id: llm-pi-ai-antigravity\n  config:\n    quotaResetRetry:\n      enabled: true\n      maxWaitMs: 86400000\n';
+  const fresh = migrate(row);
+  assert(fresh.candidate.startsWith('# Harness recovery: provider reset hints are waited up to the shared 24h provider-wait cap; larger minimums suspend.\n' + row));
+  const old = migrate(`${legacy}\n${row}`);
+  assert(!old.candidate.includes(legacy)); assert.equal(old.candidate.split('# Harness recovery:').length, 2);
+  assert(old.candidate.startsWith('# Harness recovery: provider reset hints are waited up to the shared 24h provider-wait cap'));
+  assert.equal(migrate(old.candidate).changed, false);
+  // A disabled reset (Companion) gets no note at all.
+  assert(!migrate(row.replace('enabled: true', 'enabled: false')).candidate.includes('# Harness recovery:'));
+});
+
+test('owner7/controller6 are owned paths: renamed ids still refuse, and the previous pair is accepted', () => {
+  for (const module of ['agent-self-heal/lib/index-v7-unified.mjs', 'agent-self-heal/lib/index-v6-unified.mjs']) assertRefuses(`- insert:\n    - id: renamed-owned-plugin\n      name: ${modulePath(module)}\n`, 'foreign-owned-plugin-id');
+  for (const module of ['llm-resilience/lib/index-v6-unified.mjs', 'llm-resilience/lib/index-v5-unified.mjs']) assertRefuses(`- insert:\n    - id: renamed-controller\n      name: ${modulePath(module)}\n`, 'foreign-retry-engine-id');
 });

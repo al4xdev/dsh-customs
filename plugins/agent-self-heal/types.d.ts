@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ContextFormed } from '@deepseek-ai/dsh-llm/message';
 import type { SessionSeq } from '@deepseek-ai/dsh-session';
-export interface Config { /** Optional stricter cap 0..10; absent inherits the shared ten-retry policy. */ maxCycles?: number }
+export interface Config { /** Optional finite cap (nonnegative safe integer); absent inherits the shared unbounded policy. */ maxCycles?: number }
 export interface SafeFailureFacts {
   readonly code: 'PI_AI_ERROR' | 'EMPTY_RESPONSE' | 'INVALID_REQUEST' | 'SERVER' | 'TIMEOUT' | 'TRANSPORT' | 'RATE_LIMIT' | 'ANTIGRAVITY_QUOTA_RESET';
   readonly summary: string;
@@ -9,6 +9,8 @@ export interface SafeFailureFacts {
   readonly remediation?: string;
   readonly status?: number;
   readonly providerRetryAfterMs?: number;
+  /** A malformed/zero provider minimum was ignored (local schedule applies). */
+  readonly ignoredProviderHint?: true;
   readonly phase?: 'sse' | 'sse-terminal' | 'model-input-processing';
   readonly terminalCategory?: 'malformed-function-call' | 'image-input-processing';
   readonly provider: 'openai-codex' | 'google-antigravity' | 'other-provider';
@@ -21,12 +23,17 @@ export interface SafeFailureFacts {
 export interface SelfHealChain {
   readonly turn: number;
   readonly step: number;
+  /** Unbounded count; the unbounded cap sentinel is Number.MAX_SAFE_INTEGER. */
   readonly cycle: number;
   readonly maxCycles: number;
   readonly status: 'reserved' | 'admitted' | 'retry-requested' | 'suspended' | 'aborted' | 'append-failed' | 'recovered';
   readonly attemptSeq: SessionSeq;
+  /** The chain's last admitted notice; carried by later cycles that add none. */
   readonly messageId?: string;
   readonly observationSeq?: SessionSeq;
+  /** Code of the last admitted notice and notices so far (bounded per chain). */
+  readonly warnedCode?: SafeFailureFacts['code'];
+  readonly warnings?: number;
 }
 export interface HealthyStepProof {
   readonly kind: 'healthy-step';
@@ -64,7 +71,8 @@ export interface SelfHealState {
   readonly seen?: { readonly attemptSeq: SessionSeq; readonly emptyCount: number };
   readonly chain?: SelfHealChain;
   readonly lastRecovered?: SelfHealChain;
-  readonly policyVersion?: 2;
+  /** 3 for this owner; 2 states from owner6 remain readable. */
+  readonly policyVersion?: 2 | 3;
   readonly pendingStep?: HealthyStepCandidate;
   readonly lastHealthyStep?: HealthyStepProof;
   readonly inboxEvidence?: { readonly insertSeqs: readonly SessionSeq[]; readonly claimSeq?: SessionSeq };
@@ -72,7 +80,8 @@ export interface SelfHealState {
   readonly lastCompletedTurn?: { readonly turn: number; readonly seq: SessionSeq };
 }
 export interface SelfHealAudit {
-  readonly version: 1;
+  /** 2 for this owner (policy 3); version-1 audits from older owners stay readable. */
+  readonly version: 1 | 2;
   readonly action: 'observed' | 'reserved' | 'observation-admitted' | 'retry-requested' | 'suspended' | 'aborted' | 'append-failed' | 'recovered' | 'manual-resumed';
   readonly turn: number;
   readonly step: number;
@@ -81,13 +90,18 @@ export interface SelfHealAudit {
   readonly facts?: SafeFailureFacts;
   readonly progress?: HealthyStepProof | HumanResumeProof;
   /** Additive metadata: legacy strict state/action readers remain valid. */
-  readonly recoveryWait?: { readonly version: 1; readonly phase: 'self-heal' | 'contextual-recovery'; readonly retry: number; readonly delayMs: number; readonly policyKey: string; readonly scheduledAtMs: number; readonly notBeforeMs: number };
+  readonly recoveryWait?: { readonly version: 1; readonly phase: 'self-heal' | 'contextual-recovery'; readonly retry: number; readonly delayMs: number; readonly policyKey: string; readonly scheduledAtMs: number; readonly notBeforeMs: number; readonly providerMinimumMs?: number };
+  /** `retry` is the chain cycle. v2 declares the native llm/retry mirror
+   * coordinates (`retryId`, `mirrorRetry`: 1.. per turn/step/policy key). */
   readonly recoveryOwnership?: {
-    readonly version: 1; readonly kind: 'unified-agent-warning';
+    readonly version: 1 | 2; readonly kind: 'unified-agent-warning';
     readonly origin: { readonly turn: number; readonly step: number };
     readonly provider: string; readonly policyKey: string; readonly retryId: string; readonly retry: number;
+    readonly mirrorRetry?: number;
     readonly legacyNativeConsumed: number; readonly legacySemanticConsumed: number; readonly importedConsumed: number;
   };
+  /** A live root human inbox message ended the local backoff early. */
+  readonly recoveryWake?: { readonly version: 1; readonly kind: 'live-human-inbox'; readonly inboxSeq: SessionSeq };
 }
 declare module '@deepseek-ai/dsh-llm/message' {
   interface MessageSourceMap {
@@ -97,6 +111,7 @@ declare module '@deepseek-ai/dsh-llm/message' {
       readonly form: 'notice';
       readonly summary: string;
       readonly chain?: string;
+      /** Written by older owners only; contract 3 notices carry no counter. */
       readonly cycle?: number;
       readonly attemptSeq: SessionSeq;
     };
@@ -109,6 +124,6 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap { agentSelfHeal: SelfHealState }
 }
 export declare const name: 'alex-agent-self-heal';
-export declare const inject: readonly ['agents', 'sessionProjections', 'llmRecoveryHistory'];
+export declare const inject: readonly ['agents', 'sessionProjections', 'llmRecoveryUnbounded'];
 export declare function apply(ctx: Context, config?: Config): void;
 export declare const stateSchema: { parse(value: unknown): SelfHealState };

@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveHostSdkEntry } from '../../plugins/codex-transient-close/sdk-host.mjs';
 import { Worker } from 'node:worker_threads';
 
 // Run against a reviewed candidate; never copy/promote it into the live host.
 // Example (fish): env RESILIENCE_CANDIDATE_ROOT=.dumps/.../package node --test tools/resilience/pi-ai-candidate-runtime.test.mjs
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
-const candidateRoot = resolve(workspace, process.env.RESILIENCE_CANDIDATE_ROOT ?? '.dumps/generalized-failure-20261015-candidate4/package');
+// Portable default: the reviewed scratch candidate when present, otherwise the
+// already-promoted installed host package (the redirect then is an identity).
+const reviewedCandidate = resolve(workspace, '.dumps/generalized-failure-20261015-candidate4/package');
+const candidateRoot = process.env.RESILIENCE_CANDIDATE_ROOT ? resolve(workspace, process.env.RESILIENCE_CANDIDATE_ROOT)
+  : existsSync(reviewedCandidate) ? reviewedCandidate : dirname(dirname(fileURLToPath(resolveHostSdkEntry())));
+const dataHome = process.env.XDG_DATA_HOME || join(homedir(), '.local/share');
 const controllerModule = process.env.RESILIENCE_CONTROLLER_MODULE && resolve(workspace, process.env.RESILIENCE_CONTROLLER_MODULE);
 const selfHealModule = process.env.SELF_HEAL_PLUGIN_MODULE && resolve(workspace, process.env.SELF_HEAL_PLUGIN_MODULE);
 const privateAgentInput = process.env.RESILIENCE_PRIVATE_AGENT_ROOT ?? process.env.PRIVATE_AGENT_ROOT;
@@ -19,7 +27,7 @@ export function runCandidateFixture(settings) {
   return new Promise((resolveResult, reject) => {
     // Inherit no real API keys, OAuth environment, HOME or credential paths.
     const worker = new Worker(new URL('./pi-ai-candidate-worker.mjs', import.meta.url), {
-      workerData: { ...settings, candidateRoot, controllerModule: settings.controllerModule ?? controllerModule,
+      workerData: { ...settings, candidateRoot, dataHome, controllerModule: settings.controllerModule ?? controllerModule,
         selfHealModule: settings.selfHealModule ?? selfHealModule, privateAgentRoot: settings.privateAgentRoot ?? privateAgentRoot },
       env: { HOME: '/nonexistent-resilience-offline-home', RESILIENCE_OFFLINE_API_KEY: 'offline-not-real' },
     });
@@ -67,12 +75,13 @@ const countWarnings = messages => messages.filter(message => message.role === 'u
 function checkContextualHistory(messages, original, retry) {
   assert.deepEqual(messages.slice(0, original.length), original, 'original request/history is preserved');
   const inserted = messages.slice(original.length);
-  assert.equal(inserted.length, retry, 'one new warning per recovery, no failed assistant output');
-  for (const [index, warning] of inserted.entries()) {
+  assert(retry >= 1);
+  assert.equal(inserted.length, 1, 'one warning per chain (same code), no failed assistant output');
+  for (const warning of inserted) {
     assert.equal(warning.role, 'user');
     const text = contentText(warning);
     assert(text.includes('harness warning:'));
-    assert(text.includes(`"retry":${index + 1}`));
+    assert(!/"retry"|retry \d+ of/.test(text), 'the notice carries no retry counter');
     assert(!text.includes('CANARY')); assert(!text.includes('failed-tool-call'));
   }
 }
@@ -90,10 +99,10 @@ function checkTen(result) {
   assert.equal(result.waits.length, 10, 'one controller wait per durable retry; no duplicated SDK/native retry engine');
   assert.deepEqual(result.waits.map(wait => wait.delayMs), nominal.map(Math.ceil));
   assert.deepEqual(events(result, 'llm/retry').map(event => event.data.delayMs), nominal);
-  assert.equal(warningEvents(result).length, 10);
+  assert.equal(warningEvents(result).length, 1, 'ten same-code failures produce one warning');
   assert.equal(events(result, 'agent/self-heal').filter(event => event.data.action === 'reserved').length, 10);
   assert(result.waits.every(wait => wait.fired && !wait.cancelled && wait.toolsBeforeWait === 0));
-  assert(events(result, 'llm/retry').every(event => event.data.maxRetries === 10 && event.data.provider === 'resilience-unlisted-http-fixture'));
+  assert(events(result, 'llm/retry').every(event => event.data.mode === 'always' && event.data.maxRetries === undefined && event.data.provider === 'resilience-unlisted-http-fixture'));
   assert.equal(result.toolCalls.length, 1); assert.equal(result.toolCalls[0].afterRetryCount, 10);
   assert.equal(events(result, 'tool/call').length, 1); assert.equal(events(result, 'tool/result').length, 1);
   assert.equal(new Set(result.starts.map(start => start.attemptId)).size, result.starts.length);
@@ -157,8 +166,8 @@ test('native typed adapter bypasses SDK classification unchanged while receiving
   assert.equal(result.streamRequests.length, 11); assert.equal(result.waits.length, 10);
   assert.deepEqual(result.waits.map(wait => wait.delayMs), nominal.map(Math.ceil));
   assert.equal(events(result, 'assistant/attempt').length, 10);
-  assert.equal(events(result, 'llm/retry').length, 10); assert.equal(warningEvents(result).length, 10);
-  assert(events(result, 'llm/retry').every(event => event.data.maxRetries === 10 && event.data.failure.message === 'native opaque typed' && event.data.failure.status === 502));
+  assert.equal(events(result, 'llm/retry').length, 10); assert.equal(warningEvents(result).length, 1);
+  assert(events(result, 'llm/retry').every(event => event.data.mode === 'always' && event.data.failure.message === 'native opaque typed' && event.data.failure.status === 502));
   for (let index = 0; index < 10; index++) assert.strictEqual(result.outerFinishes[index], result.rawFinishes[index]);
   for (let index = 1; index <= 10; index++) checkContextualHistory(result.streamRequests[index].messages, result.streamRequests[0].messages, index);
   validatedScenarios++;
@@ -207,7 +216,7 @@ after(async () => {
   assert(target.startsWith(allowed), 'evidence output must stay beneath .dumps');
   await mkdir(dirname(target), { recursive: true });
   // A collector must choose a new receipt name instead of overwriting evidence.
-  await writeFile(target, JSON.stringify({ reportVersion: 2, kind: 'unified-contextual-sdk-offline', recoveryVersion: 2, recoveryHistoryVersion: 2,
+  await writeFile(target, JSON.stringify({ reportVersion: 3, kind: 'unified-contextual-sdk-offline', recoveryVersion: 3, recoveryHistoryVersion: 3,
     candidateRoot, nominalIntervalsMs: nominal, timerRounding: 'ceil',
     network: 'in-memory fetch only; socket/TLS/WebSocket blocked', scenarios: evidence }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 });

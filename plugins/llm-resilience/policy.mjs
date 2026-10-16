@@ -1,13 +1,24 @@
 export const TRANSIENT_CODES = Object.freeze(['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT']);
 export const RECOVERY_CODES = Object.freeze([...TRANSIENT_CODES, 'PI_AI_ERROR', 'INVALID_REQUEST']);
 export const QUOTA_CODE = 'ANTIGRAVITY_QUOTA_RESET';
-export const MAX_RETRIES = 10;
+// Ten doubling intervals reach the cap (retry9 = 30min, retry10 = 60min); every
+// later retry keeps waiting at the cap. This anchors the schedule, not a count.
+export const SCHEDULE_STEPS = 10;
 export const MAX_DELAY_MS = 3_600_000;
-export const MAX_QUOTA_WAIT_MS = MAX_DELAY_MS;
-// Anchor the tenth interval at one hour; the ninth is exactly thirty minutes.
-export const DEFAULT_POLICY = Object.freeze({ mode: 'normal', maxRetries: MAX_RETRIES, initialDelayMs: MAX_DELAY_MS / 2 ** (MAX_RETRIES - 1), maxDelayMs: MAX_DELAY_MS, jitterRatio: 0, retryableCodes: RECOVERY_CODES });
+// "No retry count limit" sentinel. It is unreachable (~10^12 years of 60min
+// waits) yet an ordinary JSON-safe integer, so durable comparisons, Math.min and
+// the native-compatible policy key layout keep working without null/Infinity.
+export const UNBOUNDED_RETRIES = Number.MAX_SAFE_INTEGER;
+export const MAX_RETRIES = UNBOUNDED_RETRIES;
+// Largest provider-declared minimum (Retry-After, quota reset) honored by a wait.
+// Generic over providers: any adapter may supply the typed providerRetryAfterMs.
+export const MAX_PROVIDER_WAIT_MS = 86_400_000;
+/** @deprecated historical export name; the quota wait is the generic provider wait. */
+export const MAX_QUOTA_WAIT_MS = MAX_PROVIDER_WAIT_MS;
+export const DEFAULT_POLICY = Object.freeze({ mode: 'normal', maxRetries: UNBOUNDED_RETRIES, initialDelayMs: MAX_DELAY_MS / 2 ** (SCHEDULE_STEPS - 1), maxDelayMs: MAX_DELAY_MS, jitterRatio: 0, retryableCodes: RECOVERY_CODES, maxProviderWaitMs: MAX_PROVIDER_WAIT_MS });
 export const DEFAULT_AUXILIARY = Object.freeze({ maxBufferBytes: 16_777_216, maxChunks: 65_536, replaySafePurposes: Object.freeze(['compaction', 'session-title']) });
 export const DEFAULT_SELF_HEAL = Object.freeze({ maxCycles: DEFAULT_POLICY.maxRetries, initialDelayMs: DEFAULT_POLICY.initialDelayMs, maxDelayMs: DEFAULT_POLICY.maxDelayMs, jitterRatio: DEFAULT_POLICY.jitterRatio });
+export const isUnbounded = maxRetries => maxRetries >= UNBOUNDED_RETRIES;
 
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 function object(value, path) {
@@ -21,7 +32,8 @@ function number(value, path, min, max = Number.MAX_SAFE_INTEGER, integer = false
   if (!Number.isFinite(value) || value < min || value > max || (integer && !Number.isSafeInteger(value))) throw new TypeError(`${path} is out of range`);
   return value;
 }
-const policyFields = ['maxRetries', 'initialDelayMs', 'maxDelayMs', 'jitterRatio', 'retryableCodes'];
+const policyFields = ['maxRetries', 'initialDelayMs', 'maxDelayMs', 'jitterRatio', 'retryableCodes', 'maxProviderWaitMs'];
+const ranges = Object.freeze({ maxRetries: [0, MAX_RETRIES, true], jitterRatio: [0, 1], maxProviderWaitMs: [1, MAX_PROVIDER_WAIT_MS], initialDelayMs: [1, MAX_DELAY_MS], maxDelayMs: [1, MAX_DELAY_MS] });
 function policyPatch(input, path) {
   keys(input, policyFields, path);
   const patch = {};
@@ -30,7 +42,7 @@ function policyPatch(input, path) {
     if (key === 'retryableCodes') {
       if (!Array.isArray(input[key]) || input[key].some(code => !RECOVERY_CODES.includes(code))) throw new TypeError(`${path}.retryableCodes must contain only known recovery codes`);
       patch[key] = Object.freeze([...new Set(input[key])]);
-    } else patch[key] = number(input[key], `${path}.${key}`, key === 'maxRetries' || key === 'jitterRatio' ? 0 : 1, key === 'jitterRatio' ? 1 : key === 'maxRetries' ? MAX_RETRIES : MAX_DELAY_MS, key === 'maxRetries');
+    } else patch[key] = number(input[key], `${path}.${key}`, ...ranges[key]);
   }
   return Object.freeze(patch);
 }
@@ -41,6 +53,8 @@ function backoffInvariant(policy, path) {
 
 /** Global authority is explicit, not inferred from a registered resolved default.
  * Providers contain sparse patches in this same flat shape (not native backoff).
+ * Omitting maxRetries everywhere means no count limit; an explicit finite count,
+ * including 0, remains an operator cap.
  */
 export function resolveConfig(input = {}) {
   keys(input, ['policy', 'providers', 'auxiliary', 'selfHeal'], 'llm-resilience');
@@ -82,7 +96,10 @@ export function resolvePolicy(config, provider, registeredPolicy) {
   return Object.freeze({ ...effective, mode: 'normal', retryableCodes: Object.freeze([...effective.retryableCodes, ...(quota ? [QUOTA_CODE] : [])]), sourceExtension: Object.freeze({ antigravityQuotaReset: quota }) });
 }
 
-/** Preserve the native finite-policy key layout, including old durable chains. */
+/** Preserve the native finite-policy key layout, including old durable chains.
+ * The unbounded sentinel is an ordinary integer here; maxProviderWaitMs is a
+ * live wait ceiling, not chain provenance, so it is deliberately not keyed.
+ */
 export function policyKey(policy) {
   return JSON.stringify(['normal', policy.maxRetries, [...policy.retryableCodes].sort(), policy.initialDelayMs, policy.maxDelayMs, policy.jitterRatio]);
 }
@@ -114,6 +131,14 @@ export function isEligibleFailure(provider, failure, policy) {
   if (failure.code === QUOTA_CODE) return provider === 'google-antigravity' && policy.sourceExtension?.antigravityQuotaReset === true && policy.retryableCodes.includes(QUOTA_CODE);
   if (failure.code === 'INVALID_REQUEST' && !malformedCall) return false;
   return RECOVERY_CODES.includes(failure.code) && policy.retryableCodes.includes(failure.code);
+}
+
+/** A provider minimum is a generic typed fact. Absent, zero or malformed values
+ * impose no minimum; they fall back to the local schedule rather than ending it.
+ */
+export function providerMinimum(failure) {
+  const hint = failure?.providerRetryAfterMs;
+  return typeof hint === 'number' && Number.isFinite(hint) && hint > 0 ? hint : undefined;
 }
 
 export function localDelay(policy, retry, random) {

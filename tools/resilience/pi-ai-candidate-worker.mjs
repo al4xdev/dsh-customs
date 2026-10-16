@@ -4,6 +4,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire, registerHooks } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parentPort, workerData } from 'node:worker_threads';
 import net from 'node:net';
@@ -13,7 +14,9 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const candidateRoot = await realpath(resolve(workerData.candidateRoot));
 const controllerModule = await realpath(resolve(workerData.controllerModule ?? join(root, 'plugins/llm-resilience/index.mjs')));
 const selfHealModule = await realpath(resolve(workerData.selfHealModule ?? join(root, 'plugins/agent-self-heal/index.mjs')));
-const requireHost = createRequire('/home/alex/.local/share/dsh-cli/package.json');
+// Same runtime location rule as the dsh launcher. The worker env deliberately
+// replaces HOME, so the parent passes its resolved data home explicitly.
+const requireHost = createRequire(join(workerData.dataHome ?? process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'dsh-cli/package.json'));
 const hostPath = id => requireHost.resolve(`@deepseek-ai/${id}`);
 // The narrowly qualified duplicate Agent may vary; its LLM WeakSet owner must
 // not. Resolve/hash the complete loaded Agent graph, never a second LLM graph.
@@ -191,11 +194,10 @@ async function run() {
     // Real profile rows pass config: {}. An omitted config short-circuits the
     // schema transformation and used to hide implicit array opt-outs.
     await ctx.plugin({ ...resilience, apply(c, config) { return resilience.apply(c, config, internals); } }, {});
-    const history = ctx.get('llmRecoveryHistory');
-    assert.equal(history.recoveryVersion, 2);
-    assert.equal(history.recoveryHistoryVersion, 2);
-    assert.strictEqual(history, ctx.get('llmRecovery'), 'history readiness alias must be the same controller, not another budget');
-    assert.strictEqual(ctx.get('llmRecovery'), ctx.get('llmResilience'), 'compatibility alias must not create another controller');
+    const history = ctx.get('llmRecoveryUnbounded');
+    assert.equal(history.recoveryVersion, 3);
+    assert.equal(history.recoveryHistoryVersion, 3);
+    for (const old of ['llmRecovery', 'llmResilience', 'llmRecoveryHistory']) assert.equal(ctx.get(old), undefined, `contract-2 alias ${old} must stay unpublished`);
     assert.deepEqual(history.config.policy.retryableCodes, ['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT', 'PI_AI_ERROR', 'INVALID_REQUEST']);
     assert.deepEqual(history.config.auxiliary.replaySafePurposes, ['compaction', 'session-title']);
     await ctx.plugin(selfHeal);
@@ -215,8 +217,9 @@ async function run() {
         const attempt = events.findLast(previous => previous.type === 'assistant/attempt');
         const warning = events.findLast(previous => previous.type === 'user/message' && previous.data.source?.kind === 'self-heal-observation');
         const reserved = events.findLast(previous => previous.type === 'agent/self-heal' && previous.data.action === 'reserved');
-        assert(attempt && reserved && warning, 'failed attempt, shared reservation and warning must precede retry');
-        assert(attempt.seq < reserved.seq && reserved.seq < warning.seq && warning.seq < event.seq);
+        assert(attempt && reserved && warning, 'failed attempt, shared reservation and the chain warning must precede retry');
+        // One warning per chain: it follows the FIRST reservation; later cycles reuse it.
+        assert(attempt.seq < reserved.seq && reserved.seq < event.seq && warning.seq < event.seq);
         assert(warning.data.content[0].text.startsWith('harness warning:'));
         assert.equal(toolCalls.length, 0, 'failed tool output cannot dispatch during recovery');
       }

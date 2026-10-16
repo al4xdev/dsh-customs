@@ -34,7 +34,7 @@ test('each auxiliary recovery receives safe diagnostic context, not the same bli
       for (let n = 1; n < h.calls.length; n++) {
         const attempt = h.calls[n];
         assert.deepEqual(attempt.messages.slice(0, saved.messages.length), saved.messages);
-        assert.equal(attempt.messages.length, saved.messages.length + n);
+        assert.equal(attempt.messages.length, saved.messages.length + 1, 'one notice, not one per retry');
         assert.equal(attempt.system, saved.system); assert.deepEqual(attempt.responseFormat, saved.responseFormat); assert.deepEqual(attempt.tools, saved.tools);
         for (const warning of attempt.messages.slice(saved.messages.length)) {
           assert.match(warning.content[0].text, /^harness warning:/);
@@ -49,9 +49,9 @@ test('each auxiliary recovery receives safe diagnostic context, not the same bli
   }
 });
 
-test('changing error types and warning messages cannot mint another auxiliary ten-retry budget', async () => {
+test('changing error types and warning messages cannot mint another auxiliary budget beyond an explicit cap', async () => {
   const codes = ['SERVER', 'TIMEOUT', 'TRANSPORT', 'PI_AI_ERROR'];
-  const h = fixture((_options, n) => from([fail(codes[(n - 1) % codes.length])]));
+  const h = fixture((_options, n) => from([fail(codes[(n - 1) % codes.length])]), { policy: { maxRetries: 10 } });
   try {
     const result = await collect(h.service.stream(request()));
     assert.equal(h.calls.length, 11); assert.equal(h.waits.length, 10);
@@ -59,6 +59,19 @@ test('changing error types and warning messages cannot mint another auxiliary te
     assert.equal(result.length, 1); assert.equal(result[0].reason.kind, 'error');
     assert.match(result[0].reason.failure.message, /^harness warning:/);
     assert(!result[0].reason.failure.message.includes('CANARY'));
+    // The single notice follows the latest code; earlier notices are replaced.
+    assert(h.calls.slice(1).every(call => call.messages.length === 2));
+    assert(h.calls[3].messages[1].content[0].text.includes('TRANSPORT'));
+  } finally { await h.close(); }
+});
+
+test('the unbounded default keeps an auxiliary operation retrying past ten at the hour cap', async () => {
+  const h = fixture((_options, n) => from(n <= 13 ? [fail('TRANSPORT')] : [stop]));
+  try {
+    assert.deepEqual(await collect(h.service.stream(request())), [stop]);
+    assert.equal(h.calls.length, 14); assert.equal(h.waits.length, 13);
+    assert.deepEqual(h.waits.slice(9), [3_600_000, 3_600_000, 3_600_000, 3_600_000]);
+    assert(h.calls.slice(1).every(call => call.messages.length === 2));
   } finally { await h.close(); }
 });
 
@@ -91,14 +104,22 @@ test('completed tool history is preserved and a warning never dispatches the too
   } finally { await h.close(); }
 });
 
-test('a server minimum above60min is an explicit terminal warning without a hidden quota timer', async () => {
+test('a server minimum above 60min is honored up to the 24h provider-wait cap', async () => {
   for (const code of ['SERVER', 'RATE_LIMIT']) {
-    const h = fixture(() => from([fail(code, { providerRetryAfterMs: 86_400_000 })]));
+    const h = fixture((_options, n) => from(n === 1 ? [fail(code, { providerRetryAfterMs: 7_200_000 })] : [stop]));
+    try { assert.deepEqual(await collect(h.service.stream(request())), [stop]); assert.deepEqual(h.waits, [7_200_000]); }
+    finally { await h.close(); }
+  }
+});
+
+test('a server minimum above the 24h provider-wait cap is an explicit terminal warning without a hidden timer', async () => {
+  for (const code of ['SERVER', 'RATE_LIMIT']) {
+    const h = fixture(() => from([fail(code, { providerRetryAfterMs: 86_400_001 })]));
     try {
       const result = await collect(h.service.stream(request()));
       assert.equal(h.calls.length, 1); assert.deepEqual(h.waits, []);
       assert.equal(result[0].reason.failure.code, code);
-      assert.equal(result[0].reason.failure.providerRetryAfterMs, 86_400_000);
+      assert.equal(result[0].reason.failure.providerRetryAfterMs, 86_400_001);
       assert.match(result[0].reason.failure.message, /^harness warning:/);
     } finally { await h.close(); }
   }
@@ -119,19 +140,19 @@ test('title recovery keeps the original title request and output constraints, wi
 
 test('quota-reset and transient failures consume the same auxiliary operation budget', async () => {
   const registered = { mode: 'normal', maxRetries: 9, retryableCodes: ['SERVER', 'ANTIGRAVITY_QUOTA_RESET'] };
-  const h = fixture((_options, n) => from([n % 2 ? fail('ANTIGRAVITY_QUOTA_RESET', { status: 429, providerRetryAfterMs: 5000 }) : fail('SERVER')]), undefined, registered);
+  const h = fixture((_options, n) => from([n % 2 ? fail('ANTIGRAVITY_QUOTA_RESET', { status: 429, providerRetryAfterMs: 5000 }) : fail('SERVER')]), { policy: { maxRetries: 10 } }, registered);
   try {
     const result = await collect(h.service.stream(request({ provider: 'google-antigravity' })));
     assert.equal(h.calls.length, 11); assert.equal(h.waits.length, 10);
     assert.equal(h.waits[8], 1_800_000); assert.equal(h.waits[9], 3_600_000);
     assert.match(result[0].reason.failure.message, /^harness warning:/);
-    assert.equal(h.calls.at(-1).messages.length, 11);
+    assert.equal(h.calls.at(-1).messages.length, 2);
   } finally { await h.close(); }
 });
 
-test('quota-reset requires provider opt-in and cannot introduce a24h auxiliary exception', async () => {
+test('quota-reset requires provider opt-in and cannot exceed the 24h provider-wait cap', async () => {
   for (const registered of [undefined, { mode: 'normal', maxRetries: 9, retryableCodes: ['ANTIGRAVITY_QUOTA_RESET'] }]) {
-    const hint = registered ? 86_400_000 : 5000;
+    const hint = registered ? 86_400_001 : 5000;
     const h = fixture(() => from([fail('ANTIGRAVITY_QUOTA_RESET', { status: 429, providerRetryAfterMs: hint })]), undefined, registered);
     try {
       const result = await collect(h.service.stream(request({ provider: 'google-antigravity' })));
@@ -153,7 +174,7 @@ test('only the reviewed malformed-tool signature admits INVALID_REQUEST, not a f
       assert.equal(h.calls.length, reviewed ? 2 : 1);
       if (reviewed) {
         assert.equal(result[0].reason.kind, 'stop');
-        assert(h.calls[1].messages.at(-1).content[0].text.includes('malformed-tool-call'));
+        assert(h.calls[1].messages.at(-1).content[0].text.includes('malformed function call'));
       } else { assert.equal(result[0].reason.kind, 'error'); assert.deepEqual(h.waits, []); }
     } finally { await h.close(); }
   }
