@@ -60,8 +60,12 @@ aplicar também no lab, não symlink nem `sed` local.
    - Fora de escopo (documentado): `tools/task10-profile/promotion.mjs`,
      `tools/clean-install/profile-transfer.mjs`, `tools/resilience/pi-ai-candidate-worker.mjs`,
      `plugins/session-create/contracts.mjs` (Companion), docs históricos.
-6. **`activate.mjs` não aceita o perfil restaurado** (três runs `alex-*`), e
-   `research-activation.mjs` exige os cinco perfis, inclusive Companion.
+6. **`activate.mjs` não aceitava o perfil restaurado** (três runs `alex-*`): agora
+   respeita o bloco do `research-activation` e dobra o `- insert:` isolado do
+   migrador. `research-activation.mjs` (exige os cinco perfis) passou a aceitar e
+   emitir caminhos relativos ao perfil; sem isso, a conversão quebrava o `--check`.
+   O `alex-session-bridge` (só Companion) é aplicado no `dsh-tui` do lab, como o
+   manifesto declara; nesta máquina fica desligado na camada local.
 
 ## Portabilidade (decisão do dono: corrigir na fonte)
 - Semântica verificada no DSH: `baseUrl` do loader = diretório do perfil

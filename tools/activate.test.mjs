@@ -234,3 +234,35 @@ test('profile rows are written relative to the profile, so another HOME with the
   assert.equal(second.status, 0);
   assert(second.report.reports.every(report => !report.changed), JSON.stringify(second.report.reports));
 });
+
+test('a standalone managed insert is folded and research-activation rows stay its own', () => {
+  const research = { id: 'alex-research', module: 'research/index.mjs', profiles: ['dsh-tui'], overlay: false };
+  const other = { id: 'alex-other', module: 'other/index.mjs', profiles: ['dsh-tui'] };
+  const { text, run } = fixture({ profiles: ['dsh-tui'], extras: [research, other], source: root => `- insert:
+    - id: alex-other
+      name: ${root}/plugins/other/index.mjs
+    - id: hand-written
+      name: /keep/local.mjs
+- insert:
+    - id: alex-llm-resilience
+      name: ${root}/plugins/llm-resilience/lib/index-v5-unified.mjs
+      config: {}
+# BEGIN alex-research activation v1
+- insert:
+    - id: alex-research
+      name: ${root}/plugins/research/index.mjs
+    - id: preset-owned
+      name: '@deepseek-ai/dsh-agent-preset'
+# END alex-research activation v1
+` });
+  const first = run(['--write', '--profile', 'dsh-tui']);
+  assert.equal(first.status, 0, JSON.stringify(first.report.reports));
+  const final = text('dsh-tui');
+  const rows = inserted(final);
+  for (const id of ['alex-llm-resilience', 'alex-other', 'alex-research']) assert.equal(rows.filter(row => row.id === id).length, 1, id);
+  assert.equal(parse(final).filter(patch => patch.insert?.length === 1 && patch.insert[0].id === 'alex-llm-resilience').length, 0, 'standalone insert folded');
+  assert(final.includes(`# BEGIN alex-research activation v1\n- insert:\n    - id: alex-research\n`), 'research block untouched');
+  assert(rows.find(row => row.id === 'hand-written'));
+  assert.equal(run(['--check', '--profile', 'dsh-tui']).status, 0);
+  assert.equal(text('dsh-tui'), final);
+});

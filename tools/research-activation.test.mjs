@@ -57,10 +57,11 @@ function fixture(t) {
   return { ...options, options, put, yput, packageDirs, originals, plan: () => planActivation(options) };
 }
 
-function expandedPlugins(plugins) {
+// Include paths resolve like the loader: relative to the including document's dir.
+function expandedPlugins(plugins, base) {
   return plugins.flatMap(row => {
-    if (row.name === INCLUDE) return expandedPlugins(parse(readFileSync(row.config.path, 'utf8')));
-    if (row.group) return [row, ...expandedPlugins(row.config)];
+    if (row.name === INCLUDE) { const path = resolve(base, row.config.path); return expandedPlugins(parse(readFileSync(path, 'utf8')), dirname(path)); }
+    if (row.group) return [row, ...expandedPlugins(row.config, base)];
     return [row];
   });
 }
@@ -76,7 +77,9 @@ test('five-profile plan is read-only, selective, expression-safe, and preserves 
     assert.ok(change.after.startsWith(f.originals.get(name)));
     const patches = parse(change.after);
     const added = patches.flatMap(p => p.insert ?? []).filter(p => p.id === 'alex-research');
-    assert.equal(added.length, 1); assert.equal(added[0].name, join(f.root, 'plugins/research/index.mjs'));
+    // New rows are profile-relative (portable dotfiles) and resolve to this checkout.
+    assert.equal(added.length, 1); assert.ok(added[0].name.startsWith('../'), added[0].name);
+    assert.equal(resolve(join(f.profilesDir, name), added[0].name), join(f.root, 'plugins/research/index.mjs'));
     assert.equal(patches.filter(p => p.id === 'web').length, 0);
   }
   const companion = plan.changes.find(c => c.path === join(f.profilesDir, 'companion/cordis.patch.yml'));
@@ -94,7 +97,7 @@ test('apply fixtures, validate transformed trees, idempotence and exact rollback
   for (const profile of ['web', 'dsh-tui']) {
     const patches = parse(readFileSync(join(f.profilesDir, profile, 'cordis.patch.yml'), 'utf8'));
     for (const patch of patches.filter(p => p.id?.startsWith('preset-') && p.config?.plugins)) {
-      for (const row of expandedPlugins(patch.config.plugins).filter(p => p.name === WEB)) {
+      for (const row of expandedPlugins(patch.config.plugins, join(f.profilesDir, profile)).filter(p => p.name === WEB)) {
         assert.equal(row.config.search, false); assert.equal(row.config.fetch, true);
         assert.ok([60000, 8123].includes(row.config.searchTimeoutMs));
       }

@@ -201,21 +201,38 @@ function lineEndOfNode(src, offset) {
   return next === -1 ? src.length : next + 1;
 }
 
+// tools/research-activation.mjs owns the rows of its marked block: they are
+// neither managed runs nor rendered here, so the two generators never compete.
+const RESEARCH_BEGIN = '# BEGIN alex-research activation v1\n';
+const RESEARCH_END = '# END alex-research activation v1\n';
+function researchBlockRange(src) {
+  const start = src.indexOf(RESEARCH_BEGIN);
+  const end = start < 0 ? -1 : src.indexOf(RESEARCH_END, start);
+  return end < 0 ? null : [start, end + RESEARCH_END.length];
+}
+const outside = (range, offset) => !range || offset < range[0] || offset >= range[1];
+
 // Finds every maximal run of consecutive managed entries inside any insert
-// block. Returns byte spans into src plus the list indent to reproduce.
-function locateManagedRuns(doc, src, prefix) {
+// block outside the research block. Returns byte spans into src plus the list
+// indent to reproduce. A run is `standalone` when its whole top-level item is
+// an insert of managed rows only (the shape the resilience migrator appends).
+function locateManagedRuns(doc, src, prefix, skip = researchBlockRange(src)) {
   const runs = [];
   const top = doc.contents?.items ?? [];
   for (const item of top) {
     const insert = item?.get?.('insert');
-    if (!insert?.items) continue;
+    if (!insert?.items || !outside(skip, item.range[0])) continue;
+    const managedOnly = item.items?.length === 1 && insert.items.every(entry => {
+      const id = entry?.get?.('id');
+      return typeof id === 'string' && id.startsWith(prefix);
+    });
     let run = null;
     for (const entry of insert.items) {
       const id = entry?.get?.('id');
       const managed = typeof id === 'string' && id.startsWith(prefix);
       if (managed) {
         if (!run) {
-          run = { firstOffset: entry.range[0], firstItem: entry, ids: [] };
+          run = { firstOffset: entry.range[0], firstItem: entry, ids: [], item, standalone: managedOnly };
           runs.push(run);
         }
         run.lastItem = entry;
@@ -229,8 +246,26 @@ function locateManagedRuns(doc, src, prefix) {
     run.start = lineStart(src, run.firstOffset);
     run.end = lineEndOfNode(src, run.lastItem.range[2]);
     run.indent = listIndentOf(src, run.firstOffset);
+    run.itemStart = lineStart(src, run.item.range[0]);
+    run.itemEnd = lineEndOfNode(src, run.item.range[2]);
   }
   return runs;
+}
+
+// One primary run gets the rendered block; standalone managed-only inserts are
+// folded into it (removed whole), since the rendered block re-emits their rows.
+function planRuns(runs) {
+  if (runs.length <= 1) return { primary: runs[0], folded: [] };
+  const anchored = runs.filter(run => !run.standalone);
+  if (anchored.length > 1) return null;
+  const primary = anchored[0] ?? runs[0];
+  return { primary, folded: runs.filter(run => run !== primary) };
+}
+
+function splice(src, edits) {
+  let out = src;
+  for (const edit of [...edits].sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.replacement + out.slice(edit.end);
+  return out;
 }
 
 // Where a fresh managed block goes when the profile has an insert block but no
@@ -274,6 +309,7 @@ function syncFile(path, label, entries, options, YAML, manifest, migrate) {
       return result;
     }
     const runs = locateManagedRuns(doc, src, manifest.managedIdPrefix);
+    if (researchBlockRange(src)) entries = entries.filter(entry => entry.id !== 'alex-research');
     if (migrate) {
       try {
         // Validate original ownership before normal sync can hide foreign paths,
@@ -286,17 +322,20 @@ function syncFile(path, label, entries, options, YAML, manifest, migrate) {
         return result;
       }
     }
-    if (runs.length > 1) {
+    const layout = planRuns(runs);
+    if (!layout) {
       result.note = `${runs.length} separate managed runs; refusing to guess (normalize the file by hand)`;
       result.error = true;
       return result;
     }
-    if (runs.length === 1) {
-      const run = runs[0];
+    if (layout.primary) {
+      const run = layout.primary;
       const block = renderEntries(entries, run.indent, YAML);
-      result.current = src.slice(run.start, run.end);
+      result.current = [run, ...layout.folded].map(item => src.slice(item.start, item.end)).join('');
       result.block = block;
-      next = src.slice(0, run.start) + block + src.slice(run.end);
+      next = splice(src, [{ start: run.start, end: run.end, replacement: block },
+        ...layout.folded.map(item => ({ start: item.itemStart, end: item.itemEnd, replacement: '' }))]);
+      if (layout.folded.length) result.note = `folded ${layout.folded.length} standalone managed insert(s) into the managed block`;
     } else {
       const point = insertionPoint(doc, src);
       if (point) {
@@ -331,11 +370,12 @@ function syncFile(path, label, entries, options, YAML, manifest, migrate) {
       next = proposal.candidate;
       result.resilience = { changed: proposal.changed, reasons: [...new Set(proposal.changes.map(change => change.reason))] };
       const migratedDoc = YAML.parseDocument(next, { keepSourceTokens: true });
-      const runs = locateManagedRuns(migratedDoc, next, manifest.managedIdPrefix);
+      const researchRange = researchBlockRange(next);
+      const runs = locateManagedRuns(migratedDoc, next, manifest.managedIdPrefix, researchRange);
       if (runs.length === 1) {
         // A pure CST append can extend config:{} in flow form. Normalize only
         // our generated run now, not on the next check after preserving it.
-        const finalEntries = (migratedDoc.contents?.items ?? []).flatMap(patch => patch.get?.('insert')?.items ?? []).filter(node => node.get?.('id')?.startsWith(manifest.managedIdPrefix)).map(node => ({ id: node.get('id'), name: node.get('name'), config: node.get('config', true)?.toJSON() }));
+        const finalEntries = (migratedDoc.contents?.items ?? []).filter(patch => outside(researchRange, patch.range[0])).flatMap(patch => patch.get?.('insert')?.items ?? []).filter(node => node.get?.('id')?.startsWith(manifest.managedIdPrefix)).map(node => ({ id: node.get('id'), name: node.get('name'), config: node.get('config', true)?.toJSON() }));
         const run = runs[0], block = renderEntries(finalEntries, run.indent, YAML);
         next = next.slice(0, run.start) + block + next.slice(run.end);
         result.block = block;

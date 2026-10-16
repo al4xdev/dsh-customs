@@ -19,6 +19,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, realpath
 import { createRequire } from 'node:module';
 import { dirname, resolve, join, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isProfileRelative, profileRelative, resolveProfilePath } from './profile-paths.mjs';
 
 export const PROFILES = ['web', 'headless', 'tui', 'dsh-tui', 'companion'];
 export const RESEARCH_ID = 'alex-research';
@@ -146,9 +147,11 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
       if (typeof id !== 'string' || val(row, 'id') !== `preset-${id}` || presetIds.has(id)) fail(`${profileName}: ambiguous preset identity ${id}`);
       presetIds.add(id);
     }
-    const research = seq(entries, 'host').filter(row => val(row, 'id') === RESEARCH_ID || val(row, 'name') === modulePath);
-    if (research.length > 1 || research.some(row => val(row, 'id') !== RESEARCH_ID || val(row, 'name') !== modulePath || get(row, 'disabled') !== undefined && val(row, 'disabled') !== false)) fail(`${profileName}: conflicting research plugin`);
-    if (!research.length) newRows.add({ id: RESEARCH_ID, name: modulePath });
+    // Portable profiles name the module relative to the profile (tools/profile-paths.mjs).
+    const researchModule = row => resolveProfilePath(profile, val(row, 'name'));
+    const research = seq(entries, 'host').filter(row => val(row, 'id') === RESEARCH_ID || researchModule(row) === modulePath);
+    if (research.length > 1 || research.some(row => val(row, 'id') !== RESEARCH_ID || researchModule(row) !== modulePath || get(row, 'disabled') !== undefined && val(row, 'disabled') !== false)) fail(`${profileName}: conflicting research plugin`);
+    if (!research.length) newRows.add({ id: RESEARCH_ID, name: profileRelative(profile, modulePath) });
     counters.research = true;
     const seenIncludes = new Set();
     function transform(list, scope, base = profile) {
@@ -157,7 +160,7 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
       for (const row of seq(out, scope)) {
         map(row, scope); const id = val(row, 'id'), name = val(row, 'name');
         if (localIds.has(id)) fail(`${scope}: duplicate id ${id}`); if (id) localIds.add(id);
-        if (name === PRESET || id === RESEARCH_ID || name === modulePath) fail(`${scope}: nested preset/research scope requires review`);
+        if (name === PRESET || id === RESEARCH_ID || (isProfileRelative(name) ? resolve(base, name) : name) === modulePath) fail(`${scope}: nested preset/research scope requires review`);
         if (id === 'tool-web' && name !== WEB) fail(`${scope}: tool-web owned by different plugin`);
         if (name === WEB && get(row, 'disabled')?.value !== true) {
           counters.webScopes++;
@@ -181,17 +184,19 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
           if (get(cfg, 'patches')) included = compose(included, get(cfg, 'patches'), codec, { allowMissing: false });
           const result = transform(included, `${scope}/${id}`, dirname(path));
           seenIncludes.delete(path);
-          if (!isAbsolute(pathValue) && !pathValue.startsWith('file:')) {
-            cfg.set('path', path); changed = true;
+          // Derivatives live in the profile dir: a relative include from another base
+          // is re-based onto the profile; relative to the profile itself it is final.
+          if (!isAbsolute(pathValue) && !pathValue.startsWith('file:') && base !== profile) {
+            cfg.set('path', profileRelative(profile, path)); changed = true;
           }
           if (result.changed) {
             const artifact = artifactFor(result.list);
-            const next = cfg.clone(); next.set('path', artifact); next.delete('patches');
+            const next = cfg.clone(); next.set('path', profileRelative(profile, artifact)); next.delete('patches');
             row.set('config', next); changed = true;
           }
         }
-        if (typeof name === 'string' && /^\.{1,2}\//.test(name)) {
-          row.set('name', resolve(base, name)); changed = true;
+        if (isProfileRelative(name) && base !== profile) {
+          row.set('name', profileRelative(profile, resolve(base, name))); changed = true;
         }
       }
       return { list: out, changed };
@@ -218,7 +223,7 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
         const metadata = parse(read(join(dir, 'preset.yml'))).toJS();
         const row = new YAML.Document({ id: 'preset-liangshen', name: PRESET, config: {
           id: 'liangshen', name: metadata.name, description: metadata.description, order: metadata.order,
-          plugins: [{ id: 'liangshen-plugins', name: INCLUDE, config: { path: join(dir, 'agent.cordis.yml') } }],
+          plugins: [{ id: 'liangshen-plugins', name: INCLUDE, config: { path: profileRelative(profile, join(dir, 'agent.cordis.yml')) } }],
         } }).contents;
         entries.add(row); newRows.add(row.clone());
       }
@@ -230,7 +235,7 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
         const cfg = map(get(row, 'config'), `${id} config`);
         const result = transform(get(cfg, 'plugins'), id);
         if (result.changed) {
-          const next = cfg.clone(); next.set('plugins', new YAML.Document([{ id: `alex-research-${val(cfg, 'id')}-plugins`, name: INCLUDE, config: { path: artifactFor(result.list) } }]).contents);
+          const next = cfg.clone(); next.set('plugins', new YAML.Document([{ id: `alex-research-${val(cfg, 'id')}-plugins`, name: INCLUDE, config: { path: profileRelative(profile, artifactFor(result.list)) } }]).contents);
           overlay.add({ id, name, config: next }); counters.presets.push(val(cfg, 'id'));
         }
       } else if (name === WEB || val(row, 'group') === true || name === INCLUDE) {

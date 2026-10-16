@@ -249,10 +249,10 @@ compila, instala bundles nem cria automaticamente perfis ausentes. A dependênci
 Opções: `--profile NAME` (repetível), `--root DIR`, `--json`, `--check`, `--write`.
 Sem `--profile`, o sync também pode atualizar o overlay do repositório.
 Manifestos inválidos, módulos ausentes e múltiplos blocos gerenciados separados
-são reportados; não se tenta adivinhar a configuração. O `dsh-tui` atual tem três
-runs `alex-*` (bloco principal, `alex-llm-resilience` e o bloco research), então o
-`activate` recusa esse perfil até ele ser normalizado; ele foi composto pelo
-migrador de resilience e pelo `research-activation`.
+são reportados; não se tenta adivinhar a configuração. As linhas do bloco
+`# BEGIN/END alex-research activation` pertencem ao `research-activation` e não
+contam como run nem são renderizadas aqui; um `- insert:` isolado só com linhas
+`alex-*` (forma que o migrador de resilience anexa) é dobrado no bloco gerenciado.
 
 ## Estado da consolidação desta máquina
 
