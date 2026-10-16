@@ -40,6 +40,8 @@ Keep NativeGoals/GoalPush service entries OUT of the preset plugin list. Use one
 
 Leave push absent unless separately authorized. Credential/cloud/account/login/phone changes are outside this adapter.
 
+The host's own Loader row is compared exactly, except that `name` is compared as the module the Loader imports (absolute path, `file:` URL or profile-relative path of the same file are equal). SDK 0.2.0-rc.2's ConfigEditor (the app's model picker, Settings) reconciles the profile layer with raw paths (the HMR watcher may re-anchor them to file URLs afterwards); the Loader never restarts a row for that, so a raw comparison latched the running assembly stale until a service restart. A row naming a different module, or any other changed field, still latches stale (`lifecycle.test.mjs`, "in-profile host").
+
 ## Verification
 
 `node --test plugins/companion-native-host/host.test.mjs plugins/companion-native-host/full-preset.test.mjs`

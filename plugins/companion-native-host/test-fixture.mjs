@@ -9,7 +9,7 @@ import { DSH_CLI_ANCHOR } from '../session/host-paths.mjs';
 const anchor = DSH_CLI_ANCHOR;
 const require = createRequire(anchor);
 export const sdk = name => import(require.resolve(`@deepseek-ai/${name}`));
-const [{ TypertRemoteService }, { LlmAdapter }, { boot }] = await Promise.all([sdk('dsh-typert-protocol'), sdk('dsh-llm'), sdk('dsh-app-boot')]);
+const [{ TypertRemoteService }, { LlmAdapter }, { boot, readProfilePatches, reconcileProfilePatches }] = await Promise.all([sdk('dsh-typert-protocol'), sdk('dsh-llm'), sdk('dsh-app-boot')]);
 export const name = 'task101-host-own-memory-fixture';
 class OrdinaryRpc extends TypertRemoteService {
   static inject = ['typert'];
@@ -34,7 +34,10 @@ export async function apply(ctx, config = {}) {
   ctx.provide('credentials', { async modifyRecord(key, modify) { const result = await modify(records.get(key)); if (result !== undefined) records.set(key, result); return records.get(key); } });
   ctx.inject(['typert'], async ready => { await ready.plugin(OrdinaryRpc); });
 }
-export async function fixture({ presetInitially = true, todos = true, autoReady = true, withDefaultModelEditor = false } = {}) {
+export async function fixture({ presetInitially = true, todos = true, autoReady = true, withDefaultModelEditor = false, hostInProfile = false } = {}) {
+  // hostInProfile = the deployed layout: the host row lives in the profile's own patch
+  // layer (inside the root Include), so every profile live reload reaches its own entry.
+  const editor = withDefaultModelEditor || hostInProfile;
   mkdirSync('.dumps/tasks', { recursive: true });
   const directory = mkdtempSync(resolve('.dumps/tasks/task101-composition-host-'));
   const profile = join(directory, 'profile'), cwd = join(directory, 'workspace'), file = join(directory, 'cordis.yml');
@@ -49,27 +52,38 @@ export async function fixture({ presetInitially = true, todos = true, autoReady 
       .map(([id, name, config]) => ({ id, name: require.resolve(`@deepseek-ai/${name}`), ...(config ? { config } : {}) })),
     ...(presetInitially ? [{ id: 'preset-companion', name: require.resolve('@deepseek-ai/dsh-agent-preset'), config: definition }] : []),
     { id: 'preset-foreign', name: require.resolve('@deepseek-ai/dsh-agent-preset'), config: { id: 'foreign', name: 'Foreign', order: 1, plugins: [] } },
-    ...(withDefaultModelEditor ? [
+    ...(editor ? [
       { id: 'config-editor', name: require.resolve('@deepseek-ai/dsh-config-editor') },
       { id: 'agent-default-model', name: require.resolve('@deepseek-ai/dsh-agent-default-model'), config: { provider: 'own-never-provider', model: 'own-first', reasoningEffort: 'low' } }
-    ] : [])];
+    ] : []),
+    ...(hostInProfile ? [{ id: 'companion-native-host', name: fileURLToPath(import.meta.url), inject: hostInject, config: { enabled: true, fixtureHost: true } }] : [])];
   const profileContext = { name: 'companion', dir: profile };
-  if (withDefaultModelEditor) {
-    // Profile patch loading canonicalizes absolute module paths to file URLs.
-    // Boot and the persisted authored layer must use the same public spelling;
-    // otherwise ConfigEditor correctly treats them as different module owners.
-    for (const row of rows) if (row.name.startsWith('/')) row.name = pathToFileURL(row.name).href;
+  let patches = [{ insert: rows }];
+  if (editor) {
     const home = join(directory, 'empty-home'); mkdirSync(home);
     Object.assign(profileContext, { home, installAnchor: anchor, patchPath: join(profile, 'cordis.patch.yml'), overlays: [], telemetryDisabledEnv: '' });
     writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'own-task122-never-live-profile', private: true, dsh: { profile: { bundles: [] } } }));
-    writeFileSync(profileContext.patchPath, JSON.stringify([{ insert: rows }]));
+    if (hostInProfile) {
+      // Authored like tools/session-companion/profile.mjs: raw absolute plugin paths and a
+      // separate id-only model override. Boot reads it through the SDK's own profile
+      // reader, which anchors those paths to file URLs exactly as `dsh` does.
+      const model = rows.find(row => row.id === 'agent-default-model'), { config: selection } = model; delete model.config;
+      writeFileSync(profileContext.patchPath, JSON.stringify([{ insert: rows }, { id: 'agent-default-model', config: selection }]));
+      patches = readProfilePatches('dsh', profileContext);
+    } else {
+      // Profile patch loading canonicalizes absolute module paths to file URLs.
+      // Boot and the persisted authored layer must use the same public spelling;
+      // otherwise ConfigEditor correctly treats them as different module owners.
+      for (const row of rows) if (row.name.startsWith('/')) row.name = pathToFileURL(row.name).href;
+      writeFileSync(profileContext.patchPath, JSON.stringify([{ insert: rows }]));
+    }
   }
   const readyCallbacks = new Set(), readyTasks = new Set(); let startupCommitted = false;
   // The initializer must not await first-lease work. This test owner separately
   // observes the real callback task after that initializer has returned.
   const appReady = { onReady(callback) { if (startupCommitted) readyTasks.add(callback()); else readyCallbacks.add(callback); return () => readyCallbacks.delete(callback); } };
   const commitReady = async () => { startupCommitted = true; const tasks = [...readyCallbacks].map(callback => callback()); readyCallbacks.clear(); await Promise.all(tasks); };
-  const app = await boot('task101-host-isolated', file, [{ insert: rows }], ctx => {
+  const app = await boot('task101-host-isolated', file, patches, ctx => {
     ctx.provide('profileContext', profileContext); ctx.provide('appReady', appReady);
   }, pathToFileURL(anchor).href);
   if (autoReady) await commitReady();
@@ -101,7 +115,13 @@ export async function fixture({ presetInitially = true, todos = true, autoReady 
     const body = await response.json(); if (body.rpcId !== rpcId) throw new Error('own fixture correlation mismatch');
     return { status: response.status, ...body.result };
   }
-  return { app, directory, profile, definition, mount, create, rpc, commitReady, get modelCalls() { return modelCalls; },
+  // The public live-reload path HMR and ConfigEditor use, over the current profile files,
+  // with optionally respelled rows (edit receives a copy of every inserted row).
+  async function reload(edit = row => row) {
+    const next = readProfilePatches('dsh', profileContext).map(patch => patch.insert ? { ...patch, insert: patch.insert.map(row => edit({ ...row })) } : patch);
+    await reconcileProfilePatches(app, next, 'dsh');
+  }
+  return { app, directory, profile, definition, mount, create, rpc, commitReady, reload, hosted: () => assemblies.get(app.root), get modelCalls() { return modelCalls; },
     pushStoreExists: () => existsSync(join(profile, 'companion-push')), close: () => app.fiber.dispose() };
 }
 export const value = response => { if (response.status !== 200 || response.ok !== true) throw new Error(`Own fixture operation failed: ${JSON.stringify(response)}`); return response.value; };

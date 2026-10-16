@@ -59,6 +59,10 @@ Suítes dos diretórios tocados verdes nesta máquina (sem `/home/alex`) e no la
 - [x] Android: todos os itens exceto push (decisão de design documentada em NOTIFICATIONS.md);
       build/testes Gradle no lab.
 - [x] Prompts: `AGENTS-Companion.md` enxuto (8051 → 6182 bytes) e revisado por crítico.
-- [ ] Extensão aprovada: `ask`/`recap` (btw) pelo bridge, sem aprovação, `session` com
+- [x] Extensão aprovada (abc5b3e): `ask`/`recap` (btw) pelo bridge, sem aprovação, `session` com
       `ask`/`recap` primeiro e `read` como último recurso; CRLF normalizado para LF.
-- [ ] Deploy no lab com reinício do `dsh-companion`; APK debug instalado via `adb` do lab.
+- [x] Deploy no lab com reinício do `dsh-companion`; APK debug 0.16.0 instalado via `adb` do lab.
+- [x] Auditoria de prompt (3445bd5): `npm run prompt:audit`, baseline do companion gerado no
+      lab (nesta máquina o companion difere por caminhos só do lab: esperado).
+- [x] Latch `stale`: o ConfigEditor do SDK reconcilia a linha do host com caminho cru (boot usa
+      URL `file:`); o host comparava `name` byte a byte. Agora compara o módulo importado.

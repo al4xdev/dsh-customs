@@ -56,6 +56,59 @@ test('real SDK default-model saveSelection through real ConfigEditor preserves n
   } finally { await f.close(); }
 });
 
+// Deployed layout: the host row is in the profile layer. A real ConfigEditor save (the app's
+// model picker) re-reconciles that layer with raw plugin paths, then the HMR watcher with
+// file URLs. Unchanged module and config: the same assembly must recover, no restart.
+test('in-profile host survives real ConfigEditor saves that respell its own row without a service restart', { timeout: 20000 }, async () => {
+  const f = await fixture({ hostInProfile: true });
+  try {
+    const assembly = f.hosted(), initial = assembly.status(), agent = await f.create();
+    assert.equal(initial.phase, 'ready');
+    const old = value(await read(f, agent)), oldSource = f.app.get('companionNativeGoals').source, defaults = f.app.get('agentDefaultModel');
+    await defaults.saveSelection(defaults.currentSelection());
+    await f.app.loader.await(); await assembly.settled();
+    let observed = value(await status(f));
+    // A reconcile did reach the host (the selection itself did not change).
+    assert.ok(observed.generation > initial.generation);
+    assert.equal(observed.phase, 'ready'); assert.equal(observed.available, true); assert.equal(observed.instanceId, initial.instanceId);
+    assert.equal(oldSource.ownsSession(agent.id, f.app.connection.operator), false);
+    const fresh = value(await read(f, agent)); assert.notEqual(fresh.sourceId, old.sourceId); assert.equal(fresh.sessionId, agent.id);
+    await defaults.saveSelection({ provider: 'own-never-provider', model: 'own-second', reasoningEffort: 'high' });
+    await f.reload(); // the HMR watcher's follow-up over the bytes ConfigEditor just wrote
+    await f.app.loader.await(); await assembly.settled();
+    observed = value(await status(f));
+    assert.equal(observed.phase, 'ready'); assert.equal(observed.instanceId, initial.instanceId);
+    assert.equal(f.app.get('agentDefaultModel').currentSelection().model, 'own-second');
+    assert.equal(value(await read(f, agent)).sessionId, agent.id);
+    assert.equal(value(await f.rpc('ownOrdinary/read')).operator, true); assert.equal(f.modelCalls, 0);
+  } finally { await f.close(); }
+});
+
+test('in-profile host: raw path spelling recovers, a different owner module stays stale and never re-arms', { timeout: 20000 }, async () => {
+  const f = await fixture({ hostInProfile: true });
+  try {
+    const assembly = f.hosted(), initial = assembly.status(), agent = await f.create();
+    const raw = row => row.name.startsWith('file:') ? { ...row, name: fileURLToPath(row.name) } : row;
+    await f.reload(raw); await f.app.loader.await(); await assembly.settled();
+    assert.equal(assembly.status().phase, 'ready'); assert.ok(assembly.status().generation > initial.generation);
+    const before = value(await read(f, agent)), source = f.app.get('companionNativeGoals').source;
+    // Same row, another module: the Loader applies a name-only change without restarting
+    // the fiber, so only an explicit recreation may grant native authority again.
+    const other = fileURLToPath(new URL('./index.mjs', import.meta.url));
+    await f.reload(row => row.id === 'companion-native-host' ? { ...row, name: other } : row);
+    await f.app.loader.await(); await assembly.settled();
+    let observed = value(await status(f));
+    assert.equal(observed.phase, 'stale'); assert.equal(observed.requiresRecreate, true); assert.equal(observed.instanceId, initial.instanceId);
+    assert.equal(source.ownsSession(agent.id, f.app.connection.operator), false);
+    assert.notEqual((await read(f, agent)).ok, true);
+    const stale = await f.rpc('nativeGoals/read', { sessionId: before.sessionId, generation: 1 }); assert.notEqual(stale.ok, true);
+    // Restoring the original spelling must not silently re-arm the latched assembly.
+    await f.reload(); await f.app.loader.await(); await assembly.settled();
+    observed = value(await status(f)); assert.equal(observed.phase, 'stale'); assert.equal(observed.requiresRecreate, true);
+    assert.equal(value(await f.rpc('ownOrdinary/read')).operator, true); assert.equal(f.modelCalls, 0);
+  } finally { await f.close(); }
+});
+
 test('actual SDK current preset replacement cannot heal even when old retained mount survives', { timeout: 10000 }, async () => {
   const f = await fixture();
   try {

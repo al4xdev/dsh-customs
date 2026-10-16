@@ -1,6 +1,7 @@
 import { resolveInstalled } from '../session/host-paths.mjs';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { createHostController } from './controller.mjs';
 
@@ -26,8 +27,18 @@ export async function createCompanionNativeHost(ctx, config = {}) {
   ]);
   const identityOf = service => service?.identity ?? service?.[symbols.original] ?? service;
   const initialConfig = structuredClone(config), entry = owner.entry;
-  const ownerOptions = entry ? structuredClone(entry.options) : undefined;
   const ownerParent = entry?.parent, ownerRuntime = owner.runtime, publicLoader = ctx.root.get('loader');
+  // SDK 0.2.0-rc.2 spells one profile-layer row two ways: boot and the HMR watcher
+  // anchor inserted plugin paths to file URLs, ConfigEditor's post-write reconcile
+  // passes them raw (`/abs/x.mjs`). Each Settings/model save respells the row (and the
+  // watcher may flip it back); the Loader never restarts a row for a name-only change, so a raw
+  // comparison latched this same, still-running assembly stale until a process
+  // restart. Compare the module the Loader imports; every other field stays exact.
+  const base = ownerParent?.tree?.ctx?.baseUrl;
+  const moduleOf = name => typeof name !== 'string' ? name : isAbsolute(name) ? pathToFileURL(name).href :
+    /^\.\.?\//.test(name) && typeof base === 'string' ? new URL(name, base).href : name;
+  const rowOf = options => options && { ...options, name: moduleOf(options.name) };
+  const ownerOptions = entry ? structuredClone(rowOf(entry.options)) : undefined;
   // A stale factory argument is not current configuration authority. Require the
   // actual public Loader row, its current owner fiber/runtime/placement and both
   // resolved fiber config and raw row specification. Unknown provenance stays shut.
@@ -35,7 +46,7 @@ export async function createCompanionNativeHost(ctx, config = {}) {
     identityOf(ctx.root.get('loader')) === identityOf(publicLoader) && identityOf(ctx.get('loader')) === identityOf(publicLoader) &&
     entry.fiber === owner && owner.entry === entry && owner.runtime === ownerRuntime &&
     entry.parent === ownerParent && [...publicLoader.entries()].includes(entry) &&
-    isDeepStrictEqual(entry.options, ownerOptions) && isDeepStrictEqual(owner.config, initialConfig) && isDeepStrictEqual(config, initialConfig);
+    isDeepStrictEqual(rowOf(entry.options), ownerOptions) && isDeepStrictEqual(owner.config, initialConfig) && isDeepStrictEqual(config, initialConfig);
   const controller = createHostController(ctx, { createScope, livePresetMounts, identityOf, configCurrent }, async (hostCtx, boundary) => {
     const { CompanionNativeGoalsService } = await import('../../android/companion/backend-native-goals/index.mjs');
     class GuardedNativeGoals extends CompanionNativeGoalsService {
