@@ -1,10 +1,10 @@
-# Ativação conjunta APK7 e perfil corrigido
+# Joint activation of APK7 and fixed profile
 
-## Autorização fresca
-Na pergunta operacional safe-apk7-profile-activation, dono selecionou 'Sim, tudo livre: atualizar ambos' (custom 'x iss'), confirmando ausência de rascunho/envio/streaming/aprovação pendente e autorizando instalar/abrir APK7 e reiniciar somente backend Companion.
+## Fresh authorization
+In the operational question safe-apk7-profile-activation, the owner selected 'Yes, all clear: update both' (custom 'x iss'), confirming the absence of pending draft/send/streaming/approval and authorizing installing/opening APK7 and restarting only the Companion backend.
 
-## Executar
-1. Preservar configuração ACTUAL instalada: inspecionar apenas campos públicos de controller/default model e service WorkingDirectory. Backup privado local do arquivo de composição, sem imprimir segredos/credenciais. Não regenerar defaults. Aplicar mudança mínima: desativar stock session-controller e inserir companion-session-controller com módulo wrapper. Preservar escolha de modelo atual, música, OAuth/JWT refs, persistência, portas e proxy.
-2. Reiniciar apenas unidade backend Companion já existente; não tocar web3080/proxy3082/443/TUI/SDK/HA/rede. Verificar active/health/read-only models sem imprimir auth. Fonte79 já tem 39 testes reais SDK/Gateway/FS passando; confirmar composição instalada correta e saúde sem enviar prompt, autorizar Bash ou migrar headers antigos.
-3. ADB5037 apenas com serial físico ZY22F2395W/user0: confirmar presença, upgrade -r APK7 SHA2567fab4de7e6a4a2fd33e7e51dfcaff0ac59fd85f5a2928f88598e7762808fd931, sem uninstall/clear/grants/capture/logcat. Verificar versionCode7 e UID10318 preservado, abrir MainActivity como autorizado. Não tocar tela/enviar/conceder/apagar nada. Se transporte ausente, pedir replug em vez de resetar servidor compartilhado.
-4. Registrar aplicado versus preparado, fatos verificados versus validação visual ainda com dono. CWD novo só novas conversas; legado mantém header e acesso de leitura, sem escrita/Bash no repo antigo. Nenhuma alegação FPS/perf real. Fechar79/80 e objetivo somente após resultado real ou decisão explícita do dono.
+## Execution
+1. Preserve CURRENT installed configuration: inspect only public fields of controller/default model and service WorkingDirectory. Local private backup of the composition file, without printing secrets/credentials. Do not regenerate defaults. Apply minimal change: disable stock session-controller and insert companion-session-controller with wrapper module. Preserve current model choice, music, OAuth/JWT refs, persistence, ports, and proxy.
+2. Restart only the existing Companion backend unit; do not touch web3080/proxy3082/443/TUI/SDK/HA/network. Verify active/health/read-only models without printing auth. Source 79 already has 39 passing real SDK/Gateway/FS tests; confirm correct installed composition and health without sending prompt, authorizing Bash, or migrating old headers.
+3. ADB 5037 only with physical serial ZY22F2395W/user0: confirm presence, upgrade -r APK7 SHA256 7fab4de7e6a4a2fd33e7e51dfcaff0ac59fd85f5a2928f88598e7762808fd931, without uninstall/clear/grants/capture/logcat. Verify versionCode 7 and preserved UID 10318, open MainActivity as authorized. Do not touch screen/send/grant/delete anything. If transport is absent, request replug instead of resetting the shared server.
+4. Record applied versus prepared, verified facts versus visual validation still pending with the owner. New CWD only for new conversations; legacy maintains header and read access, without write/Bash in the old repo. No claims of real FPS/perf. Close 79/80 and goal only after real result or explicit decision from the owner.

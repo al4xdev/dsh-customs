@@ -1,13 +1,13 @@
-# Corrigir composição de skills do Companion
+# Fix Companion Skills Composition
 
-## Causa comprovada
-O bundle dsh-web-app desativa skill-filesystem e tool-skill globais. O preset Companion não os repõe; a validação anterior do provider isolado não cobria entrega ao agente.
+## Proven Cause
+The dsh-web-app bundle disables global skill-filesystem and tool-skill. The Companion preset does not restore them; previous isolated provider validation did not cover delivery to the agent.
 
-## Implementação
-1. Inserir skill-filesystem e tool-skill dentro de preset-companion.config.plugins no perfil instalado ~/.dsh/profiles/companion/cordis.patch.yml, sem regenerar o arquivo. Preservar modelo e todas demais configurações.
-2. Configurar customSkillDirs para /home/alex/git/my/dsh-companion-workspace/.agents/skills, mantendo defaults, para servir também projetos filhos com git próprio.
-3. Atualizar gerador tools/session-companion/profile.mjs e testes correspondentes para impedir regressão.
-4. Fixture SDK instalada e isolada: schemas/tool skill disponíveis somente no preset; executar duas skills pela API pública; capturar primeiro request com adapter fake para comprovar source.kind skill-catalog e nomes. Testar cwd raiz e child repo com git próprio; sem rede ou modelos reais.
-5. Sem restart manual nem mudanças de permissões. O perfil usa patchReload live; relatar limites da confirmação no processo já em execução.
+## Implementation
+1. Insert skill-filesystem and tool-skill inside preset-companion.config.plugins in installed profile ~/.dsh/profiles/companion/cordis.patch.yml, without regenerating the file. Preserve model and all other configurations.
+2. Configure customSkillDirs to /home/alex/git/my/dsh-companion-workspace/.agents/skills, preserving defaults, to also serve child projects with their own git.
+3. Update generator tools/session-companion/profile.mjs and corresponding tests to prevent regression.
+4. Installed and isolated SDK fixture: schemas/tool skill available only in preset; execute two skills via public API; capture first request with fake adapter to prove source.kind skill-catalog and names. Test root cwd and child repo with own git; without network or real models.
+5. No manual restart or permission changes. The profile uses live patchReload; report limitations of confirmation on the already running process.
 
-A correção de session_create entre perfis será tratada em plano separado após análise do transporte e aprovação, sem confundir as duas validações.
+The cross-profile session_create fix will be addressed in a separate plan after transport analysis and approval, without conflating the two validations.

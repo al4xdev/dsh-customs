@@ -1,28 +1,28 @@
-# Plano de Alinhamento: Plugin DSH Antigravity com o Cliente Nativo AGY (v1.4.0)
+# Alignment Plan: DSH Antigravity Plugin with AGY Native Client (v1.4.0)
 
-## Identificação da Sessão de Referência
+## Reference Session Identification
 - **Conversation / Cascade ID:** `c95120e1-fb0e-4a64-9298-e58a37a77eab`
-- **Data da Auditoria:** 16 de Outubro de 2026
-- **Binário de Referência:** `/home/alex/.local/bin/agy` (v1.4.0 linux/amd64)
-- **Token / Conta Testada:** `alexsandropessoa300@gmail.com` (`aicode-consumers`)
+- **Audit Date:** October 16, 2026
+- **Reference Binary:** `/home/alex/.local/bin/agy` (v1.4.0 linux/amd64)
+- **Tested Token / Account:** `alexsandropessoa300@gmail.com` (`aicode-consumers`)
 
 ---
 
-## 1. Conhecimento Prático Extraído do Binário Nativo (`agy`)
+## 1. Practical Insights Extracted from Native Binary (`agy`)
 
-### 1.1 Identidade e Rastreabilidade da Conexão
-O servidor do Cloud Code (`daily-cloudcode-pa.googleapis.com`) diferencia clientes e recursos pelo conjunto de headers HTTP e query parameters:
-- **`User-Agent` exato:** `antigravity/1.4.0 linux/amd64` (ou versão vigente).
-- **Rastreamento de Tráfego:**
-  - `X-Aicode-Request-Id`: UUID gerado por request (`agent-${crypto.randomUUID()}`).
-  - `X-Aicode-Trajectory-Id`: Identificador único da sessão/conversa (no DSH, o ID do chat).
-  - `X-Aicode-Prompt-Id`: Identificador do turno atual para aproveitamento de KV-cache (prefill cache).
-  - `X-Goog-User-Project`: `aicode-consumers` (evita desvio para billing padrão do GCP).
-- **Query Parameter nativo no SSE:**
+### 1.1 Connection Identity and Traceability
+The Cloud Code server (`daily-cloudcode-pa.googleapis.com`) differentiates clients and resources via a combination of HTTP headers and query parameters:
+- **Exact `User-Agent`:** `antigravity/1.4.0 linux/amd64` (or current version).
+- **Traffic Tracking:**
+  - `X-Aicode-Request-Id`: UUID generated per request (`agent-${crypto.randomUUID()}`).
+  - `X-Aicode-Trajectory-Id`: Unique session/conversation identifier (in DSH, the chat ID).
+  - `X-Aicode-Prompt-Id`: Current turn identifier to leverage KV-cache (prefill cache).
+  - `X-Goog-User-Project`: `aicode-consumers` (prevents diversion to default GCP billing).
+- **Native Query Parameter in SSE:**
   - `https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse&purpose=tabChat`
 
-### 1.2 Estrutura e Formato das Requisições
-- **Envelopamento do Body:**
+### 1.2 Structure and Request Formatting
+- **Body Wrapping:**
   ```json
   {
     "project": "aicode-consumers",
@@ -41,54 +41,54 @@ O servidor do Cloud Code (`daily-cloudcode-pa.googleapis.com`) diferencia client
     "requestId": "agent-..."
   }
   ```
-- **Controle de Thinking:** O campo nativo da API do Cloud Code fica em `generationConfig.thinkingConfig.thinkingBudget` (inteiro), e não campos soltos como `thinking_budget`.
+- **Thinking Control:** The native Cloud Code API field is located at `generationConfig.thinkingConfig.thinkingBudget` (integer), rather than top-level or loose fields such as `thinking_budget`.
 
-### 1.3 Arquitetura de Cotas Isoladas (Descoberta da Sessão)
-O backend não compartilha uma cota única para todos os modelos. O `/usage` do AGY demonstrou a existência de **três buckets independentes**:
-1. **Gemini Models (Flash e Pro):** Limites semanais e janela deslizante de 5 horas.
-2. **Claude e GPT Models (Opus, Sonnet, GPT-OSS):** Limite semanal independente.
-3. **Gemini 4 Argon:** Cota semanal isolada dedicada para planos Pro/Ultra.
-- **Comportamento da API:** Quando a cota de um bucket atinge `0.00%`, a API omite esses modelos do retorno dinâmico de `v1internal:fetchAvailableModels`. Tentativas forçadas com nome direto retornam `404` ou caem na trava de quota.
+### 1.3 Isolated Quota Architecture (Session Discovery)
+The backend does not share a unified quota across all models. AGY's `/usage` revealed the existence of **three independent buckets**:
+1. **Gemini Models (Flash and Pro):** Weekly limits and 5-hour sliding window.
+2. **Claude and GPT Models (Opus, Sonnet, GPT-OSS):** Independent weekly limit.
+3. **Gemini 4 Argon:** Dedicated isolated weekly quota for Pro/Ultra tiers.
+- **API Behavior:** When a bucket's quota reaches `0.00%`, the API omits those models from dynamic responses of `v1internal:fetchAvailableModels`. Forcing calls using the direct model name yields `404` or hits quota blocks.
 
-### 1.4 Catálogo Nativo de Modelos (Structs Go em `.data`)
-No offset `0xb63f680` do binário `agy 1.4.0`, o catálogo estático interno contém as definições completas que a UI do AGY utiliza, incluindo:
+### 1.4 Native Model Catalog (Go Structs in `.data`)
+At offset `0xb63f680` of binary `agy 1.4.0`, the internal static catalog contains complete definitions used by the AGY UI, including:
 - `gemini-4-argon-low` (enum `1419`, `MODEL_PLACEHOLDER_M419`)
 - `gemini-4-argon-medium` (enum `1418`, `MODEL_PLACEHOLDER_M418`)
 - `gemini-4-argon-high` (enum `1417`, `MODEL_PLACEHOLDER_M417`)
 - `gemini-3.8-flash-tiered` (enum `1322`, `MODEL_PLACEHOLDER_M322`)
-- Família Claude 5.5 (`claude-opus-5-5-*` e `claude-sonnet-5-5-*`)
+- Claude 5.5 Family (`claude-opus-5-5-*` and `claude-sonnet-5-5-*`)
 - `gpt-oss-120b-medium`
 
 ---
 
-## 2. O que Torna o Plugin DSH Mais Próximo do Nativo
+## 2. Aligning the DSH Plugin with Native AGY
 
-### 2.1 Alinhamento de Protocolo (`plugins/dsh-antigravity/src/api.ts`)
-- **Headers Completos:**
-  Adicionar `X-Aicode-Request-Id`, `X-Aicode-Trajectory-Id` (baseado no chat ID) e o query param `purpose=tabChat`.
-- **User-Agent Dinâmico:**
-  Configurar o User-Agent padrão como `antigravity/1.4.0 linux/amd64` (em vez de genérico sem OS/arch).
-- **Normalização de `thinkingConfig`:**
-  Garantir que os modelos com suporte a pensamento sempre usem a sub-estrutura `generationConfig.thinkingConfig.thinkingBudget`.
+### 2.1 Protocol Alignment (`plugins/dsh-antigravity/src/api.ts`)
+- **Complete Headers:**
+  Add `X-Aicode-Request-Id`, `X-Aicode-Trajectory-Id` (based on chat ID), and the query parameter `purpose=tabChat`.
+- **Dynamic User-Agent:**
+  Configure default User-Agent as `antigravity/1.4.0 linux/amd64` (rather than a generic string without OS/arch).
+- **`thinkingConfig` Normalization:**
+  Ensure models with thinking support always structure it under `generationConfig.thinkingConfig.thinkingBudget`.
 
-### 2.2 Blindagem de Billing e Roteamento Seguro
-- Reforçar o guardião `guardedPayload` para rejeitar qualquer sinalizador de faturamento por token (`PAYGO`, `BILLING_OVERAGE`, `CREDIT_CONSUMPTION`).
-- Assegurar que toda requisição de usuário individual passe estritamente por `aicode-consumers` e endpoint Daily (`daily-cloudcode-pa.googleapis.com`), evitando o endpoint de produção (`cloudcode-pa`) que responde 429 para esse perfil.
+### 2.2 Billing Shielding and Secure Routing
+- Reinforce the `guardedPayload` guard to reject any per-token billing flags (`PAYGO`, `BILLING_OVERAGE`, `CREDIT_CONSUMPTION`).
+- Ensure every individual user request routes strictly through `aicode-consumers` and the Daily endpoint (`daily-cloudcode-pa.googleapis.com`), avoiding the production endpoint (`cloudcode-pa`) which responds with 429 for this profile.
 
-### 2.3 Atualização do Catálogo Estático (`plugins/dsh-antigravity/src/models.ts`)
-- Atualizar a lista `maintainedModels` para incorporar os modelos introduzidos na versão 1.4.0 (`gemini-4-argon-*`, `gemini-3.8-flash-tiered`, etc.).
-- Permitir que modelos nativos conhecidos fiquem visíveis e selecionáveis no DSH mesmo em períodos em que o `fetchAvailableModels` filtre o modelo por cota zero temporária.
+### 2.3 Static Catalog Update (`plugins/dsh-antigravity/src/models.ts`)
+- Update `maintainedModels` list to incorporate models introduced in version 1.4.0 (`gemini-4-argon-*`, `gemini-3.8-flash-tiered`, etc.).
+- Allow known native models to remain visible and selectable in DSH even during periods when `fetchAvailableModels` filters out the model due to temporary zero quota.
 
-### 2.4 Leitura de QuotaInfo do Backend
-- O payload de resposta do `fetchAvailableModels` traz `quotaInfo.remainingFraction` e `quotaInfo.resetTime`.
-- Disponibilizar esses dados para a interface do DSH para que o usuário possa consultar o estado do bucket antes de disparar prompts.
+### 2.4 Backend QuotaInfo Ingestion
+- The response payload of `fetchAvailableModels` provides `quotaInfo.remainingFraction` and `quotaInfo.resetTime`.
+- Expose this data to the DSH interface so the user can inspect bucket status before dispatching prompts.
 
 ---
 
-## 3. Próximos Passos (Para a Próxima Semana)
-1. **Verificação de Cota Ativa:**
-   Consultar o `/usage` quando a cota do bucket Argon renovar (após a contagem de 166h).
-2. **Teste de Liberação do Catálogo:**
-   Validar se o `daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` volta a expor o Argon com a cota positiva.
-3. **Aplicação do Bundle no DSH:**
-   Com as definições alinhadas ao binário `1.4.0`, compilar o plugin (`npm run bundle:host`) em uma sessão limpa.
+## 3. Next Steps (For Next Week)
+1. **Active Quota Verification:**
+   Query `/usage` once the Argon bucket quota renews (after the 166h countdown).
+2. **Catalog Unlocking Test:**
+   Validate whether `daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels` resumes exposing Argon with positive quota.
+3. **Applying Bundle to DSH:**
+   With definitions aligned to binary `1.4.0`, compile plugin (`npm run bundle:host`) in a clean session.

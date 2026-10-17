@@ -1,13 +1,13 @@
-# Teste real de qualidade da pesquisa Antigravity
+# Real Antigravity Search Quality Test
 
-## Objetivo
-Executar uma pesquisa experimental a pedido do usuário, avaliar evidência de busca nativa e qualidade das fontes sem modificar plugins instalados ou perfil padrão.
+## Objective
+Execute an experimental search requested by the user, evaluate native search evidence and source quality without modifying installed plugins or default profile.
 
-## Execução
-1. Criar runner temporário em `.dumps/` usando o serviço de credenciais e refresh OAuth existente; nunca imprimir ou gravar tokens.
-2. Consultar modelos disponíveis e enviar uma pergunta técnica verificável (Node.js 24: lançamento, LTS e migração desde Node.js 22), solicitando Google Search no payload nativo.
-3. Preservar somente texto, consultas e metadados públicos de grounding no relatório local; avaliar fontes reais e conferir páginas oficiais se houver resultados.
-4. Reportar honestamente a qualidade ou a incompatibilidade do endpoint. Não substituir o provider nem desativar DeepSeek neste teste.
+## Execution
+1. Create temporary runner in `.dumps/` using existing credential service and OAuth refresh; never print or record tokens.
+2. Query available models and submit a verifiable technical question (Node.js 24: release, LTS, and migration from Node.js 22), requesting Google Search in the native payload.
+3. Preserve only text, queries, and public grounding metadata in the local report; evaluate real sources and check official pages if results exist.
+4. Honestly report quality or endpoint incompatibility. Do not replace the provider or disable DeepSeek in this test.
 
-## Validação
-HTTP de sucesso não basta: verificar groundingMetadata, consultas e URLs; não apresentar resposta sem grounding como pesquisa comprovada. Limitar timeout e tentativas. Concluir o goal após registrar resultado.
+## Validation
+HTTP success alone is not enough: check groundingMetadata, queries, and URLs; do not present an ungrounded response as proven search. Bound timeout and attempts. Conclude goal after recording result.

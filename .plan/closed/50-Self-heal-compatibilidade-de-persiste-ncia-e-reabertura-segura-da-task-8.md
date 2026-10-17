@@ -1,25 +1,25 @@
-# Self-heal: compatibilidade de persistência e reabertura segura da task_84
+# Self-heal: persistence compatibility and safe reopening of task_84
 
-## Objetivo e autorização
-Corrigir o plugin e sua integração local de persistência; restaurar a capacidade de abrir a sessão `e8d530cf-b66a-46c9-82f2-272317e6f0ce` de `/home/alex/git/my/alex-tavern` (task_84). O usuário autorizou atualizar apenas essa sessão e pediu a solução mais segura. Não apagar ou modificar outras sessões. Usar o goal ativo como critério de conclusão.
+## Objective and authorization
+Fix the plugin and its local persistence integration; restore the ability to open session `e8d530cf-b66a-46c9-82f2-272317e6f0ce` from `/home/alex/git/my/alex-tavern` (task_84). The user authorized updating only this session and requested the safest solution. Do not delete or modify other sessions. Use the active goal as completion criteria.
 
-## Diagnóstico confirmado
-O plugin grava `agent/self-heal` como evento obrigatório. O SDK instalado permite append, mas seu catálogo estático não reconhece esse evento ao carregar o disco. O registro da task_84 contém 23 desses eventos, começando em seq 6976. A configuração dsh-tui aponta para `plugins/agent-self-heal/lib/index-v2.mjs`. Registrar uma projeção não altera o catálogo. O campo `ignorable` não é adequado sem prova de omissão segura: estes registros preservam orçamento consumido e recibos causais, não apenas mensagens informativas.
+## Confirmed diagnosis
+The plugin records `agent/self-heal` as a mandatory event. The installed SDK permits append, but its static catalog does not recognize this event when loading from disk. The log for task_84 contains 23 of these events, starting at seq 6976. The dsh-tui configuration points to `plugins/agent-self-heal/lib/index-v2.mjs`. Registering a projection does not alter the catalog. The `ignorable` field is unsuitable without proof of safe omission: these records preserve consumed budget and causal receipts, not merely informational messages.
 
-## Implementação proposta
-1. Confirmar APIs e revisão independente; registrar hashes dos arquivos envolvidos e estado do repositório. Preservar mudanças alheias.
-2. Implementar uma integração local estática e reproduzível, restrita ao SDK da instalação `/home/alex/.local/share/dsh-cli`: incluir exclusivamente `agent/self-heal` no vocabulário do build de `@deepseek-ai/dsh-session`, mantendo recusa de outros eventos desconhecidos. Manter sincronizados o bundle efetivo `lib/index.js` e a saída de catálogo `lib/types/known-event-types.js`. O patch downstream deve ficar versionável neste repositório, com preflight por hashes/contexto, backup durável, aplicação verificável e rollback que recusa sobrescrever mudanças posteriores. Não alterar permissões, retries, pi-ai, credenciais nem a instalação npx/web.
-3. Corrigir o plugin com uma checagem explícita da compatibilidade do leitor antes de registrar middleware/gravar novos audits: em SDK incompatível, falhar claramente, sem criar mais sessões ilegíveis. Não mutar Sets internos em runtime nem renomear eventos para tipos nativos sem relação. Recompilar em novo bundle com dependências internas completas e promover o ponteiro dsh-tui somente após validação; preservar estadoVersion1, política V2 e maxCycles3.
-4. Preservar eventos obrigatórios, sequências e dados de recuperação. Para task_84, preferir NÃO reescrever nada: o leitor corrigido deve aceitar seus eventos existentes. Fazer backup verificado do arquivo comprimido antes da validação final e registrar hashes antes/depois. Só se a investigação demonstrar necessidade real de migração, submeter revisão específica antes de alterar o histórico.
+## Proposed implementation
+1. Confirm APIs and independent review; record hashes of involved files and repository state. Preserve others' changes.
+2. Implement a static, reproducible local integration restricted to the SDK installation at `/home/alex/.local/share/dsh-cli`: include exclusively `agent/self-heal` in the vocabulary of the `@deepseek-ai/dsh-session` build, while maintaining rejection of other unknown events. Keep effective bundle `lib/index.js` and catalog output `lib/types/known-event-types.js` synchronized. The downstream patch must remain versionable in this repository, with preflight by hashes/context, durable backup, verifiable application, and rollback that refuses to overwrite subsequent changes. Do not alter permissions, retries, pi-ai, credentials, or npx/web installation.
+3. Fix the plugin with an explicit check of reader compatibility before registering middleware / recording new audits: on an incompatible SDK, fail clearly without creating further unreadable sessions. Do not mutate internal Sets at runtime or rename events to unrelated native types. Recompile into a new bundle with complete internal dependencies and promote the dsh-tui pointer only after validation; preserve stateVersion 1, V2 policy, and maxCycles 3.
+4. Preserve mandatory events, sequences, and recovery data. For task_84, prefer NOT rewriting anything: the corrected reader must accept its existing events. Make a verified backup of the compressed file prior to final validation and record before/after hashes. Only if investigation demonstrates a real need for migration, submit a specific revision before altering history.
 
-## Testes e evidência
-- Testes puros atuais do plugin e contratos relevantes.
-- Teste negativo: SDK original recusa agent/self-heal; plugin detecta incompatibilidade antes de hooks/audits.
-- Teste positivo: SDK corrigido aceita evento obrigatório reconhecido, mas continua recusando outro evento obrigatório desconhecido.
-- Round-trip real com backend JSONL/zstd instalado em workspace isolado `.dumps/`, não apenas Session em memória: append, flush, close, nova instância/processo, load.
-- Replay de projeção preserva orçamento gasto, dedupe e recuperação V1/V2; episódio esgotado não ganha ciclos por reload. Mensagens, sourceEventSeqs e auditorias não são removidos.
-- Leitura real read-only da task_84 e replay com plugin V2; os 23 audits e todos os eventos permanecem, hashes do arquivo original idênticos.
-- Documentar escopo local e necessidade de novo processo TUI: processos antigos mantêm módulos ESM em cache. Não reiniciar nem encerrar processos alheios automaticamente.
+## Tests and evidence
+- Current pure tests of the plugin and relevant contracts.
+- Negative test: original SDK rejects agent/self-heal; plugin detects incompatibility before hooks/audits.
+- Positive test: corrected SDK accepts recognized mandatory event, but continues rejecting other unknown mandatory events.
+- Real round-trip with installed JSONL/zstd backend in isolated `.dumps/` workspace, not just in-memory Session: append, flush, close, new instance/process, load.
+- Projection replay preserves spent budget, deduplication, and V1/V2 recovery; exhausted episode does not gain cycles via reload. Messages, sourceEventSeqs, and audits are not removed.
+- Real read-only reading of task_84 and replay with V2 plugin; all 23 audits and all events remain, original file hashes identical.
+- Document local scope and requirement for a new TUI process: older processes keep ESM modules in cache. Do not restart or kill other processes automatically.
 
-## Publicação e conclusão
-Publicar apenas artefatos aprovados e SDK/profile locais com backups e recibos de integridade; guardar fixtures e relatórios temporários em `.dumps/`, backups duráveis fora de `/tmp`. Não prometer upgrade de todos os processos já abertos. Fechar o plano e goal somente após comprovar round-trip e leitura nativa da task_84 com preservação de estado, relatando qualquer passo manual restante.
+## Publication and conclusion
+Publish only approved artifacts and local SDK/profile with backups and integrity receipts; keep temporary fixtures and reports in `.dumps/`, durable backups outside `/tmp`. Do not promise upgrading all already open processes. Close plan and goal only after proving round-trip and native reading of task_84 with state preservation, reporting any remaining manual steps.

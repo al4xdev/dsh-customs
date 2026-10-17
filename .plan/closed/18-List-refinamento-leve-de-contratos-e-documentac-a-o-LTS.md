@@ -1,15 +1,15 @@
-# List: refinamento leve de contratos e documentação LTS
+# List: Lightweight Contract Polish and LTS Documentation
 
-## Objetivo
-Continuar a revisão conservadora do LTS pessoal pelo plugin list. MCP fica por último. Não procurar features novas ou reescrever código; usar o goal ativo e preservar alterações existentes.
+## Objective
+Continue conservative review for personal LTS starting with the list plugin. MCP remains last. Do not seek new features or rewrite code; use active goal and preserve existing modifications.
 
-## Escopo mínimo
-- Testar a definição real registrada por apply, com filesystem em memória: aliases de caminho/cwd, argumentos e limites, ordenação, profundidade, ocultos, contagem e truncamento, orçamento UTF-8 de caminhos, diretórios repetidos/loops por targetKey, cancelamento, erros de backend e saída/apresentação.
-- Adicionar `npm run test:list` e um README curto descrevendo os contratos e limites observados.
-- Manter index.mjs e common.mjs intactos, sem dependências novas nem chamadas a modelos.
+## Minimal Scope
+- Test the actual definition registered by apply, with in-memory filesystem: path/cwd aliases, arguments and limits, sorting, depth, hidden files, counting and truncation, UTF-8 budget for paths, repeated directories / loops via targetKey, cancellation, backend errors, and output/presentation.
+- Add `npm run test:list` and a short README describing observed contracts and limits.
+- Keep index.mjs and common.mjs intact, with no new dependencies or model calls.
 
-## Esclarecimentos LTS
-Depth máximo 8, limit máximo 1000 e orçamento de aproximadamente 64 KiB para caminhos coletados. `limit` é um limite de resultados, não um limite de trabalho: a contagem continua dentro da profundidade pedida. Evitar prometer teste de sandbox/FS real: a suíte usa o defineTool instalado e simula o backend.
+## LTS Clarifications
+Maximum depth 8, maximum limit 1000, and budget of approximately 64 KiB for collected paths. `limit` is a result limit, not a work limit: traversal continues within the requested depth. Avoid promising real sandbox/FS tests: the suite uses the installed defineTool and simulates the backend.
 
-## Aceite
-Testes passando sem alterar comportamento, documentação e comando consistentes, diff restrito e whitespace válido. Se um teste sugerir mudança de produção, não expandir o escopo sem discutir com o usuário. Sem commit/push.
+## Acceptance
+Tests passing without altering behavior, consistent documentation and command, restricted diff, and valid whitespace. If a test suggests a production change, do not expand scope without discussing with the user. No commit/push.

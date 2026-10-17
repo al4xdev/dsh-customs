@@ -1,10 +1,10 @@
-# Atualização física APK11 autorizada
+# Authorized physical APK11 update
 
-Pedido fresco do dono: `pode instalar`, após entrega do APK11 validado. Autoriza instalar a atualização, não apagar dados ou navegar/capturar a UI.
+Fresh owner request: `pode instalar` ("you may install"), after delivery of validated APK11. Authorizes installing the update, not wiping data or navigating/capturing the UI.
 
-1. Conferir conexão ADB5037 do alvo conhecido ZY22F2395W/Moto XT2201-2/API34 e versão/package/user0/UID atuais do Companion por metadados mínimos. Não iniciar servidor/emulador alternativo nem mexer em outros aparelhos.
-2. Revalidar `.dumps/tasks/dsh-companion-0.11.0-polish.apk`,40.087.797bytes,SHA256170033650c9ff7aed664094c1391b4149b1255bcc8739acaba1762dc4edd7622,package dev.alex.dsh.companion/versionCode11/versionName0.11.0-polish/cert1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d.
-3. Executar somente `adb -s ZY22F2395W install -r` do APK exato: atualização preservando dados; sem uninstall/clear/-d/-g/-t ou permissões extras. Se houver incompatibilidade/erro, diagnosticar antes de qualquer nova tentativa, nunca resetar o app.
-4. Verificar versão11 instalada e UID/user0/firstInstallTime mantidos por metadados; registrar recibo redigido `.dumps/tasks/task100-*` se id alocado100 (ou id efetivo equivalente). Não alegar auditoria byte-a-byte de dados privados. Fechar após Success+verificação.
+1. Check ADB 5037 connection for known target ZY22F2395W / Moto XT2201-2 / API 34 and current Companion version/package/user0/UID via minimal metadata. Do not start alternative server/emulator or touch other devices.
+2. Revalidate `.dumps/tasks/dsh-companion-0.11.0-polish.apk`, 40,087,797 bytes, SHA256 170033650c9ff7aed664094c1391b4149b1255bcc8739acaba1762dc4edd7622, package dev.alex.dsh.companion / versionCode 11 / versionName 0.11.0-polish / cert 1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d.
+3. Execute only `adb -s ZY22F2395W install -r` of the exact APK: update preserving data; no uninstall/clear/-d/-g/-t or extra permissions. If there is incompatibility/error, diagnose before any retry, never reset the app.
+4. Verify installed version 11 and UID/user0/firstInstallTime preserved via metadata; record redacted receipt `.dumps/tasks/task100-*` if allocated id 100 (or equivalent effective id). Do not claim byte-by-byte audit of private data. Close after Success + verification.
 
-Sem abrir app, screenshot, UIgestos, leitura de dados privados/credenciais, mudanças de Settings, backend/frontend/TUI/SDK, commit/push. APK10 continua artefato rollback local; downgrade nunca automático.
+No app opening, screenshot, UI gestures, reading private data/credentials, Settings changes, backend/frontend/TUI/SDK, commit/push. APK10 remains local rollback artifact; downgrade is never automatic.

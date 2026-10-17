@@ -1,19 +1,19 @@
-# React com TypeScript estrito e lint forte
+# React with strict TypeScript and strong linting
 
-Pedido humano adicional às tasks40/44: **manter React**, não migrar para Angular; tipagem e lint rigorosos complementam o acabamento premium, não o substituem. Reusar goal existente para orientar execução; respeitar estado atual do mecanismo de goals, sem criar objetivo duplicado.
+Additional human request to tasks 40/44: **keep React**, do not migrate to Angular; rigorous typing and linting complement the premium finish, they do not replace it. Reuse existing goal to guide execution; respect the current state of the goal mechanism without creating a duplicate objective.
 
-## Execução
-- Delegar a subagente focado os arquivos de configuração/dependências/tipos base, mantendo separados dos arquivos de animação.
-- Adicionar TypeScript local com strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes, noImplicitOverride, noFallthroughCasesInSwitch e demais checks apropriados. JSX mantém React e singleton oficial do DSH.
-- ESLint flat config com regras type-aware typescript-eslint strict e stylistic, no-explicit-any, no-unsafe-* e promises rigorosas; incluir React hooks e acessibilidade relevantes. Lint também servidor/scripts/testes JS com regras Node/JS, sem inventar que JS possui verificação type-aware equivalente.
-- Criar contratos explícitos da integração DSH/slots/sessionReference/connection e validação de dados de rede unknown. Tipar código próprio, não fingir que código vendorizado/upstream passa pelo lint do projeto. Não transformar declarações em any só para aprovar build.
-- Corrigir problemas reais de tipagem/lint nos arquivos próprios, sem bypasses amplos/eslint-disable ou casts duplos não justificados. Observers/DOM/assertions guardados, eventos/motion APIs tipadas. Não interferir com renderer/streaming/approval/gestos.
-- Scripts typecheck/lint/check claros, npmlock reproducível, README com comandos. Node >=22 permanece; não usar instalações globais.
+## Execution
+- Delegate base configuration/dependencies/types files to a focused subagent, keeping them separate from animation files.
+- Add local TypeScript with strict, noUncheckedIndexedAccess, exactOptionalPropertyTypes, noImplicitOverride, noFallthroughCasesInSwitch, and other appropriate checks. JSX preserves React and the official DSH singleton.
+- ESLint flat config with type-aware typescript-eslint strict and stylistic rules, no-explicit-any, no-unsafe-*, and strict promises; include relevant React hooks and accessibility rules. Also lint JS server/scripts/tests with Node/JS rules, without claiming that JS has equivalent type-aware verification.
+- Create explicit contracts for DSH/slots/sessionReference/connection integration and unknown network data validation. Type custom code, do not pretend vendored/upstream code passes project linting. Do not turn declarations into any just to pass build.
+- Fix real typing/lint issues in custom files, without broad bypasses / eslint-disable or unjustified double casts. Observers/DOM/assertions guarded, events / motion APIs typed. Do not interfere with renderer/streaming/approval/gestures.
+- Clear typecheck/lint/check scripts, reproducible npm lock, README with commands. Node >= 22 remains; do not use global installs.
 
-## Verificação
-- npm run typecheck, npm run lint, npm test e npm run build passam para a revisão atual. Check inclui animações quando os arquivos chegarem; não alegar todos passam enquanto houver workers em edição.
-- Preservar testes de navegação/auth/perfil/confirmar-rejeitar; verificar UI real após correções de código, não só compile.
-- Nunca migrar Angular, editar runtime/TUI/profiles ou configurar autoaprovação. Não commit/push.
+## Verification
+- npm run typecheck, npm run lint, npm test, and npm run build pass for the current revision. Check includes animations when files arrive; do not claim all pass while workers are still editing.
+- Preserve navigation/auth/profile/confirm-reject tests; verify real UI after code fixes, not just compile.
+- Never migrate to Angular, edit runtime/TUI/profiles, or configure auto-approval. No commit/push.
 
-## Coordenação e conclusão
-Se agentes antigos não forem filhos desta sessão, não contornar controle de ownership nem afirmar mensagens entregues. Registrar orientação compartilhada e trabalhar apenas em arquivos sem disputa. Concluir só após evidência do check completo e integração das animações premium.
+## Coordination and conclusion
+If legacy agents are not children of this session, do not bypass ownership control or claim delivered messages. Record shared orientation and work only on undisputed files. Conclude only after evidence of full check and integration of premium animations.

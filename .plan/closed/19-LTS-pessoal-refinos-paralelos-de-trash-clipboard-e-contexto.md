@@ -1,19 +1,19 @@
-# LTS pessoal: refinos paralelos de trash, clipboard e contexto
+# Personal LTS: Parallel Polish of Trash, Clipboard, and Context
 
-## Intenção
-Revisão final conservadora em paralelo, solicitada pelo usuário. Não caça a bugs, reescrita nem features. MCP fica por último. Usar o goal ativo até a verificação; preservar todas as alterações existentes.
+## Intent
+Conservative final review in parallel, requested by the user. Not a bug hunt, rewrite, or feature expansion. MCP remains last. Use active goal through verification; preserve all existing modifications.
 
-## Revisões concluídas
-Os três subagentes não identificaram necessidade concreta de mudar produção. A base já tem 50 testes passando para os contratos de apply-patch, list e grammar. Testes antigos registrados nos READMEs continuam sendo evidência histórica, não serão reconstruídos como suíte geral.
+## Completed Reviews
+The three subagents identified no concrete need to modify production. The base already has 50 tests passing for the contracts of apply-patch, list, and grammar. Legacy tests recorded in READMEs remain historical evidence and will not be rebuilt as a general test suite.
 
-## Implementação independente por plugin
-1. **Trash:** criar README próprio curto e trash.test.mjs apenas read-only para contratos públicos de política, entradas inválidas e caminhos protegidos. Não chamar trashOne/execute nem remover/mover/criar fixtures. Explicitar recuperação sem overwrite, tmpfs perdido no reboot e limites de cross-FS/metadados. Não prometer testes de rename/EXDEV/recuperação real.
-2. **Clipboard:** criar README curto e clipboard.test.mjs com executável wl-copy FALSO em .dumps, PATH exclusivamente para esse stub e display fictício. Testar texto Unicode/newlines, vazio, falha, executável ausente, cancelamento/timeout; descoberta de socket somente se simples. Não acessar clipboard/compositor real. Fixtures/processos pertencem somente ao teste; limpeza limitada aos recursos identificados do teste. Não expandir para gerenciamento complexo de descendentes. Documentar Wayland/wl-clipboard, ambiente, ausência de fallback X11 e que cancelamento não é rollback.
-3. **Workspace-context:** criar workspace-context.test.mjs focalizado nos contratos existentes de cwd/sessão e prompt; se conveniente, fixtures Git locais artificiais em .dumps para root/subdir/fora Git/symlink. Sem mudar index.mjs. Acrescentar ao README existente somente comando e limites dos testes, preservando toda documentação já boa.
-4. **Integração pelo agente principal:** adicionar scripts test:trash, test:clipboard, test:workspace-context e test:lts:contracts para os seis plugins revisados, sem managed-plans/MCP e sem chamadas live a modelos. Documentar esse recorte atual em plugins/README.md sem confundir a evidência histórica com validação de todo harness.
+## Independent Implementation by Plugin
+1. **Trash:** create a dedicated short README and read-only trash.test.mjs covering public policy contracts, invalid inputs, and protected paths. Do not call trashOne/execute or delete/move/create fixtures. Clarify no-overwrite recovery, tmpfs lost on reboot, and cross-FS/metadata limits. Do not promise real rename/EXDEV/recovery tests.
+2. **Clipboard:** create a short README and clipboard.test.mjs with a FAKE wl-copy executable in .dumps, PATH pointing exclusively to this stub, and dummy display. Test Unicode/newlines, empty text, failure, missing executable, cancellation/timeout; socket discovery only if simple. Do not access real clipboard/compositor. Fixtures/processes belong strictly to the test; cleanup bounded to identified test resources. Do not expand into complex descendant process management. Document Wayland/wl-clipboard, environment, lack of X11 fallback, and that cancellation is not rollback.
+3. **Workspace-context:** create workspace-context.test.mjs focused on existing cwd/session contracts and prompt; if convenient, artificial local Git fixtures in .dumps for root/subdir/outside Git/symlink. Without modifying index.mjs. Add to existing README only test command and limits, preserving all existing good documentation.
+4. **Integration by main agent:** add scripts test:trash, test:clipboard, test:workspace-context, and test:lts:contracts for the six reviewed plugins, without managed-plans/MCP and without live model calls. Document this current scope in plugins/README.md without confusing historical evidence with validation of the entire harness.
 
-## Restrições
-Subagentes só editam testes/README do próprio plugin; package.json e README central ficam com o agente principal. index.mjs dos três e common.mjs intactos. Nenhum deploy/ativação, dependência nova, migração, cópia real de clipboard ou operação real de trash. Se aparecer necessidade de produção, reportar e discutir antes de expandir.
+## Constraints
+Subagents only edit tests/README of their assigned plugin; package.json and central README are owned by the main agent. index.mjs for all three and common.mjs remain intact. No deployment/activation, new dependencies, migrations, real clipboard copying, or real trash operations. If a production need arises, report and discuss before expanding.
 
-## Aceite
-Suítes focadas e conjunto de contratos passando, outputs/falhas coletados, diff/whitespace verificados, limitações de mocks versus integração claras e arquivos de produção sem diff. Sem commit/push.
+## Acceptance
+Focused suites and contract set passing, outputs/failures collected, diff/whitespace verified, limitations of mocks versus integration made clear, and production files have zero diff. No commit/push.

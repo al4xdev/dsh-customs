@@ -1,79 +1,79 @@
-# Research — validação
+# Research — Validation
 
-## Correção: HN com JSON truncado (plano123)
+## Fix: HN with Truncated JSON (Plan 123)
 
-- Causa reproduzida: `/api/v1/items/35154527` do Algolia devolve árvore completa; transporte HTTP nativo corta em100000 caracteres antes da seleção local de comentários. O parser corretamente recusava JSON incompleto, restando apenas título/snippet.
-- Correção: Algolia com campos mínimos só para busca; post e comentários lidos individualmente pela API oficial Firebase. Tentativas limitadas por maxComments, lotes2, limite deworkers compartilhado; sem aumentar maxBodyChars nem analisar JSON cortado.
-- Smoke real em https://news.ycombinator.com/item?id=35154527: HN informou2507descendants. Post+4comentários recuperados (5JSONs Firebase), maior JSON individual2444caracteres. Comparação antiga: truncated:true,100000caracteres. O artigo externo retornou403, registrado como parcial sem perder a conversa.
-- Evidência: `.dumps/hackernews-incremental-smoke.json` e pesquisa `r-7-hn-incremental-large-topic-regression-7c0c57d525ec`; comentários completos selecionados estão no acervo, não no relatório compacto. Quatro comentários não equivalem à thread inteira.
-- **105/105 testes passaram**, incluindo11 testes novos deHN: `.dumps/hackernews-fix-tests.log`. Testes incluem nó truncado, árvore grande, orçamento0, relações de pais, ciclos/IDs, removidos, cancelamento, artigo bloqueado e concorrência.
-- Smoke opt-in (rede pública, não rodado pela suíte offline): `node plugins/research/hackernews-live-check.mjs`. Mantém100000 caracteres por resposta e no máximo4comentários; cria pesquisa/relatório em `.dumps`.
-- Reabrir o processo DSH para carregar o conector novo. A atualização não altera credenciais, perfis ou limites globais deHTTP.
+- Reproduced root cause: Algolia's `/api/v1/items/35154527` returns entire tree; native HTTP transport truncates at 100000 characters before local comment selection. The parser correctly rejected incomplete JSON, leaving only title/snippet.
+- Fix: Algolia queried with minimal fields strictly for discovery; post and comments read individually via official Firebase API. Attempts bounded by maxComments, batches of 2, shared worker limit; without increasing maxBodyChars or attempting to parse truncated JSON.
+- Live smoke on https://news.ycombinator.com/item?id=35154527: HN reported 2507 descendants. Post + 4 comments recovered (5 Firebase JSON payloads), largest single JSON 2444 characters. Legacy comparison: truncated:true, 100000 characters. External article returned 403, recorded as partial without discarding conversation.
+- Evidence: `.dumps/hackernews-incremental-smoke.json` and research run `r-7-hn-incremental-large-topic-regression-7c0c57d525ec`; full selected comments reside in archive, not compact report. Four comments do not equal the entire thread.
+- **105/105 tests passed**, including 11 new HN tests: `.dumps/hackernews-fix-tests.log`. Tests cover truncated node, large tree, budget 0, parent relations, cycles/IDs, deleted items, cancellation, blocked article, and concurrency.
+- Opt-in smoke (public network, not run by offline suite): `node plugins/research/hackernews-live-check.mjs`. Keeps 100000 characters per response and max 4 comments; creates research/report under `.dumps`.
+- Reopen DSH process to load the fresh connector. Update does not modify credentials, profiles, or global HTTP limits.
 
-## Atualização: Reddit oficial e concorrência (plano118)
+## Update: Official Reddit and Concurrency (Plan 118)
 
-- Conector OAuth read-only: busca/subreddit/thread, comentários encadeados, expansão serial e cursores. Sem token/UA válidos retorna AUTH_REQUIRED, sem fallback silencioso.
-- Token disponível no processo de teste: **não** (`credentialStatus:missing`). Não foi feita validação autenticada real nem habilitado refresh/login/contratação. Testes de API usam fixtures.
-- Tool permite pesquisas concorrentes, com scheduler compartilhado por backend no mesmo processo: até2 workers (owner pode reduzir a1), morechildren1, fila limitada, cooldown de quota e cancelamento sem liberação prematura de slots.
-- Leitura de comentário ausente tenta expansão; respostas com novos marcadores more podem progredir; árvore processada e texto são limitados, mantendo pendências/cobertura.
-- Cursor compacto mostra10 IDs; inspect section:navigation recupera todos os IDs persistidos (até200), com paginação e limite de contexto.
-- **94/94 testes passaram**, zero falhas: `.dumps/research-reddit-tests-final.log`. Inclui Reddit, scheduler, integração concorrente com acervo real em fixtures Git, registro nativo, ativação e regressão Companion.
-- `research-activation --check`: changes:[] nos cinco perfis; nenhum restart forçado. Reabrir processo para carregar código/ambiente novos.
-- Limite deworkers não é distribuído entre processos DSH independentes; configurar um backend/processo central ou limitar trabalhadores enquanto não houver coordenação distribuída.
-- Configuração, exemplos e limitações em [REDDIT.md](REDDIT.md).
+- Read-only OAuth connector: search/subreddit/thread, threaded comments, serial expansion, and cursors. Without valid token/UA returns AUTH_REQUIRED, without silent fallback.
+- Token available in test process: **no** (`credentialStatus:missing`). No live authenticated validation was performed; refresh/login/purchase was not enabled. API tests use fixtures.
+- Tool permits concurrent research runs, with shared per-backend scheduler in the same process: up to 2 workers (owner can lower to 1), morechildren 1, bounded queue, quota cooldown, and cancellation without premature slot release.
+- Reading missing comments attempts expansion; replies with new `more` markers can progress; processed tree and text are bounded, preserving pending items and coverage.
+- Compact cursor displays 10 IDs; inspect section:navigation retrieves all persisted IDs (up to 200), with pagination and context limits.
+- **94/94 tests passed**, zero failures: `.dumps/research-reddit-tests-final.log`. Includes Reddit, scheduler, concurrent integration with real archive in Git fixtures, native registry, activation, and Companion regression.
+- `research-activation --check`: `changes:[]` across all five profiles; no forced restarts. Reopen process to load new code/environment.
+- Worker limit is not distributed across independent DSH processes; configure a central backend/process or tune workers down pending distributed coordination.
+- Setup, examples, and limitations in [REDDIT.md](REDDIT.md).
 
-## Histórico da primeira entrega
+## Historical First Release
 
-As seções abaixo registram a versão anterior (quando Reddit ainda usava índice web); não descrevem o conector oficial atual.
+The sections below record the prior version (when Reddit still used web index); they do not describe the current official connector.
 
-## Código e integração
+## Code and Integration
 
-- Tool pública `research`: config/search/inspect/continue.
-- Configuração dentro dos tetos do proprietário; permissões de filesystem verificadas antes de abrir armazenamento.
-- Busca e leituras paralelas, erros por fonte, snippets preservados quando a leitura falha.
-- Evidências locais e recuperação seletiva; inspeção limitada a 16 KB, comentários fora do índice padrão.
-- Continuação com orçamento cumulativo e lock de pesquisa; leitura que falhou pode ser tentada em nova rodada.
-- HN com árvore de comentários limitada e contagem de nós; grep.app com filtros; Context7 com identidade/proveniência explícitas.
+- Public tool `research`: config/search/inspect/continue.
+- Configuration within owner ceilings; filesystem permissions verified before opening storage.
+- Parallel search and reads, per-source errors, snippets preserved when reading fails.
+- Local evidence and selective retrieval; inspection capped at 16 KB, comments outside standard index.
+- Continuation with cumulative budget and research lock; failed read can be retried in fresh round.
+- HN with bounded comment tree and node count; grep.app with filters; Context7 with explicit identity/provenance.
 
-## Testes automatizados
+## Automated Tests
 
-Comando:
+Command:
 
 ```sh
 node --test plugins/research/*.test.mjs tools/research-activation.test.mjs tools/session-companion/profile.test.mjs
 ```
 
-57 testes passaram na verificação final, com zero falhas; evidência em `.dumps/research-tests-final.log`. Testes usam fixtures/mocks, exceto integração de registro que usa módulos DSH reais sem rede. Teste de política read-only nega a abertura de acervo sem elevar permissões.
+57 tests passed in final verification with zero failures; evidence in `.dumps/research-tests-final.log`. Tests use fixtures/mocks, except registry integration which uses real DSH modules without network. Read-only policy test denies archive opening without permission escalation.
 
-## Testes reais de rede
+## Live Network Tests
 
-Acervos locais (não versionados):
+Local archives (unversioned):
 
-- `r-1-research-public-connector-smoke-a370bfbc5125`: HN preservado; grep.app retornou erro de serviço; Context7 informou mudança de ID. Falhas não apagaram outra fonte.
-- `r-2-research-public-connector-smoke-edfa3ae151e3`: HN, grep.app e Context7 retornaram e foram persistidos/inspecionados. Backend web deliberadamente indisponível neste runner isolado para testar falha parcial.
-- `r-3-smoke-conversacional-gemini-4-2ef25445a9c6`: chamada da tool real por GPT-6 Luna low; três buscas web/index expiraram com limite reduzido de15s; HN retornou zero resultados. Nenhuma evidência inventada.
-- `r-4-smoke-web-real-deadline-9c51e8824eae`: tool real por Luna low; backend web encontrou fonte mas leitura foi recusada por redirect cross-origin; HN trouxe discussão especulativa. Duas evidências persistidas, incluindo snippet da leitura falhada. Não comprova anúncio do produto.
+- `r-1-research-public-connector-smoke-a370bfbc5125`: HN preserved; grep.app returned service error; Context7 reported ID shift. Failures did not purge other sources.
+- `r-2-research-public-connector-smoke-edfa3ae151e3`: HN, grep.app, and Context7 returned and were persisted/inspecified. Web backend deliberately unavailable in this isolated runner to test partial failure.
+- `r-3-smoke-conversacional-gemini-4-2ef25445a9c6`: Real tool invocation by GPT-6 Luna low; three web/index searches timed out with reduced 15s limit; HN returned zero results. No evidence faked.
+- `r-4-smoke-web-real-deadline-9c51e8824eae`: Real tool by Luna low; web backend located source but read was rejected on cross-origin redirect; HN returned speculative discussion. Two evidence entries persisted, including snippet of failed read. Does not prove product launch.
 
-Amostras por Luna low confirmaram texto do artigo HN contra página pública e comentários com respostas encadeadas. Revisão encontrou homônimo Flutter em grep e ambiguidade de identidade de documentação React: filtros de código e metadados de biblioteca foram adicionados. Comentários HN são HTML explícito, não texto normalizado garantido; artigo e comentários são recuperados separadamente.
+Luna low samples confirmed HN article text against public page and comments with threaded replies. Review identified Flutter homonym in grep and React documentation identity ambiguity: code filters and library metadata were added. HN comments are raw HTML, not guaranteed clean text; article and comments are retrieved separately.
 
-## Ativação
+## Activation
 
-Migrador seletivo aplicado em web, headless, tui, dsh-tui e companion. 14 arquivos de configuração/derivados alterados. `web_search` desativada nos escopos em que existia; `web_fetch` e backend web preservados. Minimal/Companion não ganharam `web_fetch` implicitamente.
+Selective migrator applied across web, headless, tui, dsh-tui, and companion. 14 configuration/derived files altered. `web_search` disabled where present; `web_fetch` and web backend preserved. Minimal/Companion did not gain `web_fetch` implicitly.
 
-Recibo local reversível:
+Reversible local receipt:
 
 `.dumps/research-activation/3ab8d72f-20d4-407e-a761-01cb5bf3b262/receipt.json`
 
-`node tools/research-activation.mjs --check` após aplicação retornou `changes: []` em todos os cinco perfis.
+`node tools/research-activation.mjs --check` following application returned `changes: []` across all five profiles.
 
-Não foram reiniciados servidores/perfis ativos à força. O teste conversacional comprovou que um runtime já aberto ainda mantinha o limite anterior de25s, embora o código novo permita60s por operação web e180s cumulativos. **Reabrir o DSH/perfil para carregar integralmente a versão final.** Configuração em todos os perfis não significa smoke de rede independente em cada um; backends existentes podem diferir.
+No running servers/profiles were forcibly restarted. Conversational test confirmed an already-open runtime retained prior 25s deadline, although new code allows 60s per web operation and 180s cumulative. **Reopen DSH/profile to fully load final version.** Configuration across all profiles does not imply independent network smoke testing in each; existing backends may differ.
 
-## Limitações deliberadas
+## Deliberate Constraints
 
-- Reddit/X: descoberta pelo índice web e leitura HTTP pública. Sem API autenticada, coleta completa de respostas ou contratação de acesso ao X.
-- MCP/Google são serviços externos mesmo com modelo principal local.
-- Erros de quota, bloqueio, biblioteca ambígua e redirecionamentos recusados são relatados; não são burlados.
-- Sem browser fallback, cursores manuais de comentários, expansão arbitrária de links ou planejador LLM interno nesta versão.
-- `.dumps` deve ser ignorada pelo Git e estar no cwd autorizado; sessões read-only são recusadas, inclusive inspect nesta versão.
-- Sem coleta de todos os comentários, prova de representatividade, limpeza automática de acervo ou compartilhamento implícito entre sessões.
-- Orçamento registra operações lógicas de busca/leitura, não billing remoto preciso. Nenhuma API paga adicional foi habilitada.
+- Reddit/X: discovery via web index and public HTTP fetch. No authenticated API, exhaustive reply scraping, or purchased access to X.
+- MCP/Google remain external services even with local primary model.
+- Quota errors, blocking, ambiguous libraries, and rejected redirects are reported; never bypassed.
+- No browser fallback, manual comment cursors, arbitrary link crawl, or internal LLM planner in this version.
+- `.dumps` must be gitignored and located in authorized cwd; read-only sessions are rejected, including inspect in this version.
+- No exhaustive comment harvesting, proof of representativeness, automatic archive pruning, or implicit cross-session sharing.
+- Budget tracks logical search/read operations, not precise remote billing. No additional paid APIs enabled.

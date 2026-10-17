@@ -1,15 +1,15 @@
-# Instalação física APK13 — autorização fresca
+# Physical APK13 installation — fresh authorization
 
-Dono respondeu **Sim, só instalar** à pergunta install-apk13. Goal8c2c23c6r3 ancora execução; Task106 concluída e Task104 para-o-dono aguardando validação humana real. Não repetir pergunta de lifecycle/backend.
+Owner responded **Sim, só instalar** ("Yes, just install") to question install-apk13. Goal 8c2c23c6r3 anchors execution; Task 106 completed and Task 104 in para-o-dono awaiting real human validation. Do not repeat lifecycle/backend question.
 
-## Escopo exclusivo
-- Instalar `.dumps/tasks/dsh-companion-0.13.0-goal-fixes.apk`,42350750bytes/SHA2566b33efd6b05b2275db87b96f36d1d93d291200fb3a1b7c31945db291f01e1538.
-- Mesmo package dev.alex.dsh.companion,versionCode13/0.13.0-goal-fixes,min/target34,signerSHA2561fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d.
-- Confirmar dispositivo exato ZY22F2395W/XT2201-2/API34,user0; ler somente metadata do pacote antes.
-- Atualização `adb -P5037 -s ZY22F2395W install -r --user 0 APK`, sem -g/clear/uninstall, sem troca de usuário nem autorizar outro aparelho. Preservar UID10318/CEinode899458/firstInstallTime e permissões; se identidade/assinatura/baseline incompatível, não forçar downgrade/substituição destrutiva.
-- Ler metadata depois, verificar versão13/UID/inode/firstInstallTime/permissões; registrar recibo local e README distinguindo install de E2E humano.
+## Exclusive scope
+- Install `.dumps/tasks/dsh-companion-0.13.0-goal-fixes.apk`, 42350750 bytes / SHA256 6b33efd6b05b2275db87b96f36d1d93d291200fb3a1b7c31945db291f01e1538.
+- Same package dev.alex.dsh.companion, versionCode 13 / 0.13.0-goal-fixes, min/target 34, signer SHA256 1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d.
+- Confirm exact device ZY22F2395W / XT2201-2 / API 34, user 0; read only package metadata beforehand.
+- Update `adb -P5037 -s ZY22F2395W install -r --user 0 APK`, without -g/clear/uninstall, without switching user or authorizing other device. Preserve UID 10318 / CE inode 899458 / firstInstallTime and permissions; if identity/signature/baseline incompatible, do not force destructive downgrade/replacement.
+- Read metadata afterward, verify version 13 / UID / inode / firstInstallTime / permissions; record local receipt and README distinguishing install from human E2E.
 
-## Proibições e entrega
-Não abrir app, enviar intent de launch, capturar tela/hierarchy/logs de chat, tocar/gesticular, pausar/retomar goal, despachar modelo ou conceder permissões. Não parar/reiniciar backend, não modificar perfil/SDK/Settings/TUI/frontend/Firebase/HA/históricos. Não fazer commit/push. Emulador eADB5039 já encerrados; usar exclusivamente5037/serial explícito para atualização autorizada.
+## Prohibitions and delivery
+Do not open app, send launch intent, capture screen/hierarchy/chat logs, tap/gesture, pause/resume goal, dispatch model, or grant permissions. Do not stop/restart backend, do not modify profile/SDK/Settings/TUI/frontend/Firebase/HA/histories. Do not commit/push. Emulator and ADB 5039 already stopped; use exclusively 5037 / explicit serial for authorized update.
 
-Entregar confirmação curta da instalação e deixar o dono abrir/testarPausar/Continuar na conversa correta. Task104 não fechar como E2E humano por apenas install; goal global permanece aguardando evidência/decisão do dono.
+Deliver short confirmation of installation and let owner open/test Pause/Resume in the correct conversation. Do not close Task 104 as human E2E merely because of install; global goal remains awaiting evidence/decision from owner.

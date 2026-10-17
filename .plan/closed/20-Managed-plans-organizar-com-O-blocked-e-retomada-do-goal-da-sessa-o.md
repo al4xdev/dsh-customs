@@ -1,33 +1,33 @@
-# Managed-plans: organizar com O, blocked e retomada do goal da sessão
+# Managed-plans: Organize with O, Blocked Category, and Session Goal Resumption
 
-## Pedido consolidado
-- `O` deve organizar o plano escolhendo destino, não ser um atalho dedicado à reabertura.
-- Acrescentar classificação `blocked` para trabalho interrompido por dependência, separada do estado do goal. Não criar um motor de dependências.
-- Ao aprovar manualmente um plano de tasks, retomar o **goal atual da sessão aprovadora** se paused/blocked. Não vincular ao goal antigo da criação do plano: o usuário explicitamente espera mudança de goals.
-- Aplicar recomendações pequenas de documentação/retomada e shell-reconsider. Usar o goal ativo para orientar execução; preservar alterações anteriores.
+## Consolidated Request
+- `O` should organize the plan by choosing destination, not be a shortcut dedicated to reopening.
+- Add `blocked` classification for work halted by a dependency, separate from goal status. Do not create a dependency engine.
+- When manually approving a tasks plan, resume the **current goal of the approving session** if paused/blocked. Do not link to the old goal from plan creation: the user explicitly expects goal changes.
+- Apply small documentation/resumption and shell-reconsider recommendations. Use active goal to guide execution; preserve earlier modifications.
 
-## Organização e compatibilidade
-1. Adicionar blocked aos destinos reconhecidos, schemas, apresentação e browser. Blocked é save-only, sem autorização de execução enquanto nessa categoria. O movimento não cria/destrava goals.
-2. `O` abre seletor compacto Tasks/Backlog/Blocked/Owner decisions/Closed, com Enter confirmar e Esc cancelar, preservando tokens e estilo monospace do TUI. Guardar draft, identidade/revisão/hash e idempotência.
-3. Operação humana autenticada de organização: approved pode mudar categoria; staged/rejected mudam destino proposto sem aprovação. Closed ou imports que voltam a tarefas geram nova revisão staged com conteúdo idêntico e mesmo plan_id, preservando histórico e exigindo nova aprovação. Esse detalhe fica explícito no seletor; não reaproveitar aprovação velha de plano fechado.
-4. Closed como destino arquiva/cancela por ação humana, não declara tarefa concluída nem fabrica evidência. API de reabertura existente continua disponível para o agente, sem tecla dedicada obrigatória.
-5. Migração aditiva: criar diretório blocked na inicialização normal, manter estado SQLite e revisões existentes compatíveis; não editar mirrors/registry à mão nem inventar aprovação para conteúdo importado.
+## Organization and Compatibility
+1. Add blocked to recognized destinations, schemas, presentation, and browser. Blocked is save-only, without execution authorization while in that category. Moving does not create/unblock goals.
+2. `O` opens a compact selector: Tasks / Backlog / Blocked / Owner decisions / Closed, with Enter to confirm and Esc to cancel, preserving TUI semantic tokens and monospace style. Store draft, identity/revision/hash, and idempotency.
+3. Authenticated human organization operation: approved can change category; staged/rejected change proposed destination without approval. Closed or imports moved back to tasks generate a new staged revision with identical content and same plan_id, preserving history and requiring new approval. This detail is made explicit in the selector; do not reuse old approval from a closed plan.
+4. Closed as a destination archives/cancels via human action; it does not declare a task completed or fabricate evidence. Existing reopening API remains available to the agent, without a mandatory dedicated key.
+5. Additive migration: create blocked directory on normal initialization, keep SQLite state and existing revisions compatible; do not manually edit mirrors/registry or invent approval for imported content.
 
-## Aprovação e goal
-- Integração opcional com o serviço existente `ctx.get('goals')`; não mudar core nem tornar o serviço obrigatório.
-- Somente comando humano root real, após CAS de aprovação autorizadora de tasks. UI avisa que retoma goal paused/blocked da sessão. Rejeição, save-only, autoApprove e notificações de background não retomam goals.
-- Capturar snapshot host do goal atual antes de aprovar; enfileirar e persistir a instrução aprovada antes de chamar `goals.resume(agent,{id,revision})`.
-- Depois dos awaits, revalidar sessão/live/id/revision/phase e budget. Se mudou, foi concluído, já ativo ou esgotado, não retomar nem retry silencioso. Aprovação já salva continua válida; retorno mostra status separado de retomada.
-- Não usar update_goal do modelo para paused nem fabricar command/user events. A ação humana real de aprovação é a autoridade, conforme pedido do usuário.
+## Approval and Goal
+- Optional integration with existing `ctx.get('goals')` service; do not modify core or make the service mandatory.
+- Only real root human command, after CAS authorizing tasks approval. UI indicates that it resumes the session's paused/blocked goal. Rejection, save-only, autoApprove, and background notifications do not resume goals.
+- Capture host snapshot of current goal before approving; enqueue and persist the approved instruction before calling `goals.resume(agent,{id,revision})`.
+- After awaits, revalidate session/live/id/revision/phase and budget. If changed, completed, already active, or exhausted, do not resume or retry silently. Already saved approval remains valid; return value shows separate resumption status.
+- Do not use model's update_goal for paused goals or fabricate command/user events. The real human approval action is the authority, as requested by the user.
 
-## Recomendações e regressões
-- Documentar backup consistente do .plan inteiro, inclusive .state/store.sqlite, e .agents/config.json com runtime parado para destino persistente; não copiar dados do usuário neste trabalho.
-- Testar falha de flush/ack na entrega e retomada após reabertura do store, sem duplicação, em fixtures artificiais .dumps.
-- Ajustar três frases documentais do shell-reconsider: leitura sem reconsideração, permit preso a todos os args, here-doc como heurística.
-- Executar suites de config/store/native registry, novos contratos de organização e goals, viewer/cartões com renderer real e conjunto LTS existente. Não alegar teste manual do TUI instalado nem proteção absoluta de power-loss.
+## Recommendations and Regressions
+- Document consistent backup of the entire .plan directory, including .state/store.sqlite, and .agents/config.json with runtime stopped to a persistent destination; do not copy user data in this work.
+- Test flush/ack failure during delivery and resumption after reopening store, without duplication, in artificial fixtures in .dumps.
+- Adjust three documentation phrases for shell-reconsider: read without reconsideration, permit bound to all args, here-doc as heuristic.
+- Run suites for config/store/native registry, new organization and goal contracts, viewer/cards with real renderer, and existing LTS test set. Do not claim manual testing of installed TUI or absolute power-loss protection.
 
-## Divisão de trabalho
-Store/organização e seus testes por um subagente; helper goals e testes por outro. Principal integra index/TUI/apresentação/documentação/scripts/testes do browser e revisão final. Cada agente só edita seus arquivos atribuídos.
+## Division of Work
+Store/organization and its tests by one subagent; goals helper and tests by another. Main agent integrates index/TUI/presentation/documentation/scripts/browser tests and final review. Each agent edits only assigned files.
 
-## Aceite
-O escolhe destino, blocked não autoriza execução, closed→tasks não herda aprovação, approval→resume só goal atual da sessão humana com CAS e ordem durable, testes passam e nenhum core/credencial/profile é alterado. Reload/restart é necessário para runtime já carregado. Sem commit/push.
+## Acceptance
+O chooses destination, blocked does not authorize execution, closed→tasks does not inherit approval, approval→resume touches only the human session's current goal with CAS and durable order, tests pass, and no core/credentials/profiles are altered. Reload/restart required for already loaded runtime. No commit/push.

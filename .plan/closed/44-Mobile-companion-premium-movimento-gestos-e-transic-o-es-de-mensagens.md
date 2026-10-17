@@ -1,26 +1,26 @@
-# Mobile companion premium — animações e gestos
+# Mobile companion premium — animations and gestures
 
-Complemento à task40r1 aprovada, por solicitação direta do usuário. Usar goal ativo atualizado para orientar implementação/verificação. Projeto permanece frontend independente, profile companion fixo, renderer oficial e políticas intactas.
+Complement to approved task 40 r1, per direct user request. Use updated active goal to guide implementation/verification. Project remains an independent frontend, fixed companion profile, official renderer and policies intact.
 
-## Experiência
-- Motion language coesa e discreta estilo iOS: transição lista↔chat com depth/parallax e spring; botões/estado/loading com feedback breve, sem bounce ornamental em cada componente.
-- Gesto horizontal de navegação com progresso ligado ao dedo e decisão por distância/velocidade; voltar da conversa à lista e avançar/reabrir a conversa previamente validada quando houver contexto. Não disparar troca de mensagens ou operações no backend pelo gesto, nem navegação para logs estrangeiros. Revalidar header antes de retain.
-- Elasticidade nas bordas do scrollport da conversa/lista onde aplicável. Preservar rolagem nativa do browser e sua física iOS; fallback emulado pequeno/limitado que não duplica efeitos nativos. Nunca interceptar rolagem horizontal de código/tabelas, seleção, inputs, controles, dialogs ou confirmações; nada de prevenir todo touchmove globalmente.
-- Ao enviar, animar a apresentação da mensagem saindo do composer para sua posição real no transcript e acompanhar a subida da conversa. Replica visual não contém credenciais nem interfere com a mensagem real; não inventar um envio antes da admissão nativa nem reenviar. Cancelar efeito se submit falhar/não resultar em mensagem. Sem travar input/reconciliação/scroll para sustentar o efeito.
-- Resposta recebida: entrada breve uma vez por mensagem nova; streaming continua incremental no renderer, sem reanimar cada token, cada reload ou todo histórico antigo. Scroll preserva usuário lendo acima.
+## Experience
+- Cohesive and understated iOS-style motion language: list <-> chat transition with depth/parallax and spring; buttons/status/loading with brief feedback, without ornamental bounce on every component.
+- Horizontal navigation gesture with finger-tracked progress and distance/velocity decision; back from conversation to list, and forward/reopen previously validated conversation when context exists. Do not trigger message dispatch or backend operations via gesture, nor navigation to foreign logs. Revalidate header before retain.
+- Edge elasticity on conversation/list scrollport where applicable. Preserve native browser scrolling and iOS physics; small/bounded emulated fallback that does not duplicate native effects. Never intercept horizontal scrolling of code/tables, selection, inputs, controls, dialogs, or confirmations; no global prevention of all touchmove.
+- On send, animate message presentation rising from composer into its real transcript position, tracking conversation scroll upward. Visual replica contains no credentials and does not interfere with actual message; do not fabricate a send prior to native admission or resend. Cancel effect if submit fails / does not result in message. Do not block input/reconciliation/scroll to sustain effect.
+- Received response: brief entrance once per new message; streaming remains incremental in renderer, without re-animating each token, each reload, or entire historical transcript. Scroll preserves user reading above.
 
-## Implementação delegada
-- Delegar motion de telas/gestos/elasticidade a um subagente e movimento de mensagens/integração composer-transcript a outro, com arquivos separados e contrato comum; agente principal integra e audita.
-- Usar APIs públicas dos serviços/DOM data attributes e observação de apresentação sem alterar parser/engine. Se precisar adaptação upstream adicional, manter exata/pinned/fail-closed e documentar; não editar runtime instalado ou TUI.
-- WAAPI/CSS transforms+opacity onde possível; requestAnimationFrame somente para gesto ativo, cleanup de observers/listeners/animations ao trocar/desmontar. Evitar layout a cada frame, medir apenas pontos necessários, sem dependências pesadas ou loop infinito.
-- Respeitar prefers-reduced-motion: transições mínimas/sem deslocamento, gestures navegam sem efeito elástico, animação de mensagem desligada. Nenhuma configuração nova exigida.
-- Acessibilidade, targets>=44px, teclado/visualViewport/safe-area, foco/contraste e aprovação nativa permanecem prioritários. Touch vertical/native scrolling e seleção/cópia não podem regredir.
+## Delegated implementation
+- Delegate screen motion / gestures / elasticity to one subagent and message movement / composer-transcript integration to another, with separate files and shared contract; parent agent integrates and audits.
+- Use public APIs of services / DOM data attributes and presentation observation without modifying parser/engine. If additional upstream adaptation is needed, keep exact/pinned/fail-closed and document; do not edit installed runtime or TUI.
+- WAAPI / CSS transforms + opacity where possible; requestAnimationFrame only for active gesture, cleanup of observers/listeners/animations on switch/unmount. Avoid per-frame layout, measure only necessary points, no heavy dependencies or infinite loops.
+- Respect prefers-reduced-motion: minimal/non-displacing transitions, gestures navigate without elastic effect, message animation disabled. No new configuration required.
+- Accessibility, targets >= 44px, keyboard / visualViewport / safe-area, focus/contrast, and native approval remain top priority. Vertical touch / native scrolling and selection/copy must not regress.
 
-## Verificação
-- Testes determinísticos de thresholds/velocidade/axis-lock/cancelamento, regras de targets excluídos, reduced-motion, cleanup, mensagem admitida uma única vez/erro/streaming sem repetir animação, foreignguard.
-- Navegador mantido393x852/DPR2/touch: demonstrar lista↔chat, gesto commit/cancel, scroll nas bordas, envio/recebimento reais e histórico sem replay de efeitos. Verificar console/network/overflow e scroll stability. Dados sintéticos apenas.
-- Captura curta de vídeo/frame inspection se ferramenta mantida permitir; screenshots isoladas não provam fluidez. Não instalar browser/dependencies para contornar capacidades desativadas. Não alegar física/teclado Android/iOS físico sem teste no dispositivo.
-- Integrar com task40: build/test, auth/profile/confirmar-rejeitar/allowonce, publicação só após remover auth seam de auditoria, preservar443/3080/TUI e rollback8443.
+## Verification
+- Deterministic tests of thresholds / velocity / axis-lock / cancellation, excluded targets rules, reduced-motion, cleanup, message admitted strictly once / error / streaming without repeated animation, foreign guard.
+- Maintained browser 393x852 / DPR 2 / touch: demonstrate list <-> chat, gesture commit/cancel, edge scroll, real send/receive, and history without replay of effects. Verify console/network/overflow and scroll stability. Synthetic data only.
+- Short video capture / frame inspection if maintained tool allows; isolated screenshots do not prove fluidity. Do not install browser/dependencies to bypass disabled capabilities. Do not claim physical Android/iOS physics/keyboard without physical device test.
+- Integrate with task 40: build/test, auth/profile/confirm-reject/allow-once, publication only after removing audit auth seam, preserve 443/3080/TUI and 8443 rollback.
 
-## Conclusão
-Motion premium implementado e observado no app real com dados sintéticos, sem alterar a segurança/renderer ou quebrar touch/scroll/acessibilidade. Registrar limites de emulação e resultados medidos; objetivo completo só após validação e integração de todo frontend.
+## Conclusion
+Premium motion implemented and observed in real app with synthetic data, without altering security/renderer or breaking touch/scroll/accessibility. Record emulation limits and measured results; objective complete only after validation and full frontend integration.

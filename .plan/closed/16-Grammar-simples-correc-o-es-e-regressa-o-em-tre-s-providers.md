@@ -1,15 +1,15 @@
-# Grammar simples: correções e regressão em três providers
+# Simple Grammar: Fixes and Regression Across Three Providers
 
-## Objetivo
-Revisar o plugin grammar-fix, preservar as alterações existentes e manter uma implementação pequena, com testes reproduzíveis no GPT, Gemini Flash e modelo local. Usar o goal ativo para orientar a execução até a verificação.
+## Objective
+Review the grammar-fix plugin, preserve existing changes, and maintain a small implementation, with reproducible tests on GPT, Gemini Flash, and local model. Use active goal to guide execution through verification.
 
-## Escopo
-- Corrigir configuração de idioma: `auto` preserva o original e códigos suportados viram nomes inequívocos no prompt.
-- Aceitar IDs de modelo com barras internas (comum em modelos locais), mantendo `provider/model` como formato.
-- Garantir cancelamento no descarte do plugin, limpeza de listeners/busy e rejeição de streaming vazio, incompleto ou com erro; remover código morto.
-- Manter fallback de reasoning limitado ao erro específico de esforço incompatível, sem adicionar retry genérico ou alterar integração visual.
-- Adicionar testes determinísticos do bridge e uma rotina real opt-in que usa o serviço LLM e credenciais do perfil instalado, sem copiar segredos, alterar a rota padrão ou enviar conteúdo privado.
-- Testar português, inglês/auto e preservação de tokens técnicos nos três modelos disponíveis; salvar relatórios temporários em `.dumps/` e documentar comandos e limitações.
+## Scope
+- Fix language configuration: `auto` preserves the original and supported codes turn into unambiguous names in the prompt.
+- Accept model IDs with internal slashes (common in local models), keeping `provider/model` format.
+- Ensure cancellation on plugin disposal, cleanup of listeners/busy, and rejection of empty, incomplete, or errored streams; remove dead code.
+- Keep reasoning fallback strictly limited to the specific incompatible effort error, without adding generic retry or altering visual integration.
+- Add deterministic bridge tests and an opt-in real routine that uses LLM service and credentials from installed profile, without copying secrets, altering default route, or sending private content.
+- Test Portuguese, English/auto, and preservation of technical tokens across the three available models; save temporary reports in `.dumps/` and document commands and limitations.
 
-## Critérios
-Testes unitários passando, cancelamento permitindo nova correção, nenhum resultado parcial aplicado e três rotas reais com resultados verificáveis. Se provider estiver indisponível, registrar a falha sem declarar aprovação. Não implementar o redesenho visual do plano 15 nesta tarefa nem fechar aquele plano. Sem commit/push.
+## Criteria
+Unit tests passing, cancellation allowing subsequent correction, no partial results applied, and three real routes with verifiable results. If provider is unavailable, record the failure without claiming approval. Do not implement visual redesign of plan 15 in this task or close that plan. No commit/push.

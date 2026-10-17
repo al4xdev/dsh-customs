@@ -1,19 +1,19 @@
-# Ícone Companion — mesma maid do loading
+# Companion Icon — Same Maid from Loading Animation
 
-O launcher usa **um quadro estático da mesma arte já empacotada no loading**. O loading continua animado; nenhum quadro, tempo ou código dele foi alterado. Não foi usada geração de imagem, rede, repaint, blur ou biblioteca instalada para esta conversão.
+The launcher uses **a static frame from the exact artwork already bundled in the loading animation**. The loading view remains animated; none of its frames, timing, or code was altered. No image generation, network calls, repainting, blurring, or newly installed libraries were used for this conversion.
 
-## Origem e integridade
+## Provenance and Integrity
 
-- Quadro original: `app/src/main/assets/companion/maid/thinking/00.png`,301×288px, com alpha.
-- SHA256 original: `c4132f28c128c06d86874f61e7ba7ae8b6d305708127879cbc36c6ed3e7e4319`.
-- Arte fornecida pelo proprietário para uso pessoal neste app; não é logo oficial. Não se presume licença comercial ou autorização de republicação do pack original.
-- Os32 arquivos originais de `assets/companion/maid` permanecem byte-idênticos. Digest ordenado de caminhos+SHA256: `79adf5586518472860e0f67eedd0f739da6c888eb5a2eb6c912d3678619391c6`.
-- Foreground derivado: `app/src/main/res/drawable-nodpi/ic_companion_maid_foreground_pixels.png`,432×432px RGBA.
-- SHA256 do foreground: `57f67d45a9b4a7ca165c06ba809ab91a470ccda3d21682d897416ac1b54471c4`.
+- Original frame: `app/src/main/assets/companion/maid/thinking/00.png`, 301×288px, with alpha.
+- Original SHA256: `c4132f28c128c06d86874f61e7ba7ae8b6d305708127879cbc36c6ed3e7e4319`.
+- Artwork provided by owner for personal use in this app; not an official logo. No commercial license or repackaging rights are implied.
+- All 32 original files in `assets/companion/maid` remain byte-identical. Sorted digest of path+SHA256: `79adf5586518472860e0f67eedd0f739da6c888eb5a2eb6c912d3678619391c6`.
+- Derived foreground: `app/src/main/res/drawable-nodpi/ic_companion_maid_foreground_pixels.png`, 432×432px RGBA.
+- Foreground SHA256: `57f67d45a9b4a7ca165c06ba809ab91a470ccda3d21682d897416ac1b54471c4`.
 
-## Receita offline
+## Offline Recipe
 
-Python3 padrão +ImageMagick já disponível. A partir da raiz do repositório:
+Standard Python 3 + existing ImageMagick. From the repository root:
 
 ```fish
 uv run --no-project --offline python android/companion/icon/generate_maid_icon.py
@@ -21,23 +21,23 @@ uv run --no-project --offline python android/companion/icon/generate_maid_icon.p
 uv run --no-project --offline python android/companion/icon/test_maid_icon.py
 ```
 
-O script recusa outro hash-fonte. Remove somente padding totalmente transparente, redimensiona a região de alpha com filtro `point`/nearest-neighbor e a centra numa tela transparente de432px (108dp a4px/dp). O recorte de alpha fica202×197px. Todos os pixels visíveis continuam com RGBA existente no original; o script rejeita cor/alpha novo.
+The script rejects any differing source hash. It strips only fully transparent padding, resizes the alpha bounding box with a `point`/nearest-neighbor filter, and centers it on a transparent 432px canvas (108dp at 4px/dp). The alpha crop measures 202×197px. All visible pixels preserve existing RGBA values from the original; the script rejects new colors/alpha.
 
-O maior raio de centro de pixel visível é130.201767px, inferior à margem131px e ao raio132px da área segura circular de66dp. A reserva também mantém os cantos dos pixels dentro dessa área. Círculo e squircle não cortam rosto, cabelo, laço ou cauda. Isso é uma verificação do recurso, não uma alegação de teste físico em todo launcher/OEM.
+Maximum visible pixel center radius is 130.201767px, inside the 131px margin and 132px radius of the 66dp circular safe zone. The margin also keeps pixel corners within this zone. Neither circle nor squircle masks crop face, hair, ribbon, or tail. This validates the resource asset; it does not claim physical testing across every OEM launcher.
 
-A codificação remove metadados voláteis e usa PNG32/compressão9. `--check` exige igualdade byte-a-byte com a receita no ImageMagick disponível; versões futuras de encoder podem requerer revalidar bytes, sem alterar o contrato de pixels/alpha.
+Encoding strips volatile metadata and uses PNG32 / compression level 9. `--check` mandates bit-for-bit equality with the recipe under the available ImageMagick; future encoder versions may require byte revalidation without altering the pixel/alpha contract.
 
-## Recursos Android
+## Android Resources
 
-- `mipmap-anydpi/ic_companion_maid.xml`: adaptive icon canônico, normal e `roundIcon` apontam para ele. O app exige API34; qualifier-v26 e fallback legado são desnecessários.
-- `drawable/ic_companion_maid_foreground.xml`: bitmap sem filtro/antialias/dither; a transparência é preservada.
-- `values/launcher_icon_colors.xml`: fundo grafite exclusivo do ícone, `#0E0E12`; não muda tema/paleta do app.
-- Não há monochrome reinterpretado: a maid conserva as cores e os detalhes do quadro original.
-- A duplicata-v26 e o antigo `drawable/ic_companion.xml` sem referências foram removidos. Há somente um wrapper de foreground, sem recurso morto ou símbolo de chat legado.
-- Nenhuma mudança de label, pacote, permissões, activities, assinatura, UID, cofre ou versão. Parent integra no APK9 junto às mudanças aprovadas de paleta/copy.
+- `mipmap-anydpi/ic_companion_maid.xml`: Canonical adaptive icon; regular and `roundIcon` target it. App requires API 34; qualifier-v26 and legacy fallback are unnecessary.
+- `drawable/ic_companion_maid_foreground.xml`: Bitmap without filter/antialias/dither; transparency is preserved.
+- `values/launcher_icon_colors.xml`: Charcoal background exclusive to launcher icon, `#0E0E12`; does not alter app theme/palette.
+- No reinterpretive monochrome: maid retains original frame colors and details.
+- Legacy unreferenced `drawable/ic_companion.xml` and v26 duplicate were removed. Only a single foreground wrapper exists, with no dead resources or obsolete chat symbols.
+- No changes to label, package name, permissions, activities, signing key, UID, keystore, or version. Parent integrates into APK9 alongside approved palette/copy adjustments.
 
-## Verificação
+## Verification
 
-`test_maid_icon.py` verifica fonte/pack inalterado, manifesto, recursos, reprodutibilidade e bounds círculo/squircle. `MaidLauncherIconTest` é fixture Android para PackageManager/adaptive drawable, fundo, filtro, alpha-safe bounds e hash do quadro original no APK; execução Gradle/emulador fica centralizada no parent.
+`test_maid_icon.py` verifies unchanged source pack, manifest, resources, reproducibility, and circular/squircle bounds. `MaidLauncherIconTest` is the Android fixture for PackageManager/adaptive drawable, background, filter, alpha-safe bounds, and original frame hash in APK; Gradle/emulator execution is handled by the parent workflow.
 
-O PNG derivado foi inspecionado como imagem real. Nenhum celular foi instalado, aberto, capturado ou operado nesta tarefa. A validação física do launcher exige autorização/condição segura nova do dono; não é necessária para gerar estes recursos.
+The derived PNG was visually verified as an actual image. No physical phone was connected, unlocked, captured, or operated during this task. Physical launcher validation requires new owner approval/safe conditions; it is not required to produce these resources.

@@ -1,38 +1,38 @@
-# Implementar research e substituir busca padrão
+# Implement research and replace default search
 
-## Autorização humana
+## Human authorization
 
-O proprietário autorizou explicitamente iniciar criação autônoma da ferramenta, substituir ao final a tool de busca padrão em todos os perfis e preservar resultados quando algum provedor falhar ou atingir limite. Esta autorização sucede a pausa para revisão do plano-base 116 r3. O plano-base permanece referência arquitetural; este artefato delimita a execução.
+The owner explicitly authorized beginning autonomous creation of the tool, replacing the default search tool in all profiles upon completion, and preserving results when any provider fails or reaches a limit. This authorization supersedes the pause for review of base plan 116 r3. The base plan remains architectural reference; this artifact bounds execution.
 
-## Objetivo e goal
+## Objective and goal
 
-Executar sob goal `goal-088b322f-eac8-40f6-be0a-fc5c9b9d7f2e`: plugin research nativo, coleta persistente limitada ao contexto, continuidade e falhas parciais, testes e ativação em todos os perfis. Não marcar goal completo sem verificar entrega e registrar limitações.
+Execute under goal `goal-088b322f-eac8-40f6-be0a-fc5c9b9d7f2e`: native research plugin, persistent collection bounded to context, continuity and partial failures, tests, and activation across all profiles. Do not mark goal complete without verifying delivery and recording limitations.
 
-## Escopo
+## Scope
 
-1. Inspecionar interfaces reais de web, tools, cliente MCP, perfis e ativação. Preservar trabalho existente no checkout.
-2. Implementar plugin em `plugins/research/`, testes e documentação: config, search, inspect e continue; snapshots e evidências em `.dumps/research`; orçamento cumulativo, limites de IO/retorno e isolamento.
-3. Reutilizar `ctx.web.search` e `ctx.web.fetch` em vez de fork desnecessário. Google/web, Reddit/X com modos explícitos de fallback, Hacker News, grep.app e Context7 quando interfaces permitirem. Não inventar credenciais nem comprar serviço; conector indisponível deve aparecer como indisponível/degradado, não sucesso.
-4. Falhas 429, quotas, timeout, autenticação ou bloqueio são registradas por fonte/etapa. Entregar resultados coletados das demais fontes e avisar o agente. Não deixar retry de longa duração bloquear toda pesquisa.
-5. Leituras obrigatórias acontecem dentro da ferramenta; resultados são salvos antes de serem apresentados. Retorno compacto inclui índice, refs, cobertura, erros e consumo; conteúdo completo é recuperado seletivamente.
-6. Testar concorrência, limites, cancelamento, falhas parciais, persistência, segurança e continuação. Validar integrações reais de forma controlada sem contratar APIs.
-7. Atualizar ativação em todos os perfis, incluindo isolamento de companion conforme interface real. Retirar somente a exposição da busca padrão; preservar serviço backend necessário e leitura compatível. Configuração reversível, sem reiniciar à força uma sessão em uso.
-8. Verificar ferramentas registradas em runtime de teste e configurações finais. Documentar necessidade de reabertura de perfis existentes se carregamento não for dinâmico; não alegar hot reload sem evidência.
+1. Inspect real interfaces of web, tools, MCP client, profiles, and activation. Preserve existing work in checkout.
+2. Implement plugin in `plugins/research/`, tests, and documentation: config, search, inspect, and continue; snapshots and evidence in `.dumps/research`; cumulative budget, IO/return limits, and isolation.
+3. Reuse `ctx.web.search` and `ctx.web.fetch` instead of unnecessary fork. Google/web, Reddit/X with explicit fallback modes, Hacker News, grep.app, and Context7 when interfaces permit. Do not invent credentials or purchase service; unavailable connector must appear as unavailable/degraded, not success.
+4. Failures 429, quotas, timeout, authentication, or blocking are recorded per source/stage. Deliver results collected from other sources and notify the agent. Do not let long-duration retry block entire research.
+5. Mandatory reads occur within the tool; results are saved before being presented. Compact return includes index, refs, coverage, errors, and consumption; full content is retrieved selectively.
+6. Test concurrency, limits, cancellation, partial failures, persistence, security, and continuation. Validate real integrations in controlled manner without purchasing APIs.
+7. Update activation across all profiles, including companion isolation per real interface. Remove only exposure of default search; preserve necessary backend service and compatible reading. Reversible configuration, without forcibly restarting a session in use.
+8. Verify registered tools in test runtime and final configurations. Document necessity of reopening existing profiles if loading is not dynamic; do not claim hot reload without evidence.
 
-## Decisões de implementação
+## Implementation decisions
 
-Usar defaults conservadores configuráveis para limites ainda não definidos; agentes só podem reduzir tetos do proprietário. Fontes centrais: web, Reddit, X, HN. Fontes técnicas opt-in por pesquisa. Sem segundo LLM obrigatório. Nenhum contorno de bloqueios, scraping autenticado pessoal ou contratação sem autorização específica.
+Use conservative configurable defaults for limits not yet defined; agents can only lower owner ceilings. Core sources: web, Reddit, X, HN. Technical sources opt-in per research. No mandatory second LLM. No bypassing blocks, personal authenticated scraping, or contracting without specific authorization.
 
-## Critérios de aceite
+## Acceptance criteria
 
-- Tool research utilizável com config/search/inspect/continue e referências estáveis.
-- Pesquisa persiste localmente com proteção de caminhos e arquivos limitados; contexto não recebe acervo inteiro.
-- Falha de um conector não impede resultados de outros, e distingue snippet de leitura real.
-- Orçamento compartilhado entre chamadas; cancelamento e timeouts não deixam operações internas sem controle.
-- Testes automatizados e smoke controlado; quotas/indisponibilidades reais explicitamente registradas.
-- Nova ferramenta configurada em todos os perfis existentes/gerados e web_search não exposta nesses registros; backend preservado.
-- Mudanças estranhas à tarefa não revertidas ou sobrescritas.
+- Usable research tool with config/search/inspect/continue and stable references.
+- Research persists locally with path protection and bounded files; context does not receive entire collection.
+- Failure of one connector does not block results from others, and distinguishes snippet from real reading.
+- Budget shared across calls; cancellation and timeouts do not leave internal operations uncontrolled.
+- Automated tests and controlled smoke; real quotas/unavailabilities explicitly recorded.
+- New tool configured in all existing/generated profiles and web_search not exposed in these registrations; backend preserved.
+- Changes unrelated to task not reverted or overwritten.
 
-## Próxima ação
+## Next action
 
-Continuar inspeção e implementação após aprovação desta revisão. Ao finalizar, fechar artefato com evidências, atualizar goal e entregar resumo de uso, testes e limitações.
+Continue inspection and implementation after approval of this revision. Upon completion, close artifact with evidence, update goal, and deliver summary of usage, tests, and limitations.

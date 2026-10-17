@@ -1,14 +1,14 @@
-# Project-mcp: regressão de cancelamento explícito para LTS
+# Project-mcp: Explicit Cancellation Regression for LTS
 
-## Pedido e objetivo
-Usuário autorizou adicionar o teste recomendado e conferir sugestões históricas da c_test2. Usar o goal ativo para executar e validar.
+## Request and Objective
+User authorized adding the recommended test and checking historical suggestions from c_test2. Use active goal to execute and validate.
 
-## Escopo mínimo
-- Acrescentar teste em plugins/project-mcp/project-mcp.test.mjs com cliente DSH real e builtin SDK local.
-- Esperar confirmação de que handler iniciou, abortar explicitamente via AbortController antes de um deadline longo, confirmar sinal recebido/sem conclusão tardia e conexão ainda utilizável.
-- Fixture artificial local, sem servidores reais, chamadas LLM, credenciais ou configuração de produção. Artefatos novos ficam em .dumps conforme convenção.
-- Ajustar descrição da cobertura no README se o teste passar. Sem alteração no código de produção, novas funcionalidades ou refatorações.
-- Consultar histórico c_test2 para distinguir sugestões antigas da revisão atual. Sugestões extras não entram automaticamente na implementação.
+## Minimal Scope
+- Add test in plugins/project-mcp/project-mcp.test.mjs with real DSH client and local SDK builtin.
+- Await confirmation that handler started, abort explicitly via AbortController before a long deadline, confirm signal received / no late completion, and connection still usable.
+- Local artificial fixture, without real servers, LLM calls, credentials, or production configuration. New artifacts placed in .dumps per convention.
+- Update coverage description in README if test passes. No production code changes, new features, or refactorings.
+- Inspect c_test2 history to distinguish legacy suggestions from the current review. Extra suggestions are not automatically included in implementation.
 
-## Validação e aceite
-Executar teste focal e npm run test:project-mcp, conferir git diff --check. Reportar qualquer falha concreta em vez de presumir propagação do abort; não alterar core/perfis para fazer teste passar. Fechar o plano com evidências quando passar. Sem commit/push.
+## Validation and Acceptance
+Run focal test and npm run test:project-mcp, check git diff --check. Report any concrete failure rather than assuming abort propagation; do not alter core/profiles to make test pass. Close plan with evidence once passing. No commit/push.

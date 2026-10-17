@@ -1,17 +1,17 @@
-# Remover prompts personalizados do Companion
+# Remove Custom Prompts from Companion
 
-## Pedido explícito e descoberta complementar
-O proprietário perguntou se havia system prompt extra no agente e pediu removê-lo e mostrar o texto, depois esclareceu não querer prompt personalizado/estilo que produz fontes. Prefix da persona de `profile.mjs` e perfil dedicado foi mostrado/removido conforme r1, sem reinício. Revisão adicional encontrou `plugins/session/index.mjs:28–31` contribuindo outra seção `session-companion-safety`, com identidade 'Você é o companion de observação de sessões', 'Use somente session' e 'Primeiro observe e cite evidências'. Essa contribuição também é personalizada do projeto e contradiz Task72r2 versátil; não alegar que retirar só persona eliminou todos os prompts extras.
+## Explicit Request and Additional Discovery
+The owner asked whether there was an extra system prompt in the agent and requested to remove it and display the text, later clarifying that he wanted no custom prompt / personality styling producing sources. The persona prefix from `profile.mjs` and dedicated profile was shown/removed per revision 1 without restart. Additional review identified `plugins/session/index.mjs:28–31` contributing another `session-companion-safety` section, with identity 'You are the session observation companion', 'Use only session', and 'First observe and cite evidence'. This contribution is also custom to the project and contradicts versatile Task 72r2; do not claim that removing persona alone eliminated all extra prompts.
 
-## Escopo autorizado
-- Mostrar/verbatim em arquivo separado e registrar integralmente o texto restante do projeto; nunca revelar instruções internas deste assistente.
-- Manter a remoção já realizada da persona completa personalizada no gerador e perfil. Preservar a persona/technical runtime padrão do SDK e descrever honestamente sua existência.
-- Remover inteiramente a contribuição `ctx.systemPrompt.section` do plugin session e sua dependência inutilizada `systemPrompt`, sem trocar por outro prompt/persona ou novo limite 'only reports'.
-- Guardas/regras de autorização, sanitização/dados não confiáveis, budgets/paginação, controle de writer, aprovação humana nativeallowedonce e descrições reais da ferramenta continuam implementados no código. Remover texto nunca remove enforcement.
-- Atualizar testes focados para evitar reintrodução da seção, com comparação que mostra apenas esses deltas. Outros plugins/perfil/modelo/OAuth/TTL/serviços/compaction permanecem intocados por71; capabilityintegration72 acontece em sua tarefa independente.
+## Authorized Scope
+- Display verbatim in a separate file and fully record remaining project text; never disclose internal instructions of this assistant.
+- Maintain the completed removal of the full custom persona in the generator and profile. Preserve standard SDK technical runtime/persona and honestly describe its existence.
+- Completely remove the `ctx.systemPrompt.section` contribution from the session plugin and its unused `systemPrompt` dependency, without replacing it with another prompt/persona or a new 'only reports' constraint.
+- Authorization guards/rules, untrusted data sanitization, budgets/pagination, writer control, native-allowed-once human approval, and real tool descriptions remain implemented in code. Removing text never removes enforcement.
+- Update focused tests to prevent reintroducing the section, with comparisons displaying only these deltas. Other plugins / profile / model / OAuth / TTL / services / compaction remain untouched by task 71; capability integration 72 proceeds in its independent task.
 
-## Verificação e runtime
-Rodar testes focusedprofile e sessionpublicruntime/pure fixtures, semmodelos/grants reais. Inspecionar a semântica pública de preset/hotload; não force-recreate/takeover/restart nem apagar histórico/contexto dos agentes existentes. Código/perfil removido não prova mudança imediata do agente antigo já carregado: owner poderá testar nova conversa após integração segura. Se pluginmoduloindex depende caching ESM não afirmar hotload automático semevidência.
+## Verification and Runtime
+Run focused profile tests and session public runtime / pure fixtures, without real models/grants. Inspect public preset/hotload semantics; do not force-recreate / takeover / restart or erase history/context of existing agents. Removed code/profile does not prove immediate alteration of already-loaded legacy agents: owner can test a new conversation after safe integration. If plugin module index relies on ESM caching, do not claim automatic hot-reloading without evidence.
 
-## Aceite
-Todos os prompts personalizados identificados no gerador/perfil e plugin session removidos, conteúdos mostrados, testes aprovados e escopo de enforcement preservado; SDK técnico padrão e possível retenção em agentes antigos explicitados.
+## Acceptance Criteria
+All custom prompts identified in generator/profile and session plugin removed, contents displayed, tests passing, and enforcement scope preserved; standard technical SDK and possible retention in legacy agents explicitly detailed.

@@ -1,14 +1,14 @@
-# Gemma fixo no catálogo local do DSH
+# Fixed Gemma in DSH Local Catalog
 
-## Diagnóstico
-O fish `dsh` chama `/home/alex/.local/share/dsh-cli/local-model-launch.mjs`. Esse launcher mantém Bonsai 2 27B (QW) no catálogo offline e acrescenta o modelo atualmente descoberto. Qwen Dirk e Gemma já aparecem em web/headless, mas não são um catálogo persistente do launcher dsh-tui.
+## Diagnosis
+The fish `dsh` calls `/home/alex/.local/share/dsh-cli/local-model-launch.mjs`. This launcher maintains Bonsai 2 27B (QW) in the offline catalog and appends the currently discovered model. Qwen Dirk and Gemma already appear in web/headless, but are not in a persistent catalog of the dsh-tui launcher.
 
-O usuário iniciou `gen gmmed`; leituras de status/logs e GET locais `/v1/models` e `/props`, sem geração, confirmaram Gemma4 26B Q4_K_XXL: id GGUF completo, contexto65536, visão=true e supports_reasoning_effort=false.
+The user started `gen gmmed`; status/log reads and local GETs to `/v1/models` and `/props`, without generation, confirmed Gemma 4 26B Q4_K_XXL: full GGUF id, context 65536, vision=true, and supports_reasoning_effort=false.
 
-## Alteração autorizada
-1. Acrescentar registro fixo Gemma ao launcher, com id exato retornado pelo servidor, label legível, contexto65536, maxTokens32768 (mesma regra live existente), imagem e sem níveis de reasoning artificiais.
-2. Inicializar catálogo com Bonsai/QW e Gemma; descoberta live continua atualizando o registro correspondente e acrescentando outros modelos.
-3. Não alterar modelos padrão, outros cadastros/perfis, launcher gen, backend, sampling ou processos. Não gerar inferência nem fazer commit.
+## Authorized Change
+1. Add a fixed Gemma entry to the launcher, with the exact id returned by the server, readable label, context 65536, maxTokens 32768 (same existing live rule), image support, and no artificial reasoning levels.
+2. Initialize catalog with Bonsai/QW and Gemma; live discovery continues updating the corresponding entry and appending other models.
+3. Do not alter default models, other registrations/profiles, gen launcher, backend, sampling, or processes. Do not generate inference or commit.
 
-## Validação
-Backup privado do arquivo original e alteração pontual com leitura prévia. Teste isolado do próprio launcher com fetch/spawn/dump simulados: offline mantém ambos; Gemma live atualiza sem duplicar; modelo desconhecido é adicionado sem apagar os fixos; nenhum patch de default sem override explícito. Checagem de sintaxe e preservação do serviço gen ativo. Evidências locais ignoradas em `.dumps/`.
+## Validation
+Private backup of original file and targeted change with prior reading. Isolated test of the launcher itself with simulated fetch/spawn/dump: offline keeps both; live Gemma updates without duplicating; unknown model is added without clearing fixed ones; no default patches without explicit override. Syntax check and preservation of active gen service. Local evidence ignored in `.dumps/`.

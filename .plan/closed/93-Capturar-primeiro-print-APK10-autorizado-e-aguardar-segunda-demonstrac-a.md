@@ -1,10 +1,10 @@
-# Primeiro print físico APK10 — captura individual autorizada
+# First physical APK10 screenshot — authorized individual capture
 
-Dono pediu explicitamente **tira um print ... depois me avisa ... para tirar outro** para mostrar mensagem que disparouMarkdown e uma linha/espaço fantasma no compositor. Autorização SOMENTE primeiro print da telaATUAL; próxima captura depende novo pedido.
+The owner explicitly requested **take a screenshot ... then let me know ... to take another one** to show the message that triggered Markdown and a ghost line/space in the composer. Authorization is SOLELY for the first screenshot of the CURRENT screen; next capture depends on a new request.
 
-1. Verificar que o novo arquivo .dumps/tasks/owner-apk10-screen-20261014-1.png nãoexiste; não sobrescrever prints anteriores.
-2. Capturar uma vez pelo adb5037 serialZY22F2395W exec-out screencap -p diretamente para esse arquivo privado/local. NÃO amstart, tap/swipe/back/IME/navigate/UIxml/logs/histórico/croppedimage/thumbnail/publicação.
-3. Ler o PNG nativo, observar sóelementos relevantes à linhaMarkdown/compositor; não repetir dados privados no relato nem presumir destino se não legível/completo. Semfix deSource neste plano.
-4. Avisar captura feita e AGUARDAR demonstração/novo pedido antes de outro print. Evidência registro privado do caminho/captura; fechar sóessa captura. APK10upgrade92 jáSuccess/version10/UID10318/inode899458/firstInstallTime preservados; não lançar app antes do print atual para alterar demonstração do dono.
+1. Verify that new file .dumps/tasks/owner-apk10-screen-20261014-1.png does not exist; do not overwrite prior screenshots.
+2. Capture once via adb 5037 serial ZY22F2395W exec-out screencap -p directly to that private/local file. NO am start, tap/swipe/back/IME/navigate/UI xml / logs / history / cropped image / thumbnail / publication.
+3. Read the native PNG, observe only elements relevant to the Markdown / composer line; do not repeat private data in report or assume destination if not legible/complete. No source fix in this plan.
+4. Notify that capture is done and AWAIT demonstration/new request before another screenshot. Evidence records private capture/path; close only this capture. APK10 upgrade 92 already Success/version 10 / UID 10318 / inode 899458 / firstInstallTime preserved; do not launch app before current screenshot to avoid altering owner's demonstration.
 
-Sem backend restart/activation/config/model/project/grant/prompt/deletion; seminstallnova, sem fonte/layoutalteração, sem commmit/push/publicação. Se screenshot falhar, reportar e não auto-repetir sem comprovar estado/permissão.
+No backend restart/activation/config/model/project/grant/prompt/deletion; no new install, no source/layout alteration, no commit/push/publication. If screenshot fails, report and do not auto-retry without proving state/permission.

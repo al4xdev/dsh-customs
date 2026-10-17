@@ -1,28 +1,28 @@
-# Corrigir recuperação do WebSocket error genérico no Codex noturno
+# Fix recovery of generic WebSocket error in overnight Codex
 
-## Objetivo e evidência
-Corrigir a categoria que interrompeu alex-tavern em 13/10/2026 01:01:18: `turn/end` com `PI_AI_ERROR` / `WebSocket error`, sem retry, retomado manualmente às 07:11. Usar o goal desta sessão para guiar implementação e validação após aprovação; completar apenas com evidências verificadas.
+## Objective and evidence
+Fix the failure category that interrupted alex-tavern on 2026-10-13 01:01:18: `turn/end` with `PI_AI_ERROR` / `WebSocket error`, without retry, resumed manually at 07:11. Use the goal in this session to guide implementation and validation after approval; complete only with verified evidence.
 
-Código instalado confirmou: pi-ai produz exatamente `WebSocket error` se o evento não informa causa; o adapter não reconhece `socket` dentro de `WebSocket`; o middleware atual aceita apenas closes1000/1012. Não houve esgotamento do orçamento oficial.
+Installed code confirmed: pi-ai produces exactly `WebSocket error` if the event does not report a cause; the adapter does not recognize `socket` within `WebSocket`; current middleware accepts only closes 1000/1012. There was no exhaustion of the official budget.
 
-## Correção escolhida e escopo
-Modificar somente `plugins/codex-transient-close/index.mjs`, seus testes/fixture e README. Acrescentar a mensagem **exatamente** `WebSocket error` à normalização para TRANSPORT, exclusivamente em request marcado pelo mesmo host como loop normal, provider openai-codex, purpose ausente, finish error PI_AI_ERROR e signal não abortado. Manter exclusão de status HTTP4xx, incluindo auth/quota/oversize, e mensagens qualificadas/permanentes. Preservar chunk facts, replay metadata e código original nos streams fora do escopo. Nenhum retry próprio: política oficial inalterada, cinco retries adicionais com backoff/cancelamento/audit existentes.
+## Chosen fix and scope
+Modify only `plugins/codex-transient-close/index.mjs`, its tests/fixture, and README. Add the message **exactly** `WebSocket error` to TRANSPORT normalization, exclusively on requests marked by the same host as normal loop, provider openai-codex, purpose absent, finish error PI_AI_ERROR, and signal not aborted. Maintain exclusion of HTTP 4xx statuses, including auth/quota/oversize, and qualified/permanent messages. Preserve chunk facts, replay metadata, and original code in out-of-scope streams. No custom retry: official policy unchanged, five additional retries with existing backoff/cancellation/audit.
 
-Não modificar o fork pi-ai, node_modules instalado, providers, credenciais, recipes/pins ou orçamento. Não aplicar regex genérica /WebSocket/, PI_AI_ERROR global retryable, always ou retries infinitos. Erro request-buffer-limit do H3 permanece fail-fast e fora desta task. Compactação/title continuam excluídos.
+Do not modify the pi-ai fork, installed node_modules, providers, credentials, recipes/pins, or budget. Do not apply a generic regex `/WebSocket/`, global retryable PI_AI_ERROR, `always`, or infinite retries. The H3 request-buffer-limit error remains fail-fast and outside this task. Compaction/title remain excluded.
 
-### Tradeoff explícito
-A mensagem genérica perdeu sua causa; ela não prova transitoriedade nem permite garantir distinção entre transporte e handshake opaco. A recuperação exata e limitada tenta restabelecer a conversa sem ampliar mensagens conhecidas de auth/quota/policy/oversize. Se o erro opaco persistir, seis attempts no total encerram o turno. Não prometer execução noturna ininterrupta, exatamente-uma-vez de efeitos remotos ou LTS geral. Preservar causa estruturada no fork é melhoria futura separada, não inventar informação inexistente.
+### Explicit tradeoff
+The generic message lost its cause; it does not prove transience nor allow guaranteed distinction between transport and opaque handshake. Exact, bounded recovery attempts to re-establish the conversation without broadening known auth/quota/policy/oversize messages. If the opaque error persists, six attempts in total end the turn. Do not promise uninterrupted overnight execution, exactly-once remote side effects, or general LTS. Preserving structured cause in the fork is a separate future improvement, not inventing non-existent information.
 
-## Testes/gates
-1. Acrescentar teste específico que reproduz falha original sem plugin: mesma mensagem genérica, zero retry e zero CLIENT tool.
-2. Acrescentar recuperação genérica no loop oficial real, com fake adapter sem rede, tool chunks incompletos e completos: failed stream/backoff executam zero tools; sucesso executa só tool da tentativa bem-sucedida; histórico parcial não entra no próximo request e attempt IDs são novos.
-3. Testar generic WS persistente: seis attempts, cinco pares retry/retry-started; exhaustion, reset entre turns, concorrência/reload, cancel e dispose sem nova tentativa ou tool indevida.
-4. Expandir matriz negativa da mensagem genérica: requests unmarked, outros providers, purpose compaction/title, cancellation, outros códigos, 4xx; mensagens com prefixo/sufixo, newline/CR, auth/quota/policy/oversize e request-buffer-limit permanecem intactas. Reexecutar regressões closes1000/1012 e defaults oficiais.
-5. Executar `node --test plugins/codex-transient-close/codex-transient-close.test.mjs`, `npm run test:lts:contracts`, syntax/diff check e verificação read-only de wiring atual `node tools/activate.mjs --check --profile dsh-tui`. Caso check indique drift preexistente, registrar e não escrever perfis incidentalmente.
-6. Atualizar README com escopo, risco do erro opaco, evidências e ativação. Guardar logs/receipt local em `.dumps`, sem dados privados no Git. Revisar diff para preservar alterações alheias.
+## Tests/gates
+1. Add a specific test reproducing the original failure without the plugin: same generic message, zero retry, and zero CLIENT tool.
+2. Add generic recovery in the actual official loop, with a fake adapter without network, incomplete and complete tool chunks: failed stream/backoff execute zero tools; success executes only the tool from the successful attempt; partial history does not enter the next request and attempt IDs are fresh.
+3. Test persistent generic WS: six attempts, five retry/retry-started pairs; exhaustion, reset between turns, concurrency/reload, cancel, and dispose without unexpected retry or tool execution.
+4. Expand negative matrix for the generic message: unmarked requests, other providers, purpose compaction/title, cancellation, other codes, 4xx; messages with prefix/suffix, newline/CR, auth/quota/policy/oversize, and request-buffer-limit remain untouched. Re-run closes 1000/1012 regressions and official defaults.
+5. Run `node --test plugins/codex-transient-close/codex-transient-close.test.mjs`, `npm run test:lts:contracts`, syntax/diff check, and read-only verification of current wiring `node tools/activate.mjs --check --profile dsh-tui`. If check indicates pre-existing drift, record and do not write profiles incidentally.
+6. Update README with scope, risk of opaque error, evidence, and activation. Store logs/local receipt in `.dumps`, without private data in Git. Review diff to preserve others' changes.
 
-## Ativação, rollback e limites
-O perfil dsh-tui já aponta para o módulo local; editar sua fonte afeta futuros carregamentos. Não reiniciar ou recarregar processos/sessões automaticamente. Informar que processo novo ou reload explícito suportado é necessário para usar o código novo; sessão persistida pode ser retomada. Não fazer chamadas live pagas ou teste de madrugada incidentalmente. Não tocar histórico Tavern/H3. Rollback da mudança é a reversão focada do diff do plugin, testes e README; não usar rollback de tarball da task26. Sem commit/push/publicação nesta task.
+## Activation, rollback, and boundaries
+The dsh-tui profile already points to the local module; editing its source affects future loads. Do not restart or reload processes/sessions automatically. Report that a new process or supported explicit reload is required to use the new code; a persisted session can be resumed. Do not make paid live calls or run overnight tests incidentally. Do not touch Tavern/H3 history. Rollback for the change is the targeted reversal of the plugin diff, tests, and README; do not use task26 tarball rollback. No commit/push/publication in this task.
 
-## Aceite
-Regressão offline da mensagem real passa pelo retry oficial limitado, negativos continuam fail-fast, contratos LTS verdes, diff restrito, documentação correta e instrução de ativação sem parar agentes existentes. Noite controlada posterior continua sendo gate operacional para LTS, não requisito para declarar esta correção de classificação implementada.
+## Acceptance
+Offline regression of the real message goes through bounded official retry, negatives remain fail-fast, LTS contracts green, restricted diff, accurate documentation, and activation instructions without stopping existing agents. A subsequent controlled overnight run remains an operational gate for LTS, not a requirement to declare this classification fix implemented.

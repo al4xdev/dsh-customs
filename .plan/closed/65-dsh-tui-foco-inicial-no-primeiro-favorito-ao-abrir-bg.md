@@ -1,9 +1,9 @@
-# Foco inicial de /bg em Favoritas
+# Initial focus of /bg on Favorites
 
-Pedido: manter Favoritas como aba padrão e iniciar o cursor na primeira sessão favorita, não na coluna de projetos.
+Request: keep Favorites as default tab and start the cursor on the first favorite session, not on the projects column.
 
-- Preservar todas as alterações existentes do fork e não commit/push sem novo pedido.
-- Ajustar somente o estado inicial/foco da tela de sessões: coluna de sessões ao entrar com initialView=favorites, primeiro favorito após catálogo/cache disponível; não tomar foco após navegação do usuário. Sem favoritos, manter fallback utilizável; /home e outros backends preservados.
-- Acrescentar regressões no script headless existente para abertura, Enter no favorito correto e favoritos carregados assincronamente/sem favoritos; documentação EN/ZH curta se necessário.
-- Compilar e rodar as regressões focadas/boundary sem login, providers ou inferência. Não editar lib gerado manualmente, não reiniciar TUIs existentes.
-- Goal acompanha até validação e instrução para usuário reabrir /bg em nova execução.
+- Preserve all existing fork changes and do not commit/push without a new request.
+- Adjust only initial state/focus of sessions screen: sessions column when entering with `initialView=favorites`, first favorite once catalog/cache is available; do not seize focus after user navigation. Without favorites, maintain usable fallback; `/home` and other backends preserved.
+- Add regression tests to existing headless script for opening, Enter on correct favorite, and favorites loaded asynchronously / without favorites; brief EN/ZH documentation if necessary.
+- Compile and run focused/boundary regression tests without login, providers, or inference. Do not manually edit generated lib; do not restart existing TUIs.
+- Goal tracks execution until validation and instructions for user to reopen `/bg` in a new execution.

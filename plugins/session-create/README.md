@@ -38,10 +38,10 @@ are deliberately absent: native `selectModel` also persists a global default.
   "operation": "create",
   "request": {
     "version": 1,
-    "owner_intent": "Criar um projeto separado para o pedido do dono",
-    "target": { "kind": "new_project", "name": "MeuProjeto" },
+    "owner_intent": "Create a separate project for owner request",
+    "target": { "kind": "new_project", "name": "MyProject" },
     "delivery": { "mode": "empty" },
-    "idempotency_key": "pedido-estavel-1"
+    "idempotency_key": "stable-request-1"
   }
 }
 ```

@@ -1,9 +1,9 @@
-# Coleta de desempenho durante uso real
+# Performance collection during real usage
 
-Pedido direto: iniciar logs ADB de FPS/desempenho enquanto o proprietário usa o Companion, para localizar gargalos e corrigir depois.
+Direct request: start ADB FPS/performance logging while the owner uses Companion, to identify bottlenecks and address them afterward.
 
-- Verificar telefone autorizado e processo do Companion, sem ler interface/conversa.
-- Iniciar coleta limitada de aproximadamente120s de gfxinfo framestats e contadores de renderização do pacote, em segundo plano; coletar somente métricas numéricas/categorias conhecidas, sem logcat bruto, tela, hierarquia UI, mensagens ou payloads. Resetar apenas contadores de gfxinfo no início, nunca processo/dados.
-- Deduplicar frames do buffer circular, preservar deadline/vsync/CPU/GPU quando expostos; amostrar com baixo custo e registrar limitações. Uso real e refresh variável não permitem dividir frames por tempo de captura e chamar isso de FPS.
-- Salvar resultados sanitizados em .dumps/tasks, analisar percentis/jank e indicadores UI/render/GPU, sem alegar causa exata não sustentada. Caso necessário, propor trace Perfetto específico posterior, não coletar trace amplo ou dados privados automaticamente.
-- Não reiniciar/force-stop/app/backend/modelo, não executar toques/envios/grants nem instalar build durante a captura. Correções de código ficam para etapa posterior conforme pedido.
+- Verify authorized phone and Companion process, without reading interface/conversations.
+- Start a bounded collection of approximately 120s of package `gfxinfo framestats` and rendering counters in the background; collect only numeric metrics / known categories, without raw logcat, screen capture, UI hierarchy, messages, or payloads. Reset only gfxinfo counters at start, never process/data.
+- Deduplicate circular buffer frames, preserve deadline/vsync/CPU/GPU when exposed; sample with low overhead and record limitations. Real usage and variable refresh rates do not permit dividing frames by capture duration and calling it FPS.
+- Save sanitized results under `.dumps/tasks`, analyze percentiles/jank and UI/render/GPU indicators, without claiming unverified exact root causes. If needed, propose a subsequent specific Perfetto trace, do not collect broad traces or private data automatically.
+- Do not restart/force-stop app/backend/model, do not execute taps/sends/grants or install builds during capture. Code fixes remain deferred to a later phase per request.

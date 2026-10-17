@@ -1,46 +1,46 @@
-# Teste manual — fluxo de revisão
+# Manual test — review workflow
 
-## Objetivo
-Validar abertura, comentário persistente, rejeição, revisão com o mesmo ID, renderização Mermaid, aprovação e fechamento no DSH TUI.
+## Objective
+Validate opening, persistent comment, rejection, revision with the same ID, Mermaid rendering, approval, and closure in DSH TUI.
 
-## Escopo seguro
-- Este é um artefato de teste separado dos planos existentes.
-- Não editar código, instalar pacotes ou alterar outras tasks.
-- Aprovar este plano autoriza somente as verificações descritas abaixo.
+## Safe scope
+- This is a test artifact separated from existing plans.
+- Do not edit code, install packages, or alter other tasks.
+- Approving this plan authorizes only the checks described below.
 
-## Resultado esperado
-Fluxo validado pelo dono, com evidências do harness e confirmação visual no TUI.
+## Expected result
+Workflow validated by owner, with harness evidence and visual confirmation in TUI.
 
-## Feedback incorporado nesta revisão
-- Recebido o comentário “teste na linha 20”, associado ao critério de persistência do comentário na revisão anterior.
-- Recebido o comentário da linha 23 pedindo um diagrama Mermaid; incluído abaixo.
-- O harness confirmou a rejeição da revisão 1 sem autorização de execução. A persistência via Esc ainda depende da confirmação do dono.
-- Os comentários da revisão 1 devem permanecer no histórico com suas âncoras originais, sem serem reassociados automaticamente a esta revisão.
+## Feedback incorporated in this revision
+- Received comment “teste na linha 20” ("test on line 20"), associated with the comment persistence criterion in the previous revision.
+- Received line 23 comment requesting a Mermaid diagram; included below.
+- The harness confirmed rejection of revision 1 without execution authorization. Persistence via Esc still depends on owner confirmation.
+- Revision 1 comments must remain in history with their original anchors, without being automatically re-associated with this revision.
 
-## Diagrama para validação visual
-O bloco abaixo deve aparecer como diagrama no renderizador nativo do TUI. Exibir apenas o código-fonte ou uma mensagem de fallback não confirma a renderização gráfica deste exemplo.
+## Diagram for visual validation
+The block below must appear as a diagram in the native TUI renderer. Displaying only source code or a fallback message does not confirm graphical rendering of this example.
 
 ```mermaid
 flowchart TD
-    A[Plano proposto] --> B[Revisao do dono]
-    B --> C[Rejeitado com comentarios]
-    C --> D[Nova revisao do mesmo ID]
+    A[Proposed plan] --> B[Owner review]
+    B --> C[Rejected with comments]
+    C --> D[New revision of same ID]
     D --> B
-    B --> E[Aprovado como tasks]
-    E --> F[Verificar resultado]
-    F --> G[Fechar plano de teste]
+    B --> E[Approved as tasks]
+    E --> F[Verify result]
+    F --> G[Close test plan]
 ```
 
-## Execução após aprovação
-1. Ler este plano e confirmar a revisão aprovada e seu feedback.
-2. Pedir ao dono a confirmação da navegação, persistência do rascunho após Esc, histórico dos comentários e renderização Mermaid.
-3. Registrar as evidências e fechar somente este plano de teste quando o dono confirmar o resultado.
+## Execution after approval
+1. Read this plan and confirm approved revision and its feedback.
+2. Ask owner for confirmation of navigation, draft persistence after Esc, comment history, and Mermaid rendering.
+3. Record evidence and close only this test plan when owner confirms the result.
 
-## Critérios de aceitação
-- O comentário salvo sobrevive a Esc e à reabertura, sem ser enviado antes da rejeição.
-- Rejeitar envia o comentário, mas não autoriza execução.
-- A revisão mantém o ID, incrementa a revisão e precisa de nova aprovação.
-- Os comentários antigos continuam vinculados à revisão e às linhas originais.
-- O Mermaid acima é renderizado como diagrama legível no TUI.
-- Aprovar como tasks autoriza apenas o escopo deste teste.
-- O fechamento preserva conteúdo e histórico em .plan/closed/.
+## Acceptance criteria
+- Saved comment survives Esc and reopening, without being sent before rejection.
+- Rejecting sends the comment, but does not authorize execution.
+- Revision maintains ID, increments revision, and requires new approval.
+- Old comments remain linked to original revision and lines.
+- Mermaid above is rendered as a legible diagram in TUI.
+- Approving as tasks authorizes only the scope of this test.
+- Closure preserves content and history in .plan/closed/.

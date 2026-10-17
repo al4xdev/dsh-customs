@@ -1,15 +1,15 @@
-# Companion — leitura ampla, escrita só no projeto próprio
+# Companion — broad read access, writes confined to dedicated project
 
-## Pedido direto
-Em paralelo ao redesign78, dono pediu remover restrição de leitura ao workspace, investigar por que agente aparenta iniciar em dsh-customs e usar o projeto dedicado, com escrita livre apenas dentro dele.
+## Direct request
+In parallel with redesign task 78, owner requested lifting read restrictions outside the workspace, investigating why the agent appears to start in `dsh-customs`, and using the dedicated project directory with unconstrained writes confined strictly inside it.
 
-## Escopo
-- Auditar código do perfil/launcher/controller e configurações instaladas somente em campos públicos de CWD/policy/tools; sem credenciais/env/argv/histórico privado. Diferenciar working directory do processo backend/repositorio do cwd efetivo da sessão/agente/ferramentas. Workspace dedicado existente: /home/alex/git/my/dsh-companion-workspace; não mover/renomear diretórios ou reescrever sessões antigas automaticamente.
-- Corrigir criação de NOVAS conversas para CWD dedicado consistente em header/proveniência/Agent/tool execution. Usar contratos públicos reais do SDK/Gateway, não confiar só em fake controller com assinatura presumida. Validar fixture nativa isolada com a composição efetiva.
-- Ferramentas de leitura/listagem/imagem podem observar paths do host fora do workspace conforme tarefa do dono. Não abrir segredos/dados privados reais para provar isso: arquivos sintéticos fora/dentro do workspace em fixture isolada bastam.
-- Write/edit/create/exec continuam confinados por sandbox nativo workspace-write ao projeto dedicado; permitir uso normal de subpastas/arquivos sem allowlist artificial. Área temporária técnica nativa já prevista continua técnica, não permissão ampla sobre arquivos pessoais. Symlink/traversal não ampliam escrita.
-- Manter ASK allowed-once para cada Bash literal+cwd e demais guardas de escalada/unknown; leitura ampla não significa autoaprovar comandos, rede ou mudanças globais. Modelo/perfil global/OAuth/SDK/TUI/HA não são modificados.
-- Testes Node/publicSDK reais isolados para assinatura/CWD, reads fora e writes permitidos dentro/recusados fora, guardas symlink/cancel/ASK. Documentar source versus instalado. Nenhuma ativação/hotreload/restart de backend ou perfil instalado enquanto dono usa: obter condição segura sem envio/aprovação/rascunho pendente antes da ativação.
+## Scope
+- Audit profile/launcher/controller code and installed configurations inspecting only public CWD/policy/tools fields; no private credentials/env/argv/history. Distinguish backend process/repository working directory from the effective session/agent/tools cwd. Existing dedicated workspace: `/home/alex/git/my/dsh-companion-workspace`; do not move/rename directories or rewrite legacy sessions automatically.
+- Fix creation of NEW conversations to use dedicated CWD consistently across header/provenance/Agent/tool execution. Use real public SDK/Gateway contracts rather than relying solely on a fake controller with assumed signatures. Validate in an isolated native fixture against effective composition.
+- Read/list/image tools can observe host paths outside the workspace per owner's task. Do not access real secrets/private data to prove this: synthetic files outside/inside workspace in an isolated fixture are sufficient.
+- Write/edit/create/exec remain confined via native `workspace-write` sandbox to the dedicated project; allow normal use of subfolders/files without artificial allowlists. Preexisting native technical temporary area remains technical, not broad permission over personal files. Symlink/traversal attacks must not expand write scope.
+- Maintain ASK allowed-once for each literal Bash command + cwd and other escalation/unknown guards; broad read access does not mean auto-approving commands, network access, or global changes. Model/global profile/OAuth/SDK/TUI/HA are not modified.
+- Isolated real Node/public SDK tests for signature/CWD, reads outside, writes permitted inside/rejected outside, symlink/cancellation/ASK guards. Document source vs installed state. No activation/hot-reload/restart of backend or installed profile while owner is actively using it: establish safe condition with no pending send/approval/draft prior to activation.
 
-## Coordenação
-Separar arquivos do trabalho Android78 para execução paralela. Se Android estiver enviando CWD errado, reportar ao integrador para mudança mínima coordenada e novo build; não editar arquivos Android simultaneamente. Não usar nem publicar conteúdo dos prints privados.
+## Coordination
+Separate files from Android 78 work for parallel execution. If Android is sending the wrong CWD, report to integrator for minimal coordinated change and new build; do not edit Android files simultaneously. Do not use or publish private screenshot content.

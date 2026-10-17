@@ -1,14 +1,14 @@
-# Adicionar função fish start_tty segura
+# Add safe start_tty fish function
 
-## Objetivo
-Criar `/home/alex/.config/fish/functions/start_tty.fish` para liberar os recursos da sessão gráfica sem reiniciar e sem matar indiscriminadamente processos da IA.
+## Objective
+Create `/home/alex/.config/fish/functions/start_tty.fish` to free graphical session resources without rebooting and without indiscriminately killing AI processes.
 
-## Implementação
-- Exigir execução em console Linux `/dev/ttyN`, recusando terminais gráficos, SSH e pipelines.
-- Explicar que parar o SDDM encerra a sessão gráfica e seus aplicativos; pedir confirmação explícita.
-- Executar somente `sudo systemctl stop sddm.service`, propagando falhas.
-- Não alterar o padrão de boot, não descarregar o driver NVIDIA e não executar a função durante a implementação.
-- Informar como verificar VRAM (`nvidia-smi`) e restaurar o login gráfico (`sudo systemctl start sddm`). Não prometer encerrar serviços independentes do desktop.
+## Implementation
+- Require execution in Linux console `/dev/ttyN`, refusing graphical terminals, SSH, and pipelines.
+- Explain that stopping SDDM ends the graphical session and its applications; require explicit confirmation.
+- Execute only `sudo systemctl stop sddm.service`, propagating failures.
+- Do not alter the boot default, do not unload the NVIDIA driver, and do not execute the function during implementation.
+- Explain how to check VRAM (`nvidia-smi`) and restore graphical login (`sudo systemctl start sddm`). Do not promise to stop desktop-independent services.
 
-## Validação
-Validar sintaxe com `fish --no-config --no-execute` e testar, num terminal não-TTY e sem carregar config pessoal, a recusa segura. Usar o goal para guiar o trabalho após aprovação e concluí-lo após a validação.
+## Validation
+Validate syntax with `fish --no-config --no-execute` and test safe refusal in a non-TTY terminal without loading personal config. Use the goal to guide work after approval and complete it after validation.

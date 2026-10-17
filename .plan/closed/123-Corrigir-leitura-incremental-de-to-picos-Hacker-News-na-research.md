@@ -1,18 +1,18 @@
-# Corrigir Hacker News: JSON truncado
+# Fix Hacker News: Truncated JSON
 
-## Diagnóstico
+## Diagnosis
 
-O conector lê `hn.algolia.com/api/v1/items/id`, que devolve árvore completa antes de aplicar maxComments. O leitor HTTP nativo limita corpo e marca truncated; json() corretamente recusa JSON incompleto. Resultado: título/snippet sobrevive, tópico grande não é lido. Aumentar limite global não resolve o desenho.
+The connector reads `hn.algolia.com/api/v1/items/id`, which returns the complete tree before applying maxComments. The native HTTP reader limits body and marks truncated; json() correctly rejects incomplete JSON. Result: title/snippet survives, large thread is not read. Increasing the global limit does not resolve the design flaw.
 
-## Implementação autorizada pelo relato de bug
+## Implementation Authorized by Bug Report
 
-- Manter Algolia para descoberta, reduzir campos de busca para evitar corpos desnecessários.
-- Usar API oficial Firebase item/id.json para ler post e comentários individualmente, com teto de nós/requisições/texto e no máximo2workers compartilhados via scheduler existente.
-- Preservar relações parent/children, metadados, IDs pendentes e erros por comentário. Não abandonar post válido quando um comentário ou artigo falhar.
-- Não analisar JSON parcial nem desativar limites globais. Sem mudança de credenciais ou perfis.
-- Testes de thread grande, nó truncado, limite0/limite de comentários, comentários removidos, ciclos/IDs inválidos, falha artigo, concorrência e estrutura.
-- Smoke real limitado usando API pública, evidências em .dumps e resumo compacto; documentação da recarga necessária.
+- Keep Algolia for discovery, reduce search fields to avoid unnecessary payloads.
+- Use the official Firebase item/id.json API to read post and comments individually, with a cap on nodes/requests/text and at most 2 shared workers via the existing scheduler.
+- Preserve parent/children relationships, metadata, pending IDs, and per-comment errors. Do not drop a valid post when a comment or article fails.
+- Do not parse partial JSON or disable global limits. No change to credentials or profiles.
+- Tests for large thread, truncated node, limit 0 / comment limit, removed comments, cycles / invalid IDs, article failure, concurrency, and structure.
+- Limited real smoke test using public API, evidence in .dumps, and compact summary; documentation of required reload.
 
-## Aceite
+## Acceptance
 
-Tópico com muitas respostas não exige baixar árvore inteira; post/comentários selecionados persistem mesmo com falhas parciais, contagens honestas e limites mantidos. Testes automatizados e smoke controlado registrados. Guiar execução pelo goal atual.
+A thread with many replies does not require downloading the entire tree; selected post/comments persist even with partial failures, honest counts, and enforced limits. Automated tests and controlled smoke test recorded. Guide execution using the current goal.

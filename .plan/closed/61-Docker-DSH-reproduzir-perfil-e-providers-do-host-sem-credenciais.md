@@ -1,14 +1,14 @@
-# Reproduzir o perfil do host no Docker
+# Reproduce host profile in Docker
 
-## Pedido
-Usuário pediu puxar o perfil atual para testar, após ausência de Gemini no perfil público da imagem. Corrigir a cobertura incompleta anterior, sem inferência automática.
+## Request
+User requested pulling the current profile for testing, following the absence of Gemini in the image's public profile. Fix the prior incomplete coverage without automatic inference.
 
-## Execução
-1. Inspecionar somente manifests, YAML e includes específicos de `/home/alex/.dsh/profiles/dsh-tui` e configuração raiz requerida pela composição. Não imprimir conteúdos sensíveis: leitura de YAML privado será programática com saída limitada a IDs, nomes de módulos, estrutura e referências redigidas. Nenhuma busca ampla de home/credenciais.
-2. Exportar cópia sanitizada em `.dumps/`, preservando ordem, IDs, providers, presets e políticas; excluir tokens/keys/credentials/OAuth, histórico/sessões e endpoints/referências pessoais não necessários. Não alterar host. Caminhos de módulos públicos serão remapeados para fontes no container; includes adicionais auditados individualmente.
-3. Aplicar ao container de teste existente (confirmar nome/estado), preservando login/credenciais que o usuário possa já ter criado nele. Não substituir diretório `.dsh` inteiro nem tocar credenciais. Atualizar wiring público da receita, caso necessário; somente arquivos explicitamente revisados entram em Git, nunca export privado/dumps.
-4. Verificar composição offline e registro de providers sem iniciar modelo, autenticação, chamada de quota ou daemon. Usar APIs de composição sem avaliação de !js ou imports de providers quando houver risco. Distinguir registrado de autenticado/funcional.
-5. Entregar comando fish e listar qualquer ajuste/config removida e capability não copiada. Goal acompanha até perfil testável sem spend automático.
+## Execution
+1. Inspect only manifests, YAML, and specific includes from `/home/alex/.dsh/profiles/dsh-tui` and root configuration required by the composition. Do not print sensitive content: private YAML inspection will be programmatic with output restricted to IDs, module names, structure, and redacted references. No broad searches across home or credentials.
+2. Export a sanitized copy under `.dumps/`, preserving ordering, IDs, providers, presets, and policies; exclude tokens/keys/credentials/OAuth, history/sessions, and unnecessary personal endpoints/references. Do not modify host. Public module paths will be remapped to container sources; additional includes audited individually.
+3. Apply to the existing test container (confirm name/status), preserving any login/credentials the user may have already created inside it. Do not replace the entire `.dsh` directory or touch credentials. Update public recipe wiring if necessary; only explicitly reviewed files are committed to Git, never private exports or dumps.
+4. Verify offline composition and provider registration without invoking models, authentication, quota queries, or daemons. Use composition APIs without evaluating `!js` or importing providers where risk exists. Distinguish registered status from authenticated/functional status.
+5. Provide fish command and list any adjustments, removed configs, or uncopied capabilities. Goal tracks execution until profile is testable without automatic spending.
 
-## Aceitação
-Gemini/Antigravity e demais módulos/providers do perfil auditado presentes na composição Docker, identidade dos SDKs canônica, teste sintético/estático pertinente aprovado. Nenhum token impresso/publicado/copied para imagem, nenhum modelo chamado. Login existente do container preservado.
+## Acceptance
+Gemini/Antigravity and other modules/providers from the audited profile present in the Docker composition, canonical SDK identity, relevant synthetic/static test passed. No tokens printed/published/copied to image, no models invoked. Existing container login preserved.

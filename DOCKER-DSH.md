@@ -1,40 +1,34 @@
-# Instalação DSH limpa em Docker
+# Clean DSH Installation in Docker
 
-Build limpo concluído e básicos offline aprovados. Imagem `alex-dsh-clean:20261013-current`, construída do commit central `98f3882356767c6d010824633ba459d316e9b814`. Não usa `~/.dsh`, caches, `node_modules` ou runtimes da máquina como entrada. O Dockerfile clona a raiz pública central por commit exato e os forks por pins; o build context local só permite o Dockerfile.
+Clean build completed and offline basics passed. Image `alex-dsh-clean:20261013-current`, built from central commit `98f3882356767c6d010824633ba459d316e9b814`. Does not use host `~/.dsh`, caches, `node_modules`, or machine runtimes as input. The Dockerfile clones the central public root by exact commit and forks by pinned commits; the local build context only permits the Dockerfile.
 
-## Mudanças na receita depois do commit validado (2026-10-16)
+## Recipe changes after validated commit (2026-10-16)
 
-O build acima é do `98f3882`; **o Docker não foi refeito depois destas mudanças**,
-que a instalação no host (`tools/clean-install/host.mjs`, mesma receita) exercitou:
+The build above is from `98f3882`; **Docker was not rebuilt after these changes**, which the host installation (`tools/clean-install/host.mjs`, same recipe) exercised:
 
-- `096bd6f` fazia `install.mjs` quebrar já no import numa máquina limpa (`profile.mjs`
-  → `tools/resilience/profile.mjs` carrega `yaml` no load). Agora `profile.mjs` é
-  importado só no passo de seed, quando o runtime já tem `yaml`.
-- `@deepseek-ai/cordis` 4.0.5 saiu depois do build: o `dsh` (`~4.0.4`) aninhava uma
-  segunda cópia e o `sharedGraph` recusava. O runtime agora fixa `cordis` 4.0.4 por
-  override, a versão exata que o Antigravity exige e a mesma do lab.
-- Pin do TUI: `ebea5d7` → `4d0b808` (branch `custom` do lab: + favoritas globais e
-  ownership de questions), compilado e com `verify:oauth` aprovado no host.
+- `096bd6f` caused `install.mjs` to break on import on a clean machine (`profile.mjs` → `tools/resilience/profile.mjs` loaded `yaml` at import time). Now `profile.mjs` is imported only during the seed step, when the runtime already has `yaml`.
+- `@deepseek-ai/cordis` 4.0.5 was released after the build: `dsh` (`~4.0.4`) nested a second copy and `sharedGraph` rejected it. The runtime now pins `cordis` 4.0.4 via override, the exact version Antigravity requires and identical to the lab setup.
+- TUI pin: `ebea5d7` → `4d0b808` (lab `custom` branch: added global favorites and question ownership), built and with `verify:oauth` approved on host.
 
-## Compilação
+## Compilation
 
-- TUI: fork `al4xdev/dsh-TUI`, commit `ebea5d738481bbc7c35006410ad9ce1a998dc883`, submodule fixo e build de fonte com pnpm11.21.0.
-- Pi: snapshot recuperado agora versionado em `sources/pi-ai`, sem Git HEAD inventado; deps de lock, compilação completa telemetry/AI com patch observer38, catálogo público versionado e correção Codex.
-- Antigravity: fork `al4xdev/dsh-antigravity`, commit `77c0c0fe39c0ddfa9647400db6d4726720aa7852`; host JS compilado por esbuild0.28.2. **Tipos/client/typert auxiliares continuam prebuilt commitados**: não é anunciado como build de todos os exports.
-- Self-heal: bundle recompilado das fontes atuais, incluindo persistência; bridge SDK50 aplicado a apenas dois catálogos oficiais com hashes de base conferidos.
-- DSH0.2.0-rc.2 instalado em `/home/alex/.local/share/dsh-cli`; shared Cordis/scope/Pi devem ter uma única identidade física. Perfil público novo em `/home/alex/.dsh/profiles/dsh-tui`; nenhuma sessão/configuração privada é copiada.
+- TUI: fork `al4xdev/dsh-TUI`, commit `ebea5d738481bbc7c35006410ad9ce1a998dc883`, fixed submodule and source build with pnpm 11.21.0.
+- Pi: recovered snapshot versioned in `sources/pi-ai`, without faked Git HEAD; lock dependencies, complete telemetry/AI build with observer38 patch, versioned public catalog, and Codex fix.
+- Antigravity: fork `al4xdev/dsh-antigravity`, commit `77c0c0fe39c0ddfa9647400db6d4726720aa7852`; host JS compiled via esbuild 0.28.2. **Auxiliary types/client/typert remain prebuilt and committed**: this is not claimed as a build of all exports.
+- Self-heal: bundle recompiled from current sources, including persistence; SDK50 bridge applied to only two official catalogs with checked base hashes.
+- DSH 0.2.0-rc.2 installed at `/home/alex/.local/share/dsh-cli`; shared Cordis/scope/Pi must have a single physical identity. New public profile at `/home/alex/.dsh/profiles/dsh-tui`; no private session or configuration is copied.
 
-Base Node24 Debian/glibc com digest fixo. Os compiladores/managers são explícitos. A resolução inicial das dependências do runtime ainda gera um novo lock; igualdade de todas as transitivas com o host precisa ser medida, não presumida.
+Debian/glibc Node 24 base with fixed digest. Compilers and package managers are explicit. Initial resolution of runtime dependencies generates a fresh lock; identity of all transitive dependencies with host must be measured, not assumed.
 
-## Reproduzir pelo terminal fish
+## Reproducing via Fish Terminal
 
-O container validado já está rodando, sem mounts do host. Para entrar:
+The validated container is already running with zero host mounts. To attach:
 
 ```fish
 docker exec -it --user alex alex-dsh-clean-current-c6aa8602 fish
 ```
 
-Para reproduzir em outro container a partir do commit publicado e validado:
+To reproduce in another container from the published and validated commit:
 
 ```fish
 cd /home/alex/git/my/dsh-customs
@@ -43,35 +37,35 @@ docker run -d --init --name alex-dsh-clean-manual alex-dsh-clean:20261013-curren
 docker exec -it --user alex alex-dsh-clean-manual fish
 ```
 
-`docker run` deve criar um container novo. Se esse nome já existir, use o container existente ou escolha outro nome; não remova containers aleatórios.
+`docker run` should create a new container. If that name already exists, use the existing container or choose a different name; do not remove random containers.
 
-Já dentro do container:
+Inside the container:
 
 ```fish
 cd /home/alex/git/my/dsh-customs
 node /home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/lib/bin.js --profile dsh-tui
 ```
 
-A inicialização interativa, login e qualquer prompt com inferência são **ações manuais suas**, fora dos testes automáticos. Não há systemd nem servidor de modelo local do host embutidos no container. Browser/headless libraries e serviços auxiliares precisam de validação específica antes de afirmar equivalência completa.
+Interactive initialization, login, and any prompt involving inference are **manual user actions**, outside automated tests. Neither systemd nor local host model servers are embedded in the container. Browser/headless libraries and auxiliary services require dedicated validation before asserting full parity.
 
-## Credenciais Codex
+## Codex Credentials
 
-Nenhum OAuth foi localizado por busca ampla, lido, publicado, copiado para o build ou colocado numa imagem. O caminho oficial da TUI é `$DSH_HOME/dsh-auth/credentials.json` (ou `DSH_AUTH_CREDENTIALS`), com um `device-id` adjacente. Esse arquivo pode conter mais de um provider e o refresh pode escrevê-lo; **um bind mount read-only não garante login/refresh funcional**.
+No OAuth token was located via broad search, read, published, copied to the build, or placed in an image. The official TUI path is `$DSH_HOME/dsh-auth/credentials.json` (or `DSH_AUTH_CREDENTIALS`), with an adjacent `device-id`. This file may contain multiple providers and refresh routines may write to it; **a read-only bind mount does not guarantee functional login/refresh**.
 
-Prefira fazer o login manual dentro do container. Se você optar por reutilizar uma credencial existente, essa será uma etapa separada e explicitamente delimitada, nunca um `COPY ~/.dsh` ou montagem do home inteiro. Não forneça tokens no chat, build args, Git ou logs.
+Prefer manual login inside the container. If you choose to reuse an existing credential, make that a separate and explicitly scoped step, never a `COPY ~/.dsh` or mounting of the entire home directory. Do not post tokens in chat, build args, Git, or logs.
 
-## Evidências e limites
+## Evidence and Boundaries
 
-Os recibos de fonte/build/artefatos/versões ficam em `/home/alex/.local/share/dsh-cli/artifacts/` e `clean-install-receipt.json`. Os testes de receitas usam fixtures temporárias sem contas. A captura/comparação pública lê somente manifests e código selecionado, não configs, OAuth ou histórico.
+Receipts for source/build/artifacts/versions reside in `/home/alex/.local/share/dsh-cli/artifacts/` and `clean-install-receipt.json`. Recipe tests use temporary fixtures with no accounts. Public capture/comparison inspects only manifests and selected code, never configs, OAuth, or history.
 
-**Estado da execução real:** aprovado nos básicos offline.
+**Actual execution state:** passed offline basics.
 
-- Imagem: `sha256:cdba98d0382e88de7d31a3d71f8d753d0b3eefaab7453611339ef9902ad9ec16`; container `alex-dsh-clean-current-c6aa8602`, rodando com zero mounts.
-- 54 testes das receitas passaram. No container: SDK50 aceita o evento sintético `agent/self-heal`, rejeita evento obrigatório desconhecido; observer38 classifica quota/rate limit, sanitiza fatos e descarta listener; probe de compatibilidade self-heal passa. Isso é validação em memória, não replay de sessões reais.
-- CLI TUI `--version` retorna 0.14.0 sem boot; `node-pty` executou `printf` com saída `pty-ok`, exit 0.
-- Comparação com captura atual do host: 11 versões iguais, todas as fontes selecionadas iguais e todos os hashes selecionados iguais exceto o bundle Antigravity. Nele, somente 17 comentários trocam o prefixo de scratch `.dumps/.../source/src/` por `src/`; após essa transformação específica, todos os demais bytes coincidem. Código executável equivalente; igualdade bruta permanece **false**, sem normalização genérica.
-- Cordis/scope/Pi dos pacotes instalados compartilham a identidade canônica. Dependências de desenvolvimento do fork TUI do host foram reportadas separadamente: não são prova da ativação de perfis nem de construtores em um daemon vivo.
-- Evidências públicas locais, ignoradas pelo Git: `.dumps/docker-dsh-52/host-public-v3.json`, `container-current-public.json` e `code-comparison/antigravity-comment-proof.json`. Capturas anteriores foram preservadas: houve alterações concorrentes dos artefatos TUI e do fork AG durante a validação.
-- Credenciais/OAuth/histórico lidos ou copiados: **nenhum**. Chamadas de modelos: **zero**. Inicialização interativa e autenticação permanecem testes manuais.
+- Image: `sha256:cdba98d0382e88de7d31a3d71f8d753d0b3eefaab7453611339ef9902ad9ec16`; container `alex-dsh-clean-current-c6aa8602`, running with zero mounts.
+- 54 recipe tests passed. In the container: SDK50 accepts synthetic event `agent/self-heal`, rejects unknown mandatory events; observer38 classifies quota/rate limits, sanitizes facts, and drops listener; self-heal compatibility probe passes. This is in-memory validation, not replay of real sessions.
+- TUI CLI `--version` returns 0.14.0 without boot; `node-pty` executed `printf` with `pty-ok` output, exit 0.
+- Comparison with current host capture: 11 identical versions, all selected sources match, and all selected hashes match except the Antigravity bundle. In that bundle, only 17 comments swap scratch prefix `.dumps/.../source/src/` for `src/`; after this specific transformation, all remaining bytes match. Executable code is equivalent; raw equality remains **false**, without generic normalization.
+- Installed Cordis/scope/Pi packages share the canonical identity. Development dependencies of the host TUI fork were reported separately: they are not proof of profile activation or running daemon constructors.
+- Local public evidence, gitignored: `.dumps/docker-dsh-52/host-public-v3.json`, `container-current-public.json`, and `code-comparison/antigravity-comment-proof.json`. Previous captures were preserved: concurrent changes occurred in TUI artifacts and AG fork during validation.
+- Credentials/OAuth/history read or copied: **none**. Model calls: **zero**. Interactive boot and authentication remain manual tests.
 
-A fonte nova de quota-reset Antigravity está presente, mas **desligada por padrão**. O executor separado e a política privada do host para esperar até 24h não foram habilitados/copiados. Configuração pessoal, servidores locais, browser, systemd e funcionamento de providers autenticados não fazem parte da equivalência comprovada aqui.
+The new Antigravity quota-reset source is present, but **disabled by default**. The separate runner and private host policy to wait up to 24h were neither enabled nor copied. Personal configs, local servers, browser, systemd, and authenticated provider behavior are not part of the equivalence verified here.

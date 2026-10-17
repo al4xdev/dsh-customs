@@ -1,13 +1,13 @@
-# Ferramentas em paralelo ao front
+# Tools in parallel with frontend
 
-## Pedido e execução após aprovação
-Dono pediu explicitamente deixar um subagente trabalhando nas ferramentas enquanto revisa front com Parent. Usar goal atual para orientar execução após aprovação. Parent não espera child para mostrar o print já capturado/autorizado. APK9 instalado/task88fechada, dono confirmouícone.
+## Request and execution following approval
+The owner explicitly asked to leave a subagent working on tools while reviewing the frontend with Parent. Use current goal to guide execution following approval. Parent does not wait for child to display the already captured/authorized screenshot. APK9 installed / task 88 closed, owner confirmed icon.
 
-## Escopo do único subagente
-Fontes82/83 já fechadas/preparadas/testadas107/75; não reinventar/refazer suites sem necessidade. Ler docs/evidências públicas locais para entender estado, auditar READONLY a composição CURRENT Companion (sem imprimir/copycofre/tokens/cookies), identificar delta EXATO para integrar sessionread82, rootowner83/presetchild83/companion-workspace e índiceopcional. Preservar todas linhas/currentSettings/modelo/controller/transporte. Preparar patch/proposta mínima separada privada em .dumps/tasks, com hashes/identidades e passos de aplicação posterior, sem copiar configuração completa secreta. Validar dryrun isolado autoria/sintético com APIs públicas SDK0.2.0-rc.2/modelCalls0 e invariantes novas de wiring/lifetime/disabledIndex se pertinente; testes existentes não devem ser rodados por rotina se já provam isso. Se houver lacuna de código, relatar achado concreto e propor novo plano/reabertura; nenhum código de plano fechado será editado sob esta tarefa.
+## Scope of the single subagent
+Sources 82/83 already closed/prepared/tested (107/75); do not reinvent/re-run suites unnecessarily. Read local public docs/evidence to understand state, audit READONLY CURRENT Companion composition (without printing/copying vault/tokens/cookies), identify the EXACT delta to integrate sessionread 82, rootowner 83 / presetchild 83 / companion-workspace, and optional index. Preserve all lines / currentSettings / model / controller / transport. Prepare minimal separate private proposal/patch in .dumps/tasks, with hashes/identities and subsequent application steps, without copying the full secret configuration. Validate isolated synthetic/authored dryrun using public SDK 0.2.0-rc.2 APIs / modelCalls: 0 and new wiring/lifetime/disabledIndex invariants if pertinent; existing tests should not be run routinely if they already prove this. If there is a code gap, report concrete finding and propose new plan / reopening; no closed plan code will be edited under this task.
 
-## Fronteira
-NÃO aplicar delta/reiniciar/HMR backend/index; dono está revisando front. NÃO escrever composição ativa/perfil/Settings/modelo, SDK/TUI/HA/rede/OAuth/global, acionar modelo/prompt/grant/sessão/projeto real ou ler históricos/chats. Ferramentas root/lifetime/proveniência não são grants implícitos. Atualizações de backend continuam exigindo autorizaçãoSEPARADA e safeRAMboundary fresca de TODASconversas. Sem Gradle/ADB/celular/screenshots pelo child. Parent conserva frontend intacto até feedback específico e só abre/apresenta o print único solicitado, privado .dumps/tasks/owner-apk9-screen-20261014-1.png, sem mídia extra.
+## Boundary
+Do NOT apply delta / restart / HMR backend/index; owner is reviewing frontend. Do NOT write active composition / profile / Settings / model, SDK / TUI / HA / network / OAuth / global, trigger real model / prompt / grant / session / project, or read histories/chats. Root/lifetime/provenance tools are not implicit grants. Backend updates continue to require SEPARATE authorization and fresh safe RAM boundary across ALL conversations. No Gradle/ADB/phone/screenshots by the child. Parent keeps frontend intact until specific feedback and only opens/presents the single requested screenshot, private .dumps/tasks/owner-apk9-screen-20261014-1.png, without extra media.
 
-## Entrega
-Child devolve resultados e caminho de proposta/dryrun sem segredos, com o que falta explicitamente. Parent informa progresso sem bloquear interação do dono no front. Isso prepara integração; não alegar ferramentas já ativas.
+## Delivery
+Child returns results and proposal/dryrun path without secrets, detailing explicitly what is missing. Parent reports progress without blocking owner interaction on frontend. This prepares integration; do not claim tools are already active.

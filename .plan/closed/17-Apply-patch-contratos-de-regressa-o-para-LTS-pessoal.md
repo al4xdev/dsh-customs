@@ -1,18 +1,18 @@
-# Apply-patch: contratos de regressão para LTS pessoal
+# Apply-patch: Regression Contracts for Personal LTS
 
-## Intenção
-Refino final pequeno para o LTS pessoal, não caça a bugs nem reescrita. Preservar todo o comportamento de produção e as alterações existentes. Guiar o trabalho pelo goal ativo.
+## Intent
+Small final polish for personal LTS, not a bug hunt or rewrite. Preserve all production behavior and existing modifications. Guide work using active goal.
 
-## Observação
-O plugin já documenta contexto exato, limites de sandbox, leitura prévia, resultados parciais e undo. Não encontrei uma rotina dedicada no package.json ou scripts de tools que proteja os módulos puros deste plugin.
+## Observation
+The plugin already documents exact context, sandbox limits, prior reading, partial results, and undo. No dedicated routine was found in package.json or tool scripts guarding the pure modules of this plugin.
 
-## Mudança mínima
-1. Adicionar um arquivo de testes `node:test` para contratos existentes: parser (Add/Delete/Move, contexto/âncoras, ambiguidade, fim de arquivo, newline e inserção), cobertura de leitura por sessão e apresentação de recibos válidos (sucesso, parcial, undo).
-2. Adicionar `npm run test:apply-patch`, sem dependências novas ou chamadas a modelos.
-3. Acrescentar na referência o comando, os contratos cobertos e o limite: testes puros não exercitam escrita real, recuperação, sandbox ou races de filesystem.
+## Minimal Change
+1. Add a `node:test` test file for existing contracts: parser (Add/Delete/Move, context/anchors, ambiguity, EOF, newline, and insertion), per-session read coverage, and presentation of valid receipts (success, partial, undo).
+2. Add `npm run test:apply-patch`, without new dependencies or model calls.
+3. Add the command, covered contracts, and limitations to reference: pure tests do not exercise real writes, recovery, sandbox, or filesystem races.
 
-## Fora do escopo
-Nenhuma alteração em index.mjs, parser.mjs, observation.mjs ou presentation.mjs; nenhuma migração, feature nova, nova política ou revisão dos demais plugins. Sem commit/push.
+## Out of Scope
+No changes to index.mjs, parser.mjs, observation.mjs, or presentation.mjs; no migration, new feature, new policy, or review of other plugins. No commit/push.
 
-## Aceite
-Rotina dedicada passando, alterações limitadas aos testes/comando/documentação e verificação de whitespace. Não declarar estes testes como validação completa do filesystem. Se um teste exigir mudar comportamento de produção, interromper esse item e discutir com o usuário antes de ampliar o escopo.
+## Acceptance
+Dedicated routine passing, changes limited to tests/command/documentation and whitespace verification. Do not declare these tests as complete filesystem validation. If a test requires changing production behavior, stop that item and discuss with the user before expanding scope.

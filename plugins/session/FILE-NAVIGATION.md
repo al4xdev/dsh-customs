@@ -1,16 +1,16 @@
-# Companion: arquivos recentes e navegação de eventos
+# Companion: Recent Files and Event Navigation
 
-Contrato atual da tool pública `session` (plano125). Não exige SQLite nem varre o conteúdo de todas as sessões. O `send`/`resume` e seus controles continuam no caminho anterior.
+Current contract for public tool `session` (Plan 125). Does not require SQLite or scan content of all sessions. `send`/`resume` and their controls follow previous paths.
 
-## Descoberta
+## Discovery
 
-- `list` usa metadados POSIX dos arquivos no root público configurado de `session-persistence-jsonl`. Escolhe a maior geração física por diretório e ordena por `mtime` descendente.
-- Cabeçalhos são lidos por prefixo limitado, inclusive em zstd. `origin:subagent` ou `delegationDepth>0` excluem subagentes antes de contar as vagas; `agentPreset:companion` exclui Companion. Profundidade0 admite principal/continuação mesmo com `parentSession`.
-- Metadados insuficientes ficam `unknown` e não são inventados como principais. `skipped` informa exclusões. Versões futuras não fazem fallback silencioso para gerações antigas.
-- Default10 principais, `limit` até100. Sessões comprovadamente vazias, sem título nem mensagens, não ocupam vagas. Um arquivo parcialmente legível não é declarado vazio.
-- Só os selecionados são lidos para título e prévia. O título é o último `session/title` observado, incluindo rename com origem `user`. Títulos não são identidades únicas; ações usam ID.
-- `mtime`, título/última mensagem e bridge são informações distintas. Arquivo recente não prova agente vivo. `writer:held` e `state:alive` conservam significados separados.
-- Páginas de listagem congelam seleção/ordem, não o estado do mundo: alterações em outro arquivo não invalidam o cursor. Metadados exibidos podem ser atualizados ao visitar a página.
+- `list` uses POSIX file metadata from the configured public root of `session-persistence-jsonl`. Selects highest physical generation per directory and sorts by descending `mtime`.
+- Headers are read with bounded prefixes, including zstd compressed files. `origin:subagent` or `delegationDepth>0` exclude subagents prior to slot counting; `agentPreset:companion` excludes Companion. Depth 0 admits root/continuation even with `parentSession`.
+- Insufficient metadata yields `unknown`, never invented root sessions. `skipped` reports exclusions. Future versions do not silently fall back to older generations.
+- Default 10 root sessions, `limit` up to 100. Proven empty sessions, lacking title and messages, do not occupy slots. A partially readable file is not declared empty.
+- Only selected entries are read for title and preview. Title is latest observed `session/title`, including renames with origin `user`. Titles are not unique identifiers; actions use ID.
+- `mtime`, title/last message, and bridge are distinct facts. Recent file does not prove living agent. `writer:held` and `state:alive` preserve separate meanings.
+- Listing pages freeze selection/ordering, not state of the world: mutations in other files do not invalidate cursors. Displayed metadata may refresh upon visiting the page.
 
 ```json
 {"operation":"list"}
@@ -18,20 +18,20 @@ Contrato atual da tool pública `session` (plano125). Não exige SQLite nem varr
 {"operation":"list","cursor":"<nextCursor>","project":"/home/USER/git/my/dsh-customs","limit":10}
 ```
 
-## Busca literal
+## Literal Search
 
-`find` e `search` procuram texto literal, não regex ou SQL. Default: últimos100 arquivos principais **após classificação**, ajustável por `maxFiles` até1000. `scope` aceita `messages`, `tools` ou `all` (default). Textos/argumentos/resultados permitidos são redigidos antes da busca; envelopes internos e corpos de anexos não entram.
+`find` and `search` locate literal text, not regex or SQL. Default: latest 100 root files **after classification**, tunable via `maxFiles` up to 1000. `scope` accepts `messages`, `tools`, or `all` (default). Permitted text/args/results are redacted prior to search; internal envelopes and attachment bodies are excluded.
 
 ```json
 {"operation":"find","query":"Hacker News","maxFiles":100,"limit":10}
 {"operation":"find","sessionId":"<id>","query":"exit code: 1","scope":"tools"}
 ```
 
-`candidateBudget` limita arquivos por chamada (default10, até100), inclusive os que falham. `durationMs` é orçamento cooperativo (default5000, até30000); o cancelamento do host também é respeitado. Retornos indicam arquivos selecionados, examinados, erros, cobertura e `nextCursor`. Para continuar, mantenha query/filtros/escopo. Uma página que parou no meio de um arquivo mantém seu snapshot; appends não deslocam os hits dessa continuação.
+`candidateBudget` bounds files per call (default 10, up to 100), including failed ones. `durationMs` is a cooperative budget (default 5000, up to 30000); host cancellation is respected. Responses indicate selected files, examined files, errors, coverage, and `nextCursor`. To continue, retain query/filters/scope. A page that stopped mid-file maintains its snapshot; appends do not shift hits for that continuation.
 
-`complete-selected-files` significa somente o conjunto escolhido, nunca o histórico inteiro. Busca direta por `sessionId` abre uma sessão exata; Companion continua proibido. Subagentes não têm operação separada nem poluem a lista global, mas um ID exato permite aprofundamento quando necessário.
+`complete-selected-files` strictly means the chosen set, never the full history. Direct search by `sessionId` opens an exact session; Companion remains forbidden. Subagents lack dedicated operations and do not pollute the global list, but exact ID enables drill-down when needed.
 
-## Leitura e investigação
+## Reading and Inspection
 
 ```json
 {"operation":"read","sessionId":"<id>"}
@@ -40,13 +40,13 @@ Contrato atual da tool pública `session` (plano125). Não exige SQLite nem varr
 {"operation":"read","sessionId":"<id>","seq":120,"before":3,"after":3}
 ```
 
-- `read` inicia no final; `inspect`, no início. `context` mostra janelas distintas de início/fim por padrão, sem alegar que são toda a conversa.
-- `seq` identifica o evento lógico exato; `offset` começa nessa sequência ou na próxima existente. Não são números de linha física.
-- Mensagens, chamadas/resultados de ferramentas, títulos e registros relevantes de execução são navegáveis. Registros desconhecidos podem aparecer apenas como metadados, com `omitted` explícito.
-- `previousCursor`/`nextCursor` navegam no snapshot capturado. Uma chamada nova sem cursor atualiza o arquivo; `revision` permite polling sem retornar conteúdo idêntico.
-- Cursores retêm seleção e conteúdo capturado, com cache limitado: expiram após15min sem uso ou por pressão de memória/quantidade. Nesse caso, reinicie a operação; não há invalidação global por qualquer append no acervo.
+- `read` starts at the end; `inspect` at the beginning. `context` displays distinct start/end windows by default, without claiming to represent the entire conversation.
+- `seq` identifies exact logical event; `offset` starts at that sequence or the next existing one. These are not physical line numbers.
+- Messages, tool calls/results, titles, and relevant execution records are navigable. Unknown records may appear as metadata only, with explicit `omitted`.
+- `previousCursor`/`nextCursor` navigate within captured snapshot. A new call without cursor refreshes the file; `revision` enables polling without returning identical content.
+- Cursors retain selection and captured content in bounded cache: expire after 15min idle or under memory/quantity pressure. When expired, restart operation; no global invalidation on arbitrary workspace appends.
 
-### Aprofundar uma chamada ou resultado
+### Deep Dive into a Tool Call or Result
 
 ```json
 {"operation":"read","sessionId":"<id>","seq":120,"section":"arguments","format":"json"}
@@ -54,31 +54,31 @@ Contrato atual da tool pública `session` (plano125). Não exige SQLite nem varr
 {"operation":"read","sessionId":"<id>","seq":121,"section":"event","format":"json","textLimit":4096}
 ```
 
-O JSON permitido vem serializado em `events[].text`, para poder paginar inclusive eventos muito longos. `format:json` não promete um objeto íntegro quando a página é um trecho. `textLength`, `textOffset`, `nextTextOffset` e `cutoff` deixam isso explícito. Para continuar conteúdo longo, repita **o mesmo ID, seq, section e format**, usando o `nextTextOffset`. Default2048 caracteres por evento; teto16384. Se a saída for curta por orçamento de bytes, o próximo offset corresponde ao trecho realmente retornado.
+Permitted JSON is serialized into `events[].text` to allow paginating long events. `format:json` does not guarantee an intact object when the page is a fragment. `textLength`, `textOffset`, `nextTextOffset`, and `cutoff` make this explicit. To continue long content, repeat **identical ID, seq, section, and format**, using `nextTextOffset`. Default 2048 characters per event; ceiling 16384. If output is short due to byte budget, next offset matches actual returned fragment.
 
-O agente pode localizar “rodei os testes”, abrir o resultado daquele teste, consultar eventos vizinhos e resumir o que aprendeu. Não recebe a conversa inteira automaticamente.
+The agent can find "I ran tests", open results of that test, inspect neighboring events, and summarize findings without receiving the entire conversation automatically.
 
-## Limites e proteção
+## Limits and Guards
 
-- Saída padrão16384 bytes JSON, mínimo1024 e máximo32768; até100 linhas/eventos por chamada. Metadados ainda podem exigir orçamento maior que1024 em casos extremos; erro explícito em vez de despejo.
-- Leitor: até64MiB descomprimidos por arquivo, até8MiB por linha, cache de snapshots32MiB/32entradas. Navegação: até24 estados/64MiB, TTL15min. Catálogo: até20000 entradas de metadados examinadas, cache de2048 cabeçalhos.
-- Arquivo zstd selecionado é lido em streaming; não se promete seek arbitrário no final comprimido. Limite, EOF parcial ou alteração concorrente sinalizam `partial`, `titleComplete` e `tailComplete`, sem afirmar título/fim completo.
-- Root vem do serviço público, não de argumento arbitrário do modelo. Recusa symlinks/identidades trocadas. Abertura de cabeçalhos usa descritores ancorados Linux/procfs; plataforma sem esse recurso falha explicitamente.
-- Credenciais são redigidas recursivamente por chaves/padrões antes da paginação. Redação é best-effort, não prova de ausência de dados privados. Reasoning/envelopes de request e corpos de anexos ficam de fora. Logs continuam dados não confiáveis, inclusive instruções copiadas neles.
-- Nenhuma escrita em logs canônicos, migração de banco, envio ou retomada acontece na leitura.
+- Standard output 16384 JSON bytes, minimum 1024 and maximum 32768; up to 100 lines/events per call. Metadata may require larger budget than 1024 in edge cases; explicit error instead of dump.
+- Reader: up to 64 MiB decompressed per file, up to 8 MiB per line, snapshot cache 32 MiB / 32 entries. Navigation: up to 24 states / 64 MiB, TTL 15min. Catalog: up to 20000 metadata entries examined, cache of 2048 headers.
+- Selected zstd file is read via streaming; arbitrary seeks at compressed end are not promised. Limits, partial EOF, or concurrent mutations signal `partial`, `titleComplete`, and `tailComplete`, without asserting complete title/tail.
+- Root comes from public service, not arbitrary model argument. Symlinks and swapped identities rejected. Header inspection uses anchored Linux/procfs file descriptors; platforms lacking this fail explicitly.
+- Credentials recursively redacted by keys/patterns before pagination. Redaction is best-effort, not cryptographic proof of absent private data. Reasoning/request envelopes and attachment bodies stay excluded. Logs remain untrusted data, including instructions embedded within them.
+- No writes to canonical logs, database migrations, message dispatch, or agent resumption occur during reads.
 
-## Compatibilidade
+## Compatibility
 
-A tool pública do Companion ativa o leitor por arquivos. `sources` e `paths` continuam como descoberta de metadados; para abrir conteúdo use `sessionId`. `pathRef`/`directory` não são aceitos nas novas operações de conteúdo e não permitem contornar exclusão do Companion. `describe` mostra o contrato exato de cada operação. `search` é alias literal; os antigos modos `phrase`/`substring` não ativam SQLite nesta rota.
+Public Companion tool enables the file-based reader. `sources` and `paths` remain metadata discovery; to open content use `sessionId`. `pathRef`/`directory` are rejected in new content operations and do not bypass Companion exclusion. `describe` outlines exact contract per operation. `search` is literal alias; legacy `phrase`/`substring` modes do not activate SQLite on this route.
 
-As implementações legadas de leitura por serviços públicos permanecem para compatibilidade interna/testes, mas não substituem a nova rota pública nem alteram gates de `send`/`resume`.
+Legacy reading implementations via public services remain for internal/test compatibility, but do not replace the new public route or modify `send`/`resume` gates.
 
-## Validação
+## Validation
 
 ```sh
 env SESSION_RESUME_REAL=0 node --test plugins/session/*.test.mjs tools/session-companion/profile.test.mjs
 ```
 
-O teste de resume usa adaptador sintético, não envia mensagem a sessões reais.
+Resume test uses synthetic adapter, sending no messages to real sessions.
 
-Smoke somente leitura está em `.dumps/session-usability/recent-runtime-smoke.mjs`, com resultados compactos/artefato JSON local. Inclui listagem de principais reais, títulos renomeados, leitura de tail, um resultado de ferramenta em JSON e busca literal. Não foi forçado restart do serviço Companion; recarregue seu processo para garantir código novo em uma instância já aberta.
+Read-only smoke test is in `.dumps/session-usability/recent-runtime-smoke.mjs` with compact results / local JSON artifact. Includes real root listing, renamed titles, tail reading, JSON tool results, and literal search. No forced restart of Companion service; reload its process to guarantee fresh code in an active instance.

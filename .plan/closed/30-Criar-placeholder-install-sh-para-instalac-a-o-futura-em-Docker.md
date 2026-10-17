@@ -1,10 +1,10 @@
-# Criar placeholder install.sh para instalação futura em Docker
+# Create placeholder install.sh for future Docker installation
 
-## Pedido
-Confirmar que /home/alex/git/my/dsh-customs é a raiz de um repositório Git e criar install.sh intencionalmente sem lógica de instalação.
+## Request
+Confirm that /home/alex/git/my/dsh-customs is the root of a Git repository and create install.sh intentionally without installation logic.
 
-## Alteração mínima
-Adicionar somente shebang Bash e comentários de lembrete: depois de terminar a limpeza, abrir um container Docker limpo e, com outro agente, preencher o script para instalar todos os componentes do projeto dentro desse container. Não iniciar Docker, instalar dependências nem implementar o instalador agora.
+## Minimal change
+Add only a Bash shebang and reminder comments: after finishing the cleanup, open a clean Docker container and, with another agent, populate the script to install all project components inside that container. Do not start Docker, install dependencies, or implement the installer now.
 
-## Validação
-Verificar sintaxe com bash -n install.sh e confirmar que o conteúdo contém somente shebang/comentários. Não incluir alterações de outras sessões; sem commit/push adicionais neste pedido.
+## Validation
+Verify syntax with `bash -n install.sh` and confirm that content contains only shebang/comments. Do not include changes from other sessions; no additional commit/push in this request.

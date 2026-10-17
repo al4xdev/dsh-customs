@@ -1,23 +1,23 @@
-# /bg abre Favoritas por padrão
+# /bg opens Favorites by default
 
-## Pedido
-Pequeno ajuste complementar ao plano 55 concluído: o dono quer entrar em Favoritas diretamente com `/bg`, sem precisar pressionar Tab. Preparar no mesmo checkout, sem instalação nova, alteração de PATH/perfil, restart de sessões ou atualização upstream.
+## Request
+Small complementary adjustment to completed plan 55: owner wants to navigate directly to Favorites via `/bg`, without pressing Tab. Prepare within the same checkout, without a new installation, modifying PATH/profile, restarting sessions, or updating upstream.
 
-## Escopo
-- No DSH, `/bg` e seu alias `/background` abrem a vista Favoritas após o background existente concluir com sucesso.
-- `/resume`, `/agentview`, `/home`, botão de sessões e seta esquerda com prompt vazio mantêm sua entrada normal. Outros backends continuam com uma vista apenas.
-- Esc mantém o retorno à sessão anterior; pinning, Tab, ordenação, filtro, setas/Enter e runtime de background não mudam.
-- Sem preferência persistida, sem lembrar a última aba, sem mover automaticamente sessões para favoritos. Favoritas vazia mantém a mensagem e card atuais.
+## Scope
+- In DSH, `/bg` and its alias `/background` open the Favorites view after the existing background transition completes successfully.
+- `/resume`, `/agentview`, `/home`, the sessions button, and left arrow with empty prompt maintain their normal entry point. Other backends retain only a single view.
+- Esc preserves returning to the previous session; pinning, Tab, sorting, filter, arrow keys/Enter, and background runtime remain unchanged.
+- No persisted preference, no remembering the last tab, no automatically moving sessions to favorites. Empty Favorites retains the current message and card.
 
-## Implementação mínima
-1. Em Chat, representar a abertura do supervisor junto com sua vista inicial, mantendo o setter booleano existente com argumento opcional de vista (padrão sessions). Cada abertura comum continua explicitamente normal por construção; apenas o caminho dos comandos bg/background solicita favorites. A rota compartilhada com a seta recebe argumento opcional para não mudar esse atalho acidentalmente.
-2. Passar `initialView` opcional ao SessionSupervisor e ao hook; inicializar em favorites apenas quando solicitado e backend DSH, mantendo sessions como default e não reagindo às mudanças de prop após montagem.
-3. Acrescentar regressões: mount padrão DSH, mount solicitado Favorites, nonDSH ignores favorite initial view; integração real Chat /bg + alias, handoff/erro/Esc e /resume normal depois de sair de Favorites. Preservar a suíte anterior.
-4. Corrigir notas bilíngues que atualmente dizem que /bg nunca abre Favorites automaticamente; sincronizar guia usando o script existente.
+## Minimal implementation
+1. In Chat, represent opening the supervisor alongside its initial view, keeping the existing boolean setter with an optional view argument (defaulting to sessions). Every standard opening remains explicitly normal by construction; only the bg/background command paths request favorites. The route shared with the arrow key receives an optional argument to avoid inadvertently changing that shortcut.
+2. Pass optional `initialView` to SessionSupervisor and the hook; initialize to favorites only when requested and backend is DSH, keeping sessions as default and not reacting to prop changes after mount.
+3. Add regression tests: default DSH mount, requested Favorites mount, non-DSH ignores favorite initial view; real Chat `/bg` + alias integration, handoff/error/Esc, and normal `/resume` after exiting Favorites. Preserve the previous suite.
+4. Correct bilingual notes that currently state `/bg` never opens Favorites automatically; synchronize guide using the existing script.
 
-## Validação e entrega
-- Ler contributing/ADAPTER e cabeçalhos dos scripts antes de editar/rodar.
-- TypeScript e build/gates existentes, regressões de supervisor/Chat/background e backend, perguntas/layout/toolcards obrigatórios por tocar Chat, guia e diff check.
-- Somente arquivos do checkout e artefatos gerados já existentes; nada de dependências/instalações/PATH, commit/push ou reinício de processos.
-- Build regenera lib no checkout já ligado ao perfil; avisar quando a versão estiver pronta para uma nova instância, não reiniciar a que o dono usa.
-- Usar o goal ativo para guiar execução e concluí-lo apenas após verificar a preparação.
+## Validation and delivery
+- Read contributing/ADAPTER and script headers before editing/running.
+- TypeScript and existing build/gates, supervisor/Chat/background and backend regressions, mandatory questions/layout/toolcards checks due to touching Chat, guide, and diff check.
+- Only checkout files and existing generated artifacts; no dependencies/installations/PATH changes, commit/push, or restarting processes.
+- Build regenerates lib in the checkout already linked to the profile; notify when the version is ready for a new instance, do not restart the instance the owner is using.
+- Use active goal to guide execution and complete it only after verifying preparation.

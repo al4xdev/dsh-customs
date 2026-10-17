@@ -1,15 +1,15 @@
-# Organizar alterações pendentes em commits por assunto
+# Organize pending local changes into topic commits
 
-## Pedido e goal
-O usuário pediu explicitamente commitar tudo pendente aqui, separado em vários commits. Goal ativo: goal-5e620b81-e8d6-4edc-a6fc-81c3d2c09fc6.
+## Request and goal
+User explicitly requested committing everything pending here, separated into multiple commits. Active goal: goal-5e620b81-e8d6-4edc-a6fc-81c3d2c09fc6.
 
-## Escopo
-Inventariar o working tree atual, arquivos novos e eventual fork Git aninhado Antigravity. Revisar diffs e arquivos para evitar segredos, node_modules, dumps, backups e artefatos privados ignorados. Preservar todas as alterações de outras tarefas, inclusive trabalho em andamento, sem implementar ou revertê-las. Planos são snapshots gerenciados: versionar o que já existe sem editar mirrors/registro.
+## Scope
+Inventory the current working tree, new files, and any nested Antigravity Git fork. Review diffs and files to avoid secrets, node_modules, dumps, backups, and ignored private artifacts. Preserve all changes from other tasks, including work in progress, without implementing or reverting them. Plans are managed snapshots: version what already exists without editing mirrors/registry.
 
-Separar commits coesos para: instalação/ativação/perfis; retry e categorias Codex; self-healing v2; bridge/session companion; frontend mobile; documentação; snapshots de planos. Ajustar grupos conforme dependências reais do diff. Se o fork Antigravity tiver Git próprio e alterações pertinentes, criar seus commits no próprio repositório, sem forçar sua inclusão no root.
+Separate cohesive commits for: installation/activation/profiles; Codex retry and categories; self-healing v2; companion bridge/session; mobile frontend; documentation; plan snapshots. Adjust groups according to real diff dependencies. If the Antigravity fork has its own Git and pertinent changes, create its commits in that repository, without forcing inclusion into root.
 
-## Execução e segurança
-Revisão independente somente leitura pode ser delegada. Checar testes existentes relevantes/whitespace, arquivos grandes e padrões de credenciais, sem imprimir segredos. Usar paths explícitos para staging; revisar diff staged antes de cada commit. Não usar git add -A indiscriminado, reset/rebase/amend, exclusão de arquivos, instalação, modificação do conteúdo do trabalho alheio ou push. Configuração de identidade Git existente; se faltar, pedir dados ao usuário, não inventar.
+## Execution and security
+Independent read-only review may be delegated. Check relevant existing tests / whitespace, large files, and credential patterns, without printing secrets. Use explicit paths for staging; review staged diff before each commit. Do not use indiscriminate `git add -A`, reset/rebase/amend, file deletion, installation, modification of others' work, or push. Existing Git identity configuration; if missing, ask user for data, do not invent.
 
-## Verificação final
-Listar hashes e assuntos dos commits; conferir estado root e fork. Explicar exclusões intencionais e trabalho que tenha aparecido durante os commits. Não afirmar que tarefas abertas/WIP foram concluídas só por terem sido commitadas. Concluir o goal apenas com tudo apropriado do inventário commitado e resultados verificados.
+## Final verification
+List commit hashes and subjects; verify root and fork status. Explain intentional exclusions and any work that appeared during commits. Do not claim open/WIP tasks were completed merely because they were committed. Complete the goal only when everything appropriate from the inventory is committed and results are verified.

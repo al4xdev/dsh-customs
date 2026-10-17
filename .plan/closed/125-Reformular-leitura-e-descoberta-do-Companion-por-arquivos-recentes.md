@@ -1,26 +1,26 @@
-# Companion: descoberta por arquivos e navegação detalhada
+# Companion: File-Based Discovery and Detailed Navigation
 
-## Escopo acordado
+## Agreed Scope
 
-A tool session do Companion observa conversas principais do DSH/TUI, excluindo suas próprias conversas e subagentes. Usuário autorizou implementar: list útil por arquivos recentes, busca literal seletiva e leitura aprofundável, sem mudar send que já funciona.
+The Companion session tool observes main DSH/TUI conversations, excluding its own conversations and subagents. The user authorized implementing: useful list via recent files, selective literal search, and deep reading, without changing send, which already works.
 
-## Implementação
+## Implementation
 
-1. Catalogar arquivos no root público configurado usando readdir/stat, sem decodificar todas as conversas. Selecionar geração suportada por sessão, recusar symlinks e não abrir caminhos arbitrários. Classificar pelo cabeçalho: Companion excluído; origin subagent/delegationDepth positivo excluídos; parentSession sozinho não exclui continuação. Metadados insuficientes explicitamente desconhecidos. Filtrar antes de contar limite, suportando50+subagentes.
-2. list default10 principais por mtime, limit e paginação. Título atual (último session/title, incluindo rename user), ID/cwd/mtime e prévia útil apenas dos selecionados. Cache limitado por identidade/stat; sem SQLite obrigatório. Mudança de outra sessão não deve invalidar toda paginação; preservar filtros e snapshot explícito.
-3. find como operação literal (search compatível): default100 arquivos principais recentes, ajustável com teto/budgets explícitos. Streaming/leitura somente do conjunto selecionado, resultados referenciados por sessão/seq, limites por chamada e continuação. Não prometer histórico inteiro.
-4. read/context/inspect: páginas úteis de eventos, head/tail/seq e navegação antes/depois. Formato legível e opção JSON para eventos selecionados. Permitir aprofundar argumentos, resultados e erros de ferramentas, com trecho/paginação de conteúdo longo. Redigir credenciais; sem arquivo inteiro automaticamente nem payload arbitrário fora do root. Dados de logs continuam não confiáveis.
-5. Preservar send/resume e gates de aprovação/origem/bridge. Estado ativo continua separado de mtime. Não criar superfície de subagentes separada; delegações da principal ficam navegáveis no log.
-6. Atualizar contratos, descrição da tool e documentação. Compatibilidade com parâmetros existentes onde possível; limites/cursor semantics explicitados.
+1. Catalog files in the configured public root using readdir/stat, without decoding all conversations. Select supported generation per session, reject symlinks, and do not open arbitrary paths. Classify by header: Companion excluded; subagent origin / positive delegationDepth excluded; parentSession alone does not exclude continuation. Insufficient metadata explicitly marked unknown. Filter before counting limit, supporting 50+ subagents.
+2. list default 10 main sessions by mtime, limit, and pagination. Current title (latest session/title, including user rename), ID/cwd/mtime, and useful preview only for selected items. Cache bounded by identity/stat; no mandatory SQLite. Changes from another session must not invalidate all pagination; preserve filters and explicit snapshot.
+3. find as literal operation (search compatible): default 100 recent main files, adjustable with explicit ceilings/budgets. Streaming/reading only over the selected set, results referenced by session/seq, limits per call and continuation. Do not promise entire history.
+4. read/context/inspect: useful event pages, head/tail/seq, and before/after navigation. Readable format and JSON option for selected events. Allow drilling down into tool arguments, results, and errors, with excerpts/pagination for long content. Redact credentials; no entire file automatically nor arbitrary payload outside the root. Log data remains untrusted.
+5. Preserve send/resume and approval/origin/bridge gates. Active state remains separate from mtime. Do not create a separate subagent surface; main delegations remain navigable in the log.
+6. Update contracts, tool description, and documentation. Backward compatibility with existing parameters where possible; explicit limits/cursor semantics.
 
-## Validação
+## Validation
 
-- Tests de principais/continuações/forks,50+subagentes e Companion, rename, geração de arquivo, mtime, caches, logs zstd e escrita concorrente.
-- Busca literal em somenteN principais, paginação e cobertura explícita.
-- Navegação de resultados/argumentos/JSON longos, redaction, corte recuperável, erros e limites de saída.
-- Regressão dos testes de session, roteamento e send/resume sem enfraquecer controles.
-- Smoke somente leitura em logs reais via SDK/entrada da tool; resumo compacto em .dumps. Sem reiniciar serviços ou enviar mensagens sem pedido.
+- Tests for main/continuation/fork sessions, 50+ subagents and Companion, rename, file generation, mtime, caches, zstd logs, and concurrent writing.
+- Literal search in only N main sessions, pagination, and explicit coverage.
+- Navigation of long results/arguments/JSON, redaction, recoverable truncation, errors, and output limits.
+- Regression tests for session, routing, and send/resume without weakening controls.
+- Read-only smoke test on real logs via SDK/tool input; compact summary in .dumps. Without restarting services or sending messages unprompted.
 
-## Execução
+## Execution
 
-Guiada pelo goal ativo. Separar catálogo físico e leitura de eventos para delegação independente; integrar e validar antes de encerrar. Não alterar outros trabalhos concorrentes.
+Guided by active goal. Separate physical catalog and event reading for independent delegation; integrate and validate before closing. Do not alter other concurrent work.

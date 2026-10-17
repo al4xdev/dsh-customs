@@ -1,14 +1,14 @@
-# Corrigir questionários após /bg
+# Fix questionnaires after /bg
 
-## Autorização
-Usuário reproduziu: ask_user_question funcionou antes de /bg; após background retornou no user-questions answerer accepted the request. Autorizou correção autônoma e commit ao final, sem pedir push.
+## Authorization
+User reproduced the issue: `ask_user_question` worked before `/bg`; after backgrounding it returned "no user-questions answerer accepted the request". Authorized autonomous fix and final commit, without push.
 
-## Escopo
-1. Rastrear eligibility do waterfall/answerer e ownership dos agentes da TUI, background handoff e projeção dos questionários ao retornar. Não concluir causa sem evidência de código/teste.
-2. Corrigir apenas roteamento/lifecycle necessário: perguntas de sessões que esta TUI ainda possui devem ser aceitas/enfileiradas; perguntas de outro terminal/agent não pertencente devem continuar delegadas. Nada de capturar todos os agentes globalmente.
-3. Preservar ordenação/cancelamento/cleanup da fila e comportamento agentless OAuth/legacy. Pergunta pendente deve reaparecer ao voltar à sessão quando aplicável, sem rejeição silenciosa.
-4. Acrescentar regressões com mocks e headless para antes/depois /bg, retorno e isolamento/disposal. Não ler credentials/sessões reais nem chamar providers/modelos/login.
-5. Compilar, executar testes focados e guards pertinentes, revisar diff, commitar somente arquivos relacionados no fork custom. Preservar mudanças de outros agentes, sem reset/stash/force/push e sem reiniciar TUIs.
+## Scope
+1. Trace waterfall/answerer eligibility and TUI agent ownership, background handoff, and questionnaire projection upon returning. Do not conclude root cause without code/test evidence.
+2. Fix only necessary routing/lifecycle: questions from sessions still owned by this TUI must be accepted/queued; questions from other terminals / unowned agents must remain delegated. Do not capture all agents globally.
+3. Preserve ordering/cancellation/queue cleanup and agentless OAuth/legacy behavior. A pending question must reappear when returning to the session when applicable, without silent rejection.
+4. Add regression tests with mocks and headless runner covering before/after `/bg`, returning, and isolation/disposal. Do not read credentials/real sessions or invoke providers/models/login.
+5. Compile, run focused tests and relevant guards, review diff, commit only related files in custom fork. Preserve other agents' changes, no reset/stash/force/push, and do not restart TUIs.
 
-## Aceitação
-Regressão demonstra pergunta da sessão background owned não cair no terminal error, permanecer pendente e poder ser respondida ao retornar; agente estrangeiro continua delegado, cleanup/cancelamento preservados. Compilação e testes pertinentes passam; commit local entregue com instrução de reabrir TUI.
+## Acceptance
+Regression demonstrates question from owned backgrounded session does not fail with terminal error, remains pending, and can be answered upon returning; foreign agent remains delegated, cleanup/cancellation preserved. Compilation and relevant tests pass; local commit delivered with instructions to reopen TUI.

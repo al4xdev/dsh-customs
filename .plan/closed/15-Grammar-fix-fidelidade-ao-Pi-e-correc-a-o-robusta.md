@@ -1,25 +1,25 @@
-# Grammar-fix: fidelidade ao Pi e correção robusta
+# Grammar-fix: Pi Fidelity and Robust Correction
 
-## Objetivo
-Corrigir falhas intermitentes do grammar-fix e copiar a experiência de https://github.com/al4xdev/pi-grammar-fix, sem alterações no core do harness nem perda das modificações já presentes.
+## Objective
+Fix intermittent grammar-fix failures and reproduce the experience of https://github.com/al4xdev/pi-grammar-fix, without changes to the harness core or loss of existing modifications.
 
-## Investigação observada
-- O frontend local já tem integração de Ctrl+G no composer e Launchpad, mas só uma caneta, sete posições e quatro frases; Pi tem cinco temas, oito posições, 14 frases, ícones aleatórios e contexto de idioma/modelo.
-- O bridge usa streaming separado, limite de tokens e deadline, mas precisa regressões de abort, busy, esforço, erros transitórios e término incompleto. Confirmar contratos reais de LLM antes de ajustar.
-- Há alterações pré-existentes em ambos os repositórios; preservar e modificar apenas trechos relacionados.
+## Observed Investigation
+- The local frontend already has Ctrl+G integration in the composer and Launchpad, but only one pen, seven positions, and four phrases; Pi has five themes, eight positions, 14 phrases, randomized icons, and language/model context.
+- The bridge uses separate streaming, token limit, and deadline, but needs regressions for abort, busy, effort, transient errors, and incomplete termination. Confirm real LLM contracts before tuning.
+- There are pre-existing modifications in both repositories; preserve and modify only related sections.
 
-## Implementação
-1. Auditar contrato do streaming e evidências locais de falhas; corrigir causas reproduzíveis. Garantir cancelamento/deadline efetivos, liberação de busy, erros claros, nenhuma aplicação parcial e retries limitados apenas para falhas recuperáveis.
-2. Portar os cinco temas emoji, 14 frases originais e ritmo de 150 ms do Pi em componente de atividade; exibir idioma/modelo selecionados e mensagens de sucesso/sem mudanças com ícones. Preservar tema do terminal, undo, draft/session guards e atalhos.
-3. Usar metadata pelo bridge para manter contexto visual correto quando o modelo é configurado. Ajustar installer/documentação sem editar artefatos lib manualmente.
-4. Adicionar testes determinísticos do bridge, animação e integração; compilar frontend e executar regressões focadas/CI pertinentes. Documentar limitações da validação real de provider.
+## Implementation
+1. Audit streaming contract and local evidence of failures; fix reproducible causes. Ensure effective cancellation/deadline, busy release, clear errors, no partial application, and retries limited strictly to recoverable failures.
+2. Port the five emoji themes, 14 original phrases, and 150 ms pacing from Pi into an activity component; display selected language/model and success/no-change messages with icons. Preserve terminal theme, undo, draft/session guards, and shortcuts.
+3. Pass metadata through the bridge to keep visual context correct when the model is configured. Adjust installer/documentation without manually editing lib artifacts.
+4. Add deterministic tests for bridge, animation, and integration; compile frontend and run focused regressions / relevant CI. Document limitations of real provider validation.
 
-## Direção visual
-Não criar paleta ou tipografia nova: reutilizar tokens semânticos e monospace do TUI. Assinatura fiel ao Pi: trilha emoji que limpa erros e volta, seguida do contexto `(idioma · modelo)` e frase `💬`. Hierarquia compacta de duas linhas, clipping para terminais estreitos e opção sem movimento quando suportada.
+## Visual Direction
+Do not create new palette or typography: reuse semantic tokens and monospace from TUI. Signature faithful to Pi: emoji trail that wipes errors and returns, followed by `(language · model)` context and `💬` phrase. Compact two-line hierarchy, clipping for narrow terminals, and reduced motion option where supported.
 
-## Critérios de aceite
-- Cinco temas e frases do Pi disponíveis em ambos os editors.
-- Cancelar preserva draft, não prende busy, e nova correção funciona.
-- Falhas/incompletude não sobrescrevem draft; esforço incompatível tem fallback controlado.
-- Testes e build passam ou falhas externas/pré-existentes são explicitamente reportadas.
-- Não commit/push; fechar este plano e concluir o goal apenas após verificar os resultados.
+## Acceptance Criteria
+- Five Pi themes and phrases available in both editors.
+- Canceling preserves draft, does not lock busy, and subsequent correction works.
+- Failures/incompleteness do not overwrite draft; incompatible effort has controlled fallback.
+- Tests and build pass or external/pre-existing failures are explicitly reported.
+- Do not commit/push; close this plan and conclude the goal only after verifying results.

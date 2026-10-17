@@ -1,9 +1,9 @@
-# Primeiro login local autorizado por cabo
+# First local login authorized via cable
 
-O proprietário autorizou explicitamente passar o link privado ao app pelo ADB local via cabo, substituindo a restrição anterior para esta ação pontual.
+The owner explicitly authorized passing the private link to the app via local ADB over cable, overriding the previous restriction for this one-time action.
 
-1. Conferir serial ZY22F2395W e usuário atual0; não instalar/abrir nada no Work10.
-2. Ler connection.json somente dentro de helper local em RAM, validando arquivo privado/owned e URL HTTPS exata8443. Não devolver token/link ao modelo, stdout, logs, clipboard ou arquivo novo.
-3. Inspecionar hierarquia UI em RAM, sem screenshots/dump persistido; devolver somente estado e bounds necessários. Focar campo mascarado e passar link por stdin do ADB, não argumentos do comando no host; efetuar apenas login explícito.
-4. Verificar somente estado autenticado/lista por metadados UI sanitizados, sem chats/mensagens/envios/approvals. Não capturar conteúdo privado, não alterar TTL/profile/serviço/publicação.
-5. Teste de reabertura/force-stop exige confirmar que não há envio pendente; não fazer nesta ação de login. Registrar resultado sem segredo e manter goal ativo até validação completa.
+1. Verify serial ZY22F2395W and current user 0; do not install/launch anything on Work 10.
+2. Read `connection.json` strictly within an in-memory local helper, validating private/owned file and exact HTTPS URL on port 8443. Do not return token/link to model, stdout, logs, clipboard, or any new file.
+3. Inspect UI hierarchy in memory, without screenshots or persisted dumps; return only necessary state and bounds. Focus masked field and pass link via ADB stdin, never host command arguments; perform only explicit login.
+4. Verify only authenticated state/list using sanitized UI metadata, without chats/messages/sends/approvals. Do not capture private content; do not modify TTL/profile/service/publication.
+5. Reopen/force-stop test requires confirming no pending send; do not perform during this login action. Record result without secrets and keep goal active until complete validation.

@@ -1,17 +1,17 @@
-# Instalação física APK10 — upgrade autorizado
+# Physical APK10 installation — authorized upgrade
 
-## Consentimento fresco
-Dono pediu explicitamente atualizar/instalar e respondeu **Confirmo, sem pendências** à pergunta sobre rascunhos não enviados, envios incertos, respostas em andamento e aprovações no Companion. Autorização nesta tarefa é SOMENTE upgrade APK10 e lançamento do app, preservando dados; nenhum backend restart/ativação.
+## Fresh consent
+Owner explicitly asked to update/install and answered **I confirm, no pending items** to the question regarding unsent drafts, uncertain sends, in-progress responses, and approvals in Companion. Authorization in this task is SOLELY APK10 upgrade and app launch, preserving data; no backend restart/activation.
 
-## Artefato e alvo
-APK `.dumps/tasks/dsh-companion-0.10.0-amoled.apk`; SHA256 esperado `6fe81acbffb68c301c6b007bac561e2100a1fed710fe6178b5fa829ce52cf5b0`. Pacote dev.alex.dsh.companion, versionCode10/versionName0.10.0-amoled, API34. Assinatura V2 certificateSHA256 `1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d`, igual APK8/9. Build Werror/lint,67 protocolo/359JVM+1ignored/152Android/4icon+9startup e3PNGs sintéticos validados sob90r2 fechado; não repetir testes em telefone.
-Alvo explícito ADB5037 serial ZY22F2395W, MotoXT2201-2, user0. Nunca adbdevices, alvo implícito/outroaparelho/defaultscript.
+## Artifact and target
+APK `.dumps/tasks/dsh-companion-0.10.0-amoled.apk`; expected SHA256 `6fe81acbffb68c301c6b007bac561e2100a1fed710fe6178b5fa829ce52cf5b0`. Package dev.alex.dsh.companion, versionCode 10 / versionName 0.10.0-amoled, API 34. V2 signature certificate SHA256 `1fa5e52df976fefd0b80e256304a47e18e2cdcdcaeff19676e98d8b947fe4a2d`, identical to APK8/9. Werror/lint build, 67 protocol / 359 JVM + 1 ignored / 152 Android / 4 icon + 9 startup and 3 synthetic PNGs validated under closed 90r2; do not repeat tests on phone.
+Explicit target ADB 5037 serial ZY22F2395W, Moto XT2201-2, user0. Never adb devices, implicit target / other device / script default.
 
-## Execução e evidência
-1. Reconfirmar hash/assinatura do artefato e modelo/API/metadados package instalados, somente readonly; verificar versão9/certidentidade/UID10318/dataDir/ceDataInode/firstInstallTime onde disponíveis. Se divergência de alvo/assinatura/versão inesperada, interromper e perguntar, sem downgrade/delete.
-2. Upgrade `adb -P5037 -s ZY22F2395W install --user0 -r APK`, sem uninstall/clear/grant/takeover. Observar Success/exit; não repetir instalação incerta sem prova de estado.
-3. Readonly package depois, comprovar versão10 e identidade/dataDir/UID/inode/firstInstallTime preservados. Lançar MainActivity explicitamente com am start -W, sem navegar/extrair screenshot/UI XML/chats/cofre/logcat. Lançamento pode restaurar login e fazer requisições readonly usuais; nenhum prompt/model/delete.
-4. Registrar evidência privada .dumps/tasks/task92-apk10-install-evidence.md, atualizar README apenas estado instalado real, fechar plano com revisão exata. Se falha, preservar estado/dados e reportar fato concreto, sem silenciar ou alegar instalado.
+## Execution and evidence
+1. Reconfirm hash/signature of artifact and installed package model/API/metadata, readonly only; check version 9 / cert identity / UID 10318 / dataDir / ceDataInode / firstInstallTime where available. If target divergence / unexpected signature / version occurs, stop and ask, without downgrade/delete.
+2. Upgrade `adb -P5037 -s ZY22F2395W install --user 0 -r APK`, without uninstall/clear/grant/takeover. Observe Success/exit; do not repeat uncertain installation without state proof.
+3. Readonly package afterwards, prove version 10 and preserved identity / dataDir / UID / inode / firstInstallTime. Launch MainActivity explicitly with am start -W, without browsing / extracting screenshot / UI XML / chats / vault / logcat. Launch may restore login and make usual readonly requests; no prompt/model/delete.
+4. Record private evidence .dumps/tasks/task92-apk10-install-evidence.md, update README with actual installed state only, close plan with exact revision. If failure occurs, preserve state/data and report concrete fact, without silencing or claiming installed.
 
-## Limites
-Sem mudança/restart/ativação backend89/91/índice/profile/modelo/Settings/SDK/TUI/OAuth/HA/global, nenhum grant/projeto/conversa/prompt/model real/delete/cópia de histórico/cofre. Sem novas capturas/navegação física/medição FPS/aceitação visual inferida. Sem commit/push/publicação. Não reaproveitar consentimento para outras atualizações ou tarefas.
+## Limits
+No change/restart/activation of backend 89/91 / index / profile / model / Settings / SDK / TUI / OAuth / HA / global, no real grant / project / conversation / prompt / model / delete / history copy / vault. No new captures / physical navigation / FPS measurement / inferred visual acceptance. No commit/push/publication. Do not reuse consent for other updates or tasks.

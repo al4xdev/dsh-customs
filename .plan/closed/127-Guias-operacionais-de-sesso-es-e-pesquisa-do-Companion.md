@@ -1,16 +1,16 @@
-# Instruções e skills do Companion
+# Companion Instructions and Skills
 
-## Objetivo
-Revisar ~/.dsh/AGENTS-Companion.md e criar guias práticos de sessões e pesquisa em /home/alex/git/my/dsh-companion-workspace/.agents/skills, com exemplos JSON válidos e situações concretas, sem alterar modelos, permissões, serviços ou executar intervenções reais.
+## Objective
+Review ~/.dsh/AGENTS-Companion.md and create practical session and research guides in /home/alex/git/my/dsh-companion-workspace/.agents/skills, with valid JSON examples and concrete scenarios, without changing models, permissions, or services, or performing real interventions.
 
-## Descoberta
-/home/alex/.dsh/Companion/AGENTS.md é symlink para ../AGENTS-Companion.md, não cópia. O perfil configura agent-instructions.dshHome nesse diretório e o SDK fixa o nome global AGENTS.md. Preservar a ligação necessária em vez de apagar e interromper carregamento; editar somente o original. O provedor nativo de skills descobre .agents/skills no projeto.
+## Discovery
+/home/alex/.dsh/Companion/AGENTS.md is a symlink to ../AGENTS-Companion.md, not a copy. The profile configures agent-instructions.dshHome in that directory and the SDK fixes the global name AGENTS.md. Preserve the required link instead of deleting and breaking loading; edit only the original. The native skills provider discovers .agents/skills in the project.
 
-## Trabalho
-1. Revisar instruções existentes preservando regras de goals, limites e aprovações; exigir leitura da skill pertinente, verificação das capacidades reais antes de alegar impossibilidade e distinção entre lock de escrita/leitura/envio.
-2. Skill companion-sessions: list/find/read/context; IDs/títulos; cenários de terminal aberto com writer held, investigar teste/erro/JSON, paginação, pesquisa histórica parcial, send versus resume e criação atualmente Companion (não prometer dsh-tui). Exemplos conforme schemas atuais.
-3. Skill companion-research: pergunta verificável, hipóteses rivais, plano de evidência, fontes distintas relevantes, leitura/continuação no mesmo run, contraevidência, tratamento de bloqueios/quotas e critérios de parada. Exemplos para erro técnico, release e experiência comunitária; não exigir fanout indiscriminado.
-4. Validar descoberta dos dois SKILL.md pelo provedor SDK, exemplos session pelo parser e research pelo schema atual; revisão de situações óbvias e ambiguidades. Registrar evidência local em .dumps. Não enviar mensagens, criar sessões, pesquisar na rede nem reiniciar serviços para validar.
+## Work
+1. Review existing instructions preserving rules for goals, limits, and approvals; require reading the relevant skill, checking actual capabilities before claiming impossibility, and distinguishing between write/read/send locks.
+2. companion-sessions skill: list/find/read/context; IDs/titles; scenarios with open terminal holding writer, investigating test/error/JSON, pagination, partial historical search, send versus resume, and creation currently Companion (do not promise dsh-tui). Examples matching current schemas.
+3. companion-research skill: verifiable question, competing hypotheses, evidence plan, distinct relevant sources, reading/continuation in the same run, counter-evidence, handling blocks/quotas, and stopping criteria. Examples for technical error, release, and community experience; do not demand indiscriminate fanout.
+4. Validate discovery of both SKILL.md files by the SDK provider, session examples via parser, and research via current schema; review obvious scenarios and ambiguities. Record local evidence in .dumps. Do not send messages, create sessions, search the network, or restart services to validate.
 
-## Conclusão
-Guias carregáveis e instruções curtas apontando para eles; relatar a ligação preservada e distinguir validação de descoberta de garantia de comportamento do modelo em produção.
+## Conclusion
+Loadable guides and concise instructions pointing to them; report the preserved link and distinguish discovery validation from model behavior guarantees in production.

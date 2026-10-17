@@ -1,86 +1,88 @@
-# Notificações de goals — Companion
+# Goal Notifications — Companion
 
-## Limite da entrega APK12
+## Scope of APK12 Delivery
 
-O código Android, o registro autenticado e o sender opcional estão implementados.
-**Firebase Companion ainda não foi configurado; não houve login, envio FCM real ou
-instalação do APK12 no telefone.** A configuração ativa do backend97/99 permanece
-inalterada. A ativação do novo host de goals/TODO também aguarda uma janela segura:
-não foi encontrado um endpoint nativo mínimo que prove ociosidade sem devolver
-projeções privadas de outras conversas. Não parar o serviço por suposição.
+Android code, authenticated registration, and optional sender are implemented.
+**Companion Firebase has not yet been configured; no login, real FCM dispatch, or
+installation of APK12 onto the physical phone has occurred.** Active configuration
+of backend 97/99 remains untouched. Activating the new goals/TODO host also awaits
+a safe maintenance window: no minimal native endpoint was found that proves idle status
+without returning private projections of other conversations. Do not stop the service
+on assumptions.
 
-A implementação reaproveita a separação de responsabilidades de `ha_app`:
-evento real no servidor → mensagem data-only → serviço Android → notificação
-nativa. Não reaproveita projeto Firebase, package, IDs, destinatários, credenciais,
-HA, automações ou WorkManager horário do Casa de Tequila.
+The implementation reuses the separation of concerns from `ha_app`:
+real server event → data-only message → Android service → native notification.
+It does not reuse Firebase project, package name, IDs, recipients, credentials,
+Home Assistant, automations, or hourly WorkManager from Casa de Tequila.
 
 ## Android
 
-- `notifications/GoalNotifications.kt`: canal dedicado, opt-in explícito,
-  `POST_NOTIFICATIONS`, autoridade nativa e publicação com deduplicação persistida.
-- `GoalPushPolicy.kt`: conclusão nativa versionada mínima, validade temporal,
-  eventId determinístico e ledger limitado; falha de persistência bloqueia entrega.
-- `PushRegistration.kt` / `PushRegistrationStore.kt`: receipt de até24h ligado a
-  device, perfil, configuração, tokenDigest, sessões autorizadas e geração
-  monotônica persistida. O token FCM bruto não é persistido.
-- `CompanionMessagingService.kt`: rejeita notification payload antes de o SDK
-  tentar autoexibição. FCM aceita somente o envelope14 campos vinculado ao receipt;
-  conclusão local confirmada usa os7 campos nativos e o mesmo ledger.
-- `CompanionPushConfiguration.kt`: sem inicialização automática ou obtenção de
-  token durante lançamento/login. Somente opt-in configurado, permissão e vínculo
-  nativo permitem o registro solicitado pelo usuário.
-- `MainActivity.kt`: permissão apenas por ação nas configurações; PendingIntent
-  explícito/imutável e nonce persistido de uso único. Extras/URIs não conferem
-  login ou ownership. O VM verifica geração atual e catálogo antes de navegar.
+- `notifications/GoalNotifications.kt`: Dedicated channel, explicit opt-in,
+  `POST_NOTIFICATIONS`, native authority, and dispatch with persisted deduplication.
+- `GoalPushPolicy.kt`: Minimal versioned native completion, time validity,
+  deterministic eventId, and bounded ledger; persistence failure blocks dispatch.
+- `PushRegistration.kt` / `PushRegistrationStore.kt`: Up-to-24h receipt tied to
+  device, profile, configuration, tokenDigest, authorized sessions, and persisted
+  monotonic generation. Raw FCM token is never persisted.
+- `CompanionMessagingService.kt`: Rejects notification payload before SDK
+  attempts auto-display. FCM accepts strictly the 14-field envelope bound to receipt;
+  confirmed local completion uses 7 native fields and the same ledger.
+- `CompanionPushConfiguration.kt`: No automatic initialization or token acquisition
+  during boot/login. Only configured opt-in, permission, and native binding permit
+  user-requested registration.
+- `MainActivity.kt`: Permission requested only upon user action in settings;
+  explicit/immutable PendingIntent and persisted single-use nonce. Extras/URIs do not
+  grant login or session ownership. The ViewModel verifies current generation and catalog
+  before navigation.
 
-Título e texto são genéricos, sem objetivo, mensagens ou caminhos. A notificação
-construída usa `VISIBILITY_SECRET`. A visibilidade do **canal** é reservada pelo
-Android ao sistema/usuário e pode retornar `NO_OVERRIDE`; não alegar que o app
-consegue impor esse override. Um toque obsoleto, forjado ou sem autorização RAM
-atual abre somente o app/catálogo, não uma conversa por confiança nos extras.
+Title and body text are generic, omitting objective, messages, or paths. Constructed
+notification uses `VISIBILITY_SECRET`. Channel visibility is reserved by Android
+to system/user controls and may report `NO_OVERRIDE`; do not claim the app can force
+this override. An obsolete, forged, or unauthorized tap opens only the app/catalog,
+never a conversation based on trusted extras.
 
-Desativar revoga a autoridade local imediatamente; unregister autenticado é uma
-única tentativa limitada a3s. Falha/offline não reativa avisos localmente; o lease
-remoto tem validade máxima24h. Sucesso FCM no servidor significa aceitação HTTP,
-não confirmação de exibição pelo aparelho. Crash entre commit e notify pode perder
-um aviso, mas não deve duplicá-lo após reinício.
+Disabling revokes local authority immediately; authenticated unregister is a single
+attempt capped at 3s. Offline or failure does not re-enable alerts locally; remote lease
+has maximum 24h validity. Successful server-side FCM dispatch signifies HTTP acceptance,
+not guaranteed device display. A crash between commit and notify may drop an alert,
+but must not duplicate it upon restart.
 
-## Backend preparado, não ativado
+## Prepared Backend, Not Activated
 
-- `android/companion/backend-native-goals`: único goal atual + TODO nativo
-  independente, controles HUMAN via APIs públicas DSH com ref/CAS e Peer real.
-- `plugins/companion-native-host`: assembly host com lease público do preset
-  Companion. Não colocar os serviços diretamente no preset: o SDK exige realms,
-  e o Gateway direto não resolve serviços isolados dessa forma.
-- `plugins/companion-push`: registro/unregister/status autenticados, destinatários
-  validados, outbox privado limitado e sender opcional HTTPv1. Default desabilitado
-  não cria arquivos, listeners de goal, timers ou chamadas externas.
+- `android/companion/backend-native-goals`: Single active goal + independent native
+  TODO, HUMAN controls via public DSH APIs with ref/CAS and actual Peer.
+- `plugins/companion-native-host`: Host assembly with public lease from Companion preset.
+  Do not place services directly into preset: SDK requires realms, and direct Gateway
+  does not resolve isolated services in that topology.
+- `plugins/companion-push`: Authenticated registration/unregister/status, validated
+  recipients, bounded private outbox, and optional HTTPv1 sender. Default disabled state
+  creates no files, goal listeners, timers, or external calls.
 
-A conclusão vem de commit nativo `goal/changed`, não de palavras do modelo.
-O eventId é SHA256 do JSON de `['companion', sessionId, goalId, revision]`.
-O plugin99/mock ativo não foi modificado ou substituído.
+Completion originates from native `goal/changed` commit, not from model text tokens.
+The eventId is SHA256 of JSON `['companion', sessionId, goalId, revision]`.
+Active plugin 99 / mock was neither modified nor replaced.
 
-## Amanhã, com o dono
+## Next Steps with the Owner
 
-1. Confirmar janela segura para o backend; revisar o candidato offline que monta
-   TODO nativo no preset e o novo host no ROOT, preservando Settings/modelo/índice.
-   Confirmar a prova de startup declarativo/lifecycle antes de aplicar. Manter push
-   ausente enquanto não configurado. Não tocar TUI ou restaurar outros históricos.
-2. Fazer login juntos e escolher/criar **projeto e app Firebase próprios do
-   Companion**, package `dev.alex.dsh.companion`. Sem Analytics/Crashlytics,
-   Firestore ou Functions. Nada de reutilizar a produção Casa de Tequila.
-3. Preencher o arquivo local ignorado `companion-push.local.properties` apenas com
-   `androidPackage`, `projectId`, `applicationId`, `apiKey`, `senderId` públicos.
-   A configuração atual é de build: reconstruir o APK após obter esses dados.
-4. Configurar o sender do backend com os mesmos IDs públicos e credencial própria
-   aprovada do Companion em arquivo0600 fora do repositório. Escopo mínimo
-   `roles/firebasecloudmessaging.admin`; nunca enviar chave/token no chat/log.
-   Rever explicitamente a configuração push antes de habilitá-la.
-5. Instalar somente após nova autorização. No aparelho, optar por avisos e conceder
-   a permissão; registrar via transporte nativo autenticado e conferir receipt.
-6. Concluir um goal fresco e verificar entrega real, dedup/reconexão, revogação e
-   toque no aparelho, incluindo segundo plano/reinício. Somente essa prova permite
-   declarar FCM ponta a ponta funcionando.
+1. Confirm a safe window for the backend; review the offline candidate mounting
+   native TODO into the preset and the new host into ROOT, preserving Settings/model/index.
+   Confirm declarative startup/lifecycle proof before applying. Keep push disabled
+   until configured. Do not touch TUI or restore other histories.
+2. Log in together and create/select a **dedicated Companion Firebase project and app**,
+   package `dev.alex.dsh.companion`. Without Analytics/Crashlytics, Firestore, or Functions.
+   Never reuse Casa de Tequila production.
+3. Populate gitignored local file `companion-push.local.properties` strictly with public
+   `androidPackage`, `projectId`, `applicationId`, `apiKey`, `senderId`. Current setup is
+   at build time: rebuild APK after acquiring these parameters.
+4. Configure backend sender with matching public IDs and dedicated approved Companion
+   credentials in a `0600` file outside the repo. Minimal scope
+   `roles/firebasecloudmessaging.admin`; never commit or paste credentials into chat/logs.
+   Explicitly review push configuration before enabling it.
+5. Install only after fresh authorization. On device, opt in to alerts and grant permission;
+   register via authenticated native transport and verify receipt.
+6. Complete a fresh goal and verify real delivery, dedup/reconnection, revocation, and
+   device tap handling, including background and reboot scenarios. Only this proof
+   authorizes declaring end-to-end FCM functional.
 
-Testes locais, SDK real isolado e capturas de fixtures não substituem esse último
-passo. Nenhuma etapa sensível acima foi executada durante a ausência do dono.
+Local tests, isolated real SDK, and fixture captures do not replace this final step.
+No sensitive actions above were executed during the owner's absence.

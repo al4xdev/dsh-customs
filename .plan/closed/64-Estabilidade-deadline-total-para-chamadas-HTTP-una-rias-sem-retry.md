@@ -1,10 +1,10 @@
-# Deadline de chamadas unárias do Companion
+# Companion unary call deadline
 
-Escopo pedido: estabilidade apenas; UI/refatoração pertence ao proprietário. Fonte OwnerHttpPolicy configura timeout de conexão/leitura/escrita, mas não prazo total. Um servidor/rede que entregue bytes lentamente pode manter RPC/login e busy/preflight ativos indefinidamente, pois readTimeout reinicia a cada progresso.
+Requested scope: stability only; UI/refactoring belongs to the owner. Source `OwnerHttpPolicy` configures connect/read/write timeouts, but lacks an overall deadline. A server/network delivering bytes slowly could keep RPC/login and busy/preflight states active indefinitely, as readTimeout resets on each byte progress.
 
-1. Adicionar deadline total45s por chamada HTTP unária (login e RPC), separado do cliente websocket de longa duração. Não mudar autoridade/TLS/auth/cookie/Origin/ping, limites de corpo, POSTretry, ACK/UNKNOWN/ledger ou política de envio.
-2. Fixture local MockWebServer com resposta lenta provar encerramento total e exatamente um POST, sem segredo, modelo ou rede real. Fixture de configuração provar streamclient continua sem deadline global; testar valores inválidos do seam de teste.
-3. Rodar regressões app/protocol/lint/build; registrar resultado. Mudanças apenas net e testes, sem alteração de UI. Ajuste de UI já preparado task63 fica separado e não será instalado.
-4. Não atualizar telefone, force-stop app com intenções incertas, reiniciar serviço/PC, alterar TTL/profile/Tailscale ou implantar guard sem autorização específica. Timeout de POST significa resultado possivelmente desconhecido, nunca retry automático.
+1. Add an overall 45s deadline per unary HTTP call (login and RPC), separate from the long-lived websocket client. Do not alter authority/TLS/auth/cookie/Origin/ping, body limits, POST retry, ACK/UNKNOWN/ledger, or send policy.
+2. Local `MockWebServer` fixture with slow response to prove total termination and exactly one POST, without secrets, models, or real network traffic. Configuration fixture to prove stream client remains without a global deadline; test invalid values in the test seam.
+3. Run app/protocol/lint/build regressions; record results. Changes restricted to net and tests, no UI alterations. UI adjustment already prepared in task 63 remains separate and will not be installed.
+4. Do not update phone, force-stop app with uncertain intents, restart service/PC, alter TTL/profile/Tailscale, or deploy guard without specific authorization. POST timeout signifies a possibly unknown result, never automatic retry.
 
-Aceite: unárias com prazo total finito, WSS longa duração intacta, testes sem replay passam e nenhum recurso real alterado.
+Acceptance: unary calls with finite overall deadline, long-lived WSS intact, tests without replay pass, and no real resources altered.

@@ -1,40 +1,39 @@
-# List — contrato para o LTS pessoal
+# List — Contract for Personal LTS
 
-Lista nomes e tipos, sem ler o conteúdo dos arquivos. Caminhos relativos usam o
-cwd da sessão. `file_path` e `path` são aliases; quando ambos são fornecidos,
-`file_path` tem preferência. É necessário fornecer um caminho não vazio.
+Lists names and types without reading file contents. Relative paths use the session
+cwd. `file_path` and `path` are aliases; when both are supplied, `file_path` takes precedence.
+A non-empty path is required.
 
-## Comportamento preservado
+## Preserved Behavior
 
-- `depth`: padrão 1, máximo 8; profundidade 1 mostra somente os filhos imediatos.
-- `limit`: padrão 200, máximo 1000. Ambos exigem inteiros positivos.
-- Ocultos são incluídos por padrão. `hidden: false` também evita percorrer
-  subdiretórios ocultos.
-- Em cada diretório, a ordem é diretórios, arquivos e outros tipos; dentro de
-  cada grupo, os nomes usam `localeCompare`. A recursão ocorre ao visitar cada
-  diretório, não como uma ordenação global da árvore.
-- Os caminhos exibidos são relativos à raiz solicitada; diretórios recebem `/`.
-- Um mesmo diretório, identificado pelo `targetKey` do backend, é percorrido
-  somente uma vez. Seus aliases ainda aparecem na listagem.
-- A coleta respeita um orçamento de 64 KiB para caminhos UTF-8 e separadores,
-  além do limite de entradas. Esse orçamento não inclui cabeçalho e rodapé.
-- Resultados limitados mostram a contagem e o aviso `capped`, sem parecer completos.
+- `depth`: default 1, maximum 8; depth 1 lists only immediate children.
+- `limit`: default 200, maximum 1000. Both require positive integers.
+- Hidden entries are included by default. `hidden: false` also prevents traversing
+  hidden subdirectories.
+- Inside each directory, order is directories, files, and other types; within each group,
+  names use `localeCompare`. Recursion happens while visiting each directory, not as a
+  global tree sort.
+- Displayed paths are relative to the requested root; directories append `/`.
+- A single directory, identified by backend `targetKey`, is traversed only once. Its
+  aliases still appear in the listing.
+- Collection respects a 64 KiB budget for UTF-8 paths and separators, beyond the entry limit.
+  This budget excludes header and footer.
+- Capped results report the count and display a `capped` notice, never appearing complete.
 
-**Limite de resultado não é limite de trabalho:** a ferramenta continua
-percorrendo a profundidade pedida para calcular `total`, mesmo depois de atingir
-`limit` ou o orçamento de caminhos. Para árvores grandes, reduza `depth` ou
-escolha um subdiretório. `total` considera a filtragem de ocultos e a deduplicação
-na recursão; não é uma contagem universal de todos os caminhos possíveis.
+**Result cap is not a work cap:** the tool continues traversing the requested depth to
+compute `total`, even after hitting `limit` or path byte budget. For large directory trees,
+reduce `depth` or select a subfolder. `total` accounts for hidden-entry filtering and recursion
+deduplication; it is not a universal count of all possible filesystem paths.
 
-## Regressão
+## Regression
 
-Na raiz do repositório, execute `npm run test:list`.
+From the repository root, run `npm run test:list`.
 
-Os 13 testes usam a definição nativa `defineTool` do DSH instalado e um backend
-em memória. Cobrem argumentos, defaults, cwd, ordenação, profundidade, ocultos,
-limites, identidades repetidas, cancelamento, erros, renderização e orientação no
-system prompt. Não usam modelos, credenciais ou operações reais de filesystem.
-Não substituem testes de integração do backend, sandbox ou symlinks reais.
+The 13 tests use the native `defineTool` definition of the installed DSH and an in-memory
+backend. They cover arguments, defaults, cwd, sorting, depth, hidden entries, limits,
+repeated identities, cancellation, errors, rendering, and system prompt guidance.
+They do not use models, credentials, or actual filesystem operations. They do not replace
+backend integration, sandbox, or real symlink tests.
 
-Este refinamento acrescenta documentação e testes, sem alterar `index.mjs` ou
-`common.mjs`, nem instalar dependências novas.
+This refinement adds documentation and tests without modifying `index.mjs` or `common.mjs`,
+and without installing new dependencies.

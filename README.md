@@ -1,88 +1,87 @@
-# dsh-customs — oficina reproduzível do DSH
+# dsh-customs — reproducible DSH workshop
 
-Este repositório é a base para reconstruir a oficina de Alex em outra máquina:
-fontes dos plugins, receitas dos forks, builds, artefatos e ligação aos perfis.
-Não é um backup da máquina nem um segundo lugar para guardar configurações pessoais.
+This repository is the foundation for rebuilding Alex's workshop on another machine:
+plugin sources, fork recipes, builds, artifacts, and wiring into profiles.
+It is not a backup of the machine nor a second location to store personal configurations.
 
-## Divisão de responsabilidades
+## Separation of Responsibilities
 
-| Lugar | Responsabilidade |
+| Location | Responsibility |
 | --- | --- |
-| **dsh-customs** | Plugins, versões/pins, patches, ferramentas de preparação/build e wiring gerado |
-| **dotfiles** | Configurações pessoais de `.dsh`, providers, preferências e launchers da shell/serviços |
-| **Instalação DSH** | CLI e grafo de dependências produzido pela receita |
-| **Dados privados** | Sessões, attachments, credenciais e OAuth; não entram no manifesto nem no bootstrap |
+| **dsh-customs** | Plugins, versions/pins, patches, preparation/build tooling, and generated wiring |
+| **dotfiles** | Personal `.dsh` configurations, providers, preferences, shell launchers, and services |
+| **DSH installation** | CLI and dependency graph produced by the recipe |
+| **Private data** | Sessions, attachments, credentials, and OAuth; not included in manifest or bootstrap |
 
-TUI e Antigravity continuam em forks separados, com URL e commit fixos. O Pi
-recuperado é um snapshot verificado e versionado em `sources/pi-ai`, sem Git HEAD
-inventado. Mudanças locais não publicadas não aparecem num clone remoto.
+TUI and Antigravity remain in separate forks with fixed URLs and commits. The recovered
+Pi is a verified snapshot versioned in `sources/pi-ai`, without an invented Git HEAD.
+Unpublished local changes do not appear in a remote clone.
 
-## Instalação limpa em Docker
+## Clean Installation in Docker
 
-[DOCKER-DSH.md](DOCKER-DSH.md) descreve a receita atual, o ambiente isolado e os
-limites de comparação. `install.sh --fresh` é Docker-only e recusa uma instalação
-existente; nenhum OAuth ou histórico do host entra na imagem. O build Docker real
-e os básicos offline passaram; evidências e limites estão documentados no link.
+[DOCKER-DSH.md](DOCKER-DSH.md) describes the current recipe, the isolated environment, and
+comparison boundaries. `install.sh --fresh` is Docker-only and refuses an existing
+installation; no host OAuth or history enters the image. The actual Docker build
+and offline basics passed; evidence and limits are documented in the link.
 
-`tools/clean-install/` usa os forks atuais e as melhorias de persistência/Codex.
-`tools/workshop/` permanece uma baseline histórica, não a receita do host atual.
+`tools/clean-install/` uses current forks and persistence/Codex improvements.
+`tools/workshop/` remains a historical baseline, not the current host recipe.
 
-## Instalação no host (máquina nova com dotfiles)
+## Host Installation (New Machine with Dotfiles)
 
-Caminho para instalar só o `dsh-tui` e seus plugins numa máquina cujo `~/.dsh` já
-veio do dotfiles, sem Companion, web ou systemd. É a mesma receita pinada do Docker
-(`tools/clean-install/host.mjs` compõe as etapas exportadas de `install.mjs`), com
-Node ≥24 ativo (nvm serve; o runtime roda nele), headers do node-pty desse Node e
-sem seed de perfil. Ver a [tarefa 130](.plan/tasks/130-Instalar-dsh-tui-sem-companion-em-maquina-nova-e-portabilidade-de-home.md).
+Path to install only `dsh-tui` and its plugins on a machine whose `~/.dsh` is already
+restored from dotfiles, without Companion, web, or systemd. This is the same pinned recipe
+as Docker (`tools/clean-install/host.mjs` composes stages exported by `install.mjs`), with
+Node ≥24 active (nvm works; the runtime executes on it), node-pty headers for that Node,
+and no profile seed. See [task 130](.plan/tasks/130-Instalar-dsh-tui-sem-companion-em-maquina-nova-e-portabilidade-de-home.md).
 
 ```fish
-# Pré-requisitos: dotfiles restaurado, Node ≥24, git, g++/make/python3, rede (npm/GitHub)
+# Prerequisites: restored dotfiles, Node ≥24, git, g++/make/python3, network (npm/GitHub)
 git clone https://github.com/al4xdev/dsh-customs.git ~/git/my/dsh-customs
 cd ~/git/my/dsh-customs
 node tools/clean-install/host.mjs --fresh
-dsh   # função fish do dotfiles → local-model-launch.mjs → --profile dsh-tui
+dsh   # fish function from dotfiles → local-model-launch.mjs → --profile dsh-tui
 ```
 
-O `--fresh` recusa runtime/build já existentes. Além do runtime em
-`~/.local/share/dsh-cli`, ele cria só o que o dotfiles não carrega, e só onde falta:
-checkouts de dev `frontend/dsh-tui` (`custom`) e `plugins/dsh-antigravity` (`main`),
-links `~/.dsh/profiles/{,dsh-tui/}node_modules` → runtime e o launcher
-`tools/dsh-launcher/local-model-launch.mjs` copiado para o runtime. Login OAuth é
-manual na TUI; a primeira abertura mostra o guia de boas-vindas (`Esc` pula).
+`--fresh` rejects an already existing runtime/build. Beyond the runtime in
+`~/.local/share/dsh-cli`, it creates only what dotfiles does not carry, and only where missing:
+dev checkouts `frontend/dsh-tui` (`custom`) and `plugins/dsh-antigravity` (`main`),
+symlinks `~/.dsh/profiles/{,dsh-tui/}node_modules` → runtime, and the launcher
+`tools/dsh-launcher/local-model-launch.mjs` copied to runtime. OAuth login is
+manual in the TUI; initial launch displays the welcome guide (`Esc` skips).
 
-**Perfis portáveis.** O DSH ancora o `baseUrl` do loader no diretório do perfil, e
-`name:`/`path:` começando com `./` ou `../` resolvem a partir dele. Por isso o perfil
-`dsh-tui` usa caminhos relativos (`../../../git/my/dsh-customs/plugins/...`) e vale
-em qualquer HOME com o mesmo layout. `node tools/profile-portable.mjs --profile NOME
-[--from-home DIR] [--write]` converte um perfil com caminhos absolutos, com prova
-estrutural de equivalência e renomeação em cascata dos `alex-research-<hash>.yml`.
-Os perfis `web`, `headless`, `tui` e `companion` do lab ainda têm `/home/alex`.
+**Portable profiles.** DSH anchors the loader `baseUrl` to the profile directory, and
+`name:`/`path:` starting with `./` or `../` resolve relative to it. Thus the
+`dsh-tui` profile uses relative paths (`../../../git/my/dsh-customs/plugins/...`) and works
+in any HOME with identical layout. `node tools/profile-portable.mjs --profile NAME
+[--from-home DIR] [--write]` converts a profile with absolute paths, providing structural
+proof of equivalence and cascading renames of `alex-research-<hash>.yml`.
+The lab `web`, `headless`, `tui`, and `companion` profiles still contain `/home/alex`.
 
-**Configuração só desta máquina** (providers corporativos, modelo padrão) vai em
-`~/.dsh/cordis.patch.yml`: camada do DSH aplicada depois do perfil e ignorada pelo
-dotfiles, para não levar dados de uma máquina ao git nem quebrar a outra.
+**Machine-only configuration** (corporate providers, default model) goes into
+`~/.dsh/cordis.patch.yml`: a DSH layer applied after the profile and ignored by
+dotfiles, avoiding committing machine-specific data to Git or breaking another host.
 
-## Mapa do repositório
+## Repository Map
 
-- `plugins/`: plugins locais. `plugins/activation.json` é a lista única de ativação.
-- `tools/workshop/manifest.json`: versões exatas, fontes/pins e estratégias da oficina.
-- `tools/workshop/bootstrap.mjs`: doctor sem efeitos, plano, preparação e bootstrap explícito.
-- `tools/task10-frontend/`: receita TUI upstream + patch das extensões locais commitadas.
-- `tools/pi-ai-fork/`: build/validação da correção pi-ai; ferramentas antigas de promoção
-  têm escopo desta máquina, não são instaladores universais.
-- `tools/activate.mjs`: gera somente os blocos gerenciados `alex-*` nos perfis.
-- `tools/clean-install/host.mjs`: instalação no host (acima); `install.mjs` é a do Docker.
-- `tools/profile-portable.mjs` + `tools/profile-paths.mjs`: caminhos relativos ao perfil.
-- `tools/dsh-launcher/local-model-launch.mjs`: launcher que o `dsh.fish` do dotfiles chama.
-- `tools/prompt-audit/`: auditoria offline do texto que o harness manda ao modelo (abaixo).
-- `frontend/dsh-tui/` e `plugins/dsh-antigravity/`: checkouts locais separados, gitignored.
-- `.plan/`: histórico de tarefas. `.dumps/`: evidência/fixtures locais, gitignored.
+- `plugins/`: local plugins. `plugins/activation.json` is the single activation list.
+- `tools/workshop/manifest.json`: exact versions, sources/pins, and workshop strategies.
+- `tools/workshop/bootstrap.mjs`: effect-free doctor, planning, preparation, and explicit bootstrap.
+- `tools/task10-frontend/`: upstream TUI recipe + patch of committed local extensions.
+- `tools/pi-ai-fork/`: build/validation of pi-ai fix; legacy promotion tools are scoped to this machine, not universal installers.
+- `tools/activate.mjs`: generates only managed `alex-*` blocks in profiles.
+- `tools/clean-install/host.mjs`: host installation (above); `install.mjs` is for Docker.
+- `tools/profile-portable.mjs` + `tools/profile-paths.mjs`: paths relative to profile.
+- `tools/dsh-launcher/local-model-launch.mjs`: launcher invoked by `dsh.fish` in dotfiles.
+- `tools/prompt-audit/`: offline audit of text the harness sends to the model (below).
+- `frontend/dsh-tui/` and `plugins/dsh-antigravity/`: separate local checkouts, gitignored.
+- `.plan/`: task history. `.dumps/`: local evidence/fixtures, gitignored.
 
-## Nova máquina: sequência segura
+## New Machine: Safe Sequence
 
-Requisitos da receita atual: Node **24+**, Git, npm e toolchain do frontend.
-Configurações devem ser restauradas pelo **dotfiles**, conforme o README dele.
-Não copie sessões/credenciais por meio desta receita.
+Requirements for current recipe: Node **24+**, Git, npm, and frontend toolchain.
+Configurations must be restored via **dotfiles**, following its README.
+Do not copy sessions or credentials through this recipe.
 
 ```fish
 git clone https://github.com/al4xdev/dsh-customs.git ~/git/my/dsh-customs
@@ -91,232 +90,230 @@ npm ci --ignore-scripts
 npm run workshop:doctor
 ```
 
-O doctor valida a receita e os hashes; não inicia o DSH, não conecta providers,
-não lê configs privadas e não instala nada. `ready: true` significa **receita
-consistente**, não build completo ou aceitação interativa comprovados.
+The doctor validates the recipe and hashes; it does not start DSH, does not connect providers,
+does not read private configs, and does not install anything. `ready: true` signifies a
+**consistent recipe**, not a verified full build or interactive acceptance.
 
-Escolha um destino **novo**, cujo diretório pai já exista. Não use a instalação
-ativa ou `.dsh`. A receita protege esses caminhos e recusa overwrite:
+Choose a **new** destination whose parent directory already exists. Do not target the
+active installation or `.dsh`. The recipe protects these paths and rejects overwrites:
 
 ```fish
 set WORKSHOP "$HOME/.local/share/dsh-workshop-rc2"
 node tools/workshop/bootstrap.mjs --plan --destination "$WORKSHOP" --json
-# Somente depois de revisar o plano; usa rede e compila fontes:
+# Only after reviewing the plan; consumes network and compiles sources:
 node tools/workshop/bootstrap.mjs --bootstrap --destination "$WORKSHOP" --allow-network --allow-build --json
 ```
 
-`--prepare` cria apenas plano/manifesto/seed em um destino ausente, sem executar
-comandos. Ele **não instala** e **não pode depois ser reutilizado por --bootstrap**:
-os dois modos exigem destinos novos distintos. Não apague staging parcial para
-esconder falhas; preserve seu receipt e escolha/revise uma nova tentativa.
+`--prepare` only creates plan/manifest/seed in a missing destination, without running
+commands. It **does not install** and **cannot later be reused by --bootstrap**:
+both modes require distinct fresh targets. Do not wipe partial staging to
+hide failures; preserve its receipt and review/choose a fresh run.
 
-O resultado separa `runtime/`, `sources/`, `artifacts/` e `receipt.json`. Artefatos
-usados numa instalação precisam permanecer em **armazenamento durável**, não em
-`.dumps`. Aqui `.dumps` é usado somente para ensaios, nunca para ativação nova.
+The result separates `runtime/`, `sources/`, `artifacts/`, and `receipt.json`. Artifacts
+used by an installation must remain in **durable storage**, not in `.dumps`.
+Here `.dumps` is strictly used for dry runs, never for fresh activation.
 
-**Perfis não são ativados automaticamente.** O bootstrap prepara a CLI com o
-pi-ai corrigido e o pacote Antigravity, além do artefato TUI. Instalar o bundle
-TUI nos perfis restaurados, gerar wiring e ajustar launchers do dotfiles são
-etapas explícitas posteriores. Ver [o guia da oficina](tools/workshop/README.md).
+**Profiles are not activated automatically.** Bootstrap prepares the CLI with the
+patched pi-ai and Antigravity package, plus the TUI artifact. Installing the TUI bundle
+into restored profiles, generating wiring, and adjusting dotfiles launchers are
+explicit subsequent steps. See [the workshop guide](tools/workshop/README.md).
 
-## Receita atual e limites
+## Current Recipe and Limits
 
-| Componente | Receita |
+| Component | Recipe |
 | --- | --- |
 | DSH | `@deepseek-ai/dsh@0.2.0-rc.2` |
-| TUI | Base `c2eee952…`, patch completo equivalente ao fork local `c4f04010…`, pnpm `11.21.0` |
-| pi-ai | Baseline portátil `c043dedb…`, baseada em `0.87.1`, com correção de reasoning implícito; não segue HEAD |
-| Antigravity | Fork `7dcd2427…`, versão `0.1.0-rc.5`, exportação de `lib` já commitado |
+| TUI | Base `c2eee952…`, full patch equivalent to local fork `c4f04010…`, pnpm `11.21.0` |
+| pi-ai | Portable baseline `c043dedb…`, based on `0.87.1`, with implicit reasoning fix; does not follow HEAD |
+| Antigravity | Fork `7dcd2427…`, version `0.1.0-rc.5`, `lib` export already committed |
 
-O host desta máquina já usa a promoção separada da tarefa 26: fonte `f5a24c96…`
-e artefato pi-ai `206545bfd51e`. Isso não atualiza os pins da oficina automaticamente.
+The host on this machine already runs the separate promotion from task 26: source `f5a24c96…`
+and pi-ai artifact `206545bfd51e`. This does not automatically update workshop pins.
 
-A tarefa 32 acrescenta `retryPolicies` por provider ao OAuth do fork TUI local;
-no perfil desta máquina, Codex usa modo normal, nove retries e backoff de 5s
-até 20min (última espera real 18–20min com jitter; 41min15s nominais acumulados,
-além das requisições). O motor oficial continua dono de orçamento e cancelamento.
-A etapa32 não muda os outros providers; a extensão Antigravity36 descrita abaixo
-configura sua política separadamente. Essa extensão local não está nos pins
-TUI/patch históricos acima; o checkout tem mudanças não publicadas. Não alegue
-reprodução da configuração atual só com o doctor/baseline portátil. Candidato e
-receipts de validação/promoção são separados, sem reempacotar artefatos antigos.
+Task 32 adds per-provider `retryPolicies` to local TUI fork OAuth;
+in this machine's profile, Codex uses normal mode, nine retries, and backoff from 5s
+up to 20min (last actual wait 18–20min with jitter; 41min15s nominal accumulated,
+excluding request durations). The official engine remains owner of budget and cancellation.
+Step 32 does not alter other providers; the Antigravity 36 extension described below
+configures its policy separately. That local extension is not in historical TUI/patch
+pins above; the checkout contains unpublished changes. Do not claim
+reproduction of current configuration solely from doctor/portable baseline. Candidate and
+validation/promotion receipts are distinct, without repackaging legacy artifacts.
 
-A tarefa112 unifica a recuperação introduzida pela105 em
-[`alex-llm-resilience`](plugins/llm-resilience/README.md): uma política finita
-para qualquer provider nativo/pi-ai, dez retries adicionais exponenciais de
-7,03125s até60min, sem jitter por padrão; retry9=30min e10=60min.
-As esperas somam cerca de1h59min53s, além das requisições. O self-heal é o único
-proprietário do orçamento principal: acrescenta `harness warning:` com diagnóstico
-seguro e devolve uma preparação nova, sem encadear outro orçamento técnico.
-O manifesto declara controller, classificador tipado e self-heal nos cinco
-perfis, inclusive Companion. O retry nativo e o fork antigo não podem concorrer;
-a extensão tipada de reset AGY continua no mesmo orçamento e teto60min; um mínimo
-do servidor acima desse teto suspende a recuperação em vez de tentar cedo demais.
-Compaction/títulos usam o mesmo scheduler e contexto diagnóstico, com replay
-seguro e descarte de tentativas falhas. Créditos legados consumidos e limites
-explícitos permanecem conservados; ferramentas locais concluídas não se repetem.
-Controller5/self-heal6 são os alvos imutáveis atuais; a tarefa124 corrige no controller5
-os defaults implícitos do schema que desativavam a recuperação. Owner6 e protocolos
-permanecem inalterados; controller4 é preservado historicamente. Os bundles fechados evitam folhas ESM
-antigas em cache. SDK, perfis e bundles têm promoção/backup próprios; módulos SDK em processos
-já abertos continuam em cache até uma abertura nova, sem restart automático.
-Isso não altera os pins históricos acima nem prova saúde/inferência ao vivo.
+Task 112 unifies recovery introduced by 105 into
+[`alex-llm-resilience`](plugins/llm-resilience/README.md): a finite policy
+for any native/pi-ai provider, ten additional exponential retries from
+7.03125s up to 60min, no jitter by default; retry 9 = 30min and 10 = 60min.
+Total wait sums to ~1h59m53s, excluding request times. Self-heal is the sole
+owner of the primary budget: appends `harness warning:` with safe diagnostics
+and returns fresh preparation, without chaining another technical budget.
+The manifest declares controller, typed classifier, and self-heal across all five
+profiles, including Companion. Native retry and legacy fork must not compete;
+typed AGY reset extension shares the same budget and 60min ceiling; a server
+minimum above that ceiling suspends recovery instead of retrying prematurely.
+Compaction/titles share the same scheduler and diagnostic context, with safe
+replay and discarding of failed attempts. Consumed legacy credits and explicit
+limits remain preserved; completed local tools do not repeat.
+Controller 5 / self-heal 6 are the current immutable targets; task 124 fixes
+implicit schema defaults in controller 5 that disabled recovery. Owner 6 and protocols
+remain unchanged; controller 4 is historically preserved. Closed bundles prevent legacy ESM
+leaves in cache. SDK, profiles, and bundles have their own promotion/backup; SDK modules in
+already open processes stay cached until a fresh launch, without automatic restart.
+This does not alter historical pins above or prove live inference/health.
 
-A tarefa131 revoga dois pontos da112 ("não há tentativa 11" e "um aviso por falha").
-Controller6/self-heal7 (contrato 3, `llmRecoveryUnbounded`) não têm limite de
-contagem para classes transitórias: as dez primeiras esperas mantêm a escala acima
-e as seguintes ficam em 60min indefinidamente; terminais continuam terminais e
-`maxRetries: 0`/limites finitos explícitos valem. Mínimos tipados do provedor
-(Retry-After, reset de cota AGY) são esperados até o teto genérico de 24h. Cada
-cadeia recebe um único aviso curto, sem contador (novo só se o código mudar), e
-toda recusa registra um motivo fixo no log. Audits passam a payload v2/policy3
-(v1 continua legível); voltar a controller5/self-heal6 depois disso não é downgrade
-seguro. `node tools/resilience/doctor.mjs` confere ponte do SDK, bundles e perfis
-sem escrever nada.
+Task 131 revokes two points from 112 ("no 11th attempt" and "one warning per failure").
+Controller 6 / self-heal 7 (contract 3, `llmRecoveryUnbounded`) have no count
+limit for transient error classes: the first ten waits follow the scale above
+and subsequent waits remain at 60min indefinitely; terminal errors remain terminal and
+`maxRetries: 0` / explicit finite limits are honored. Typed provider minimums
+(Retry-After, AGY quota reset) are waited up to the generic 24h ceiling. Each
+chain receives a single short warning without a counter (a new one only if code changes), and
+every refusal logs a fixed reason. Audits switch to payload v2 / policy 3
+(v1 remains readable); reverting to controller 5 / self-heal 6 afterwards is not a safe
+downgrade. `node tools/resilience/doctor.mjs` checks SDK bridge, bundles, and profiles
+without writing anything.
 
-A tarefa 33 acrescenta usage ao fork Antigravity local: `/antigravity-usage`
-mostra percentuais reportados por modelo, reset e janela desconhecida;
-`/antigravity-usage --refresh` ignora o cache de 60s. É metadata sob demanda,
-sem inferência, polling ou alteração de retry/billing; o serviço host
-`antiGravityUsage` aplica deadline de 10s, limites de resposta e invalidação de
-credenciais. A promoção local usa bundle host/declarations compilados em candidato
-isolado e backup durável; recomenda processo TUI novo para carregar módulos de
-forma reproduzível, sem reinício automático.
-Isso não atualiza o pin Antigravity/tarball histórico acima nem comprova painel
-web ou uso sem créditos. Preferências de overages do cliente oficial não são
-herdadas automaticamente pelo fork.
+Task 33 adds usage tracking to the local Antigravity fork: `/antigravity-usage`
+displays reported percentages by model, reset time, and unknown window;
+`/antigravity-usage --refresh` ignores the 60s cache. It is on-demand metadata
+without inference, polling, or retry/billing changes; host service
+`antiGravityUsage` applies a 10s deadline, response bounds, and credential
+invalidation. Local promotion uses compiled host/declarations bundle in an isolated
+candidate and durable backup; a fresh TUI process is recommended to load modules
+reproducibly, without automatic restart.
+This does not update the historical Antigravity pin / tarball above or certify web
+dashboard or zero-credit usage. Official client overage preferences are not
+automatically inherited by the fork.
 
-As tarefas36/42 acrescentam resiliência compartilhada Claude/Gemini ao fork
-Antigravity local: SSE limitado, falhas tipadas sanitizadas, associação de
-assinaturas por bloco lógico e bridge request-local para o motor oficial.
-A política Antigravity deste perfil é normal9, 5s–20min com jitter0.1; Search,
-catálogo, contas e créditos não são rotacionados. `enabledCreditTypes: []` é
-validado no cliente, sem promessa universal de billing pelo servidor.
+Tasks 36/42 add shared Claude/Gemini resilience to the local Antigravity fork:
+bounded SSE, sanitized typed failures, signature association by logical block,
+and request-local bridge to official engine.
+Antigravity policy for this profile is normal 9, 5s–20min with jitter 0.1; Search,
+catalog, accounts, and credits are not rotated. `enabledCreditTypes: []` is
+validated in client, without universal server billing guarantee.
 
-V4 passou 310 testes de pacote e 26 casos native-loop, compilação host isolada,
-14 declarações e consumer público; root contracts 76/76 + grammar config e wiring
-YAML público do perfil também passaram. O teste real Claude aceitou cinco respostas
-de código e um follow-up com replay na mesma sessão; quatro respostas atingiram
-o teto16k, portanto não provam código completo ou executado. Gemini foi comparado
-offline. A sequência parou no primeiro429 real: `RATE_LIMIT`, hint373203889ms
-(~4,32dias), maior que o cap20min, logo zero retries oficiais — fail-fast correto.
-Saldo final ausente permanece desconhecido, não0%; janela e recuperação positiva
-após reset não foram comprovadas. Counters18/26/2 respeitaram32/40/4 e45min ativos.
-A causa do400 anterior continua desconhecida, apesar do bug lógico demonstrado.
+V4 passed 310 package tests and 26 native-loop cases, isolated host build,
+14 declarations, and public consumer; root contracts 76/76 + grammar config and public
+profile YAML wiring also passed. Real Claude test accepted five code responses
+and one follow-up with replay in the same session; four responses reached
+the 16k ceiling, thus not proving complete or executed code. Gemini was compared
+offline. The sequence stopped at the first real 429: `RATE_LIMIT`, hint 373203889ms
+(~4.32 days), exceeding the 20min cap, resulting in zero official retries — correct fail-fast.
+Missing final balance remains unknown, not 0%; window and positive recovery
+after reset were not verified. Counters 18/26/2 respected 32/40/4 and 45min active.
+The root cause of previous 400 remains unknown despite the demonstrated logical bug.
 
-A promoção V4 substituiu somente `lib/index.js` compilado, com backup durável,
-comparação de hashes e rollback que recusa edições posteriores; quatro declarações,
-21 outros outputs e seis outputs TUI foram preservados. Nada atualiza os pins da
-oficina nem constitui nova publicação. Ver [documentação do fork](plugins/dsh-antigravity/README.md#official-retry-policy-and-validated-local-rollout)
-e o [resultado local](.dumps/antigravity-resilience-20261013/promotion-live-result-v4.md).
-Hot-mount de selfheal foi observado num perfil existente, mas não limpa caches SDK;
-idade do processo não prova ausência de todos os hooks. Recomenda-se TUI/worker novo
-para provar carregamento; não houve restart automático. A tarefa43 corrigiu e
-publicou selfheal V2: max3 por episódio consecutivo, renovado por progresso saudável
-causal ou retomada humana autenticada, não por mensagens artificiais/reload.
-Source96 e native50+4 em source/bundle passaram; três gates da entrada física
-configurada observaram audit policyVersion2 em processo próprio novo, sem afirmar
-upgrade de TTYs já abertos. O bundle novo contém toda a lógica; após possível
-ativação V2, restaurar bytes V1 não é downgrade seguro de checkpoint. Ver o
-[resultado local](.dumps/agent-self-heal-20261013-v2/promotion-result-v2.md).
+The V4 promotion replaced only compiled `lib/index.js`, with durable backup,
+hash comparison, and rollback that refuses subsequent edits; four declarations,
+21 other outputs, and six TUI outputs were preserved. Nothing updates workshop
+pins or constitutes a new publication. See [fork documentation](plugins/dsh-antigravity/README.md#official-retry-policy-and-validated-local-rollout)
+and [local outcome](.dumps/antigravity-resilience-20261013/promotion-live-result-v4.md).
+Self-heal hot-mount was observed in an existing profile, but does not flush SDK caches;
+process age does not prove absence of all hooks. A new TUI/worker is recommended
+to prove loading; no automatic restart occurred. Task 43 fixed and
+published self-heal V2: max 3 per consecutive episode, renewed by healthy causal
+progress or authenticated human resumption, not by synthetic messages/reload.
+Source 96 and native 50+4 in source/bundle passed; three physical entry gates
+observed audit policyVersion 2 in a fresh dedicated process, without asserting
+upgrades for open TTYs. The new bundle contains all logic; following potential
+V2 activation, restoring V1 bytes is not a safe checkpoint downgrade. See
+[local outcome](.dumps/agent-self-heal-20261013-v2/promotion-result-v2.md).
 
-A tarefa50 corrigiu a reabertura real de sessões selfheal: o SDK local dsh-cli
-agora reconhece o evento obrigatório `agent/self-heal`, sem relaxar o filtro dos
-outros eventos. O plugin verifica compatibilidade antes de ativar e recusa replay
-de protocolo desconhecido. O perfil aponta para `lib/index-v2-persistence.mjs`;
-109 testes (incluindo disco/zstd e task84) e49 native-loop por source/bundle
-passaram. Task84 mantém7376 eventos/23 audits e hashes originais; nenhuma sessão
-foi reescrita. É uma ponte local hashada, não atualização npx/web ou portabilidade
-upstream; requer processo novo. Ver [contrato e instalação](plugins/agent-self-heal/README.md#required-persistence-protocol-local-bridge)
-e [evidência](.dumps/self-heal-persistence-20261013/result.md).
+Task 50 fixed actual reopening of self-heal sessions: local dsh-cli SDK
+now recognizes mandatory event `agent/self-heal`, without loosening filter for
+other events. Plugin checks compatibility before activating and rejects unknown
+protocol replay. Profile points to `lib/index-v2-persistence.mjs`;
+109 tests (including disk/zstd and task 84) and 49 native-loop per source/bundle
+passed. Task 84 preserves 7376 events / 23 audits and original hashes; no session
+was rewritten. It is a hashed local bridge, not an npx/web update or upstream
+portability; requires a new process. See [contract and installation](plugins/agent-self-heal/README.md#required-persistence-protocol-local-bridge)
+and [evidence](.dumps/self-heal-persistence-20261013/result.md).
 
-**A baseline portátil continua separada do build host local validado.** O build
-monorepo padrão Antigravity espera arquivos upstream ausentes neste clone; a receita
-histórica empacota `lib` commitado e aplica patch hashado para tornar opcional um
-peer legado usado só por tipos/client. O build host isolado recente usa ferramentas
-em cache e dependências desta instalação, não comprova bootstrap universal,
-integração client web, todas as versões LTS ou estabilidade de longo prazo.
+**Portable baseline remains separate from validated local host build.** Standard
+Antigravity monorepo build expects upstream files absent from this clone; historical
+recipe bundles committed `lib` and applies a hashed patch to make optional a
+legacy peer used solely for types/client. Recent isolated host build uses cached tools
+and dependencies of this installation; it does not demonstrate universal bootstrap,
+web client integration, all LTS versions, or long-term stability.
 
-O catálogo usado pelo novo build pi-ai vem do DSH seed isolado, não do catálogo
-alterado desta máquina. Providers/modelos pessoais devem ser configurados
-explicitamente. O primeiro install npm ainda resolve dependências transitivas;
-o lock e hashes resultantes são registrados, sem promessa bit-a-bit entre datas.
+The catalog used by the new pi-ai build comes from isolated DSH seed, not the
+modified catalog of this machine. Personal providers/models must be explicitly
+configured. Initial npm install still resolves transitive dependencies;
+resulting lock and hashes are recorded, with no bit-for-bit guarantee across dates.
 
-## Ativação dos plugins
+## Plugin Activation
 
-Após instalar os bundles corretos e restaurar os perfis pelo dotfiles:
+After installing the proper bundles and restoring profiles via dotfiles:
 
 ```fish
 node tools/activate.mjs --check --profile dsh-tui
-# Revise o drift antes da escrita:
+# Review drift before writing:
 node tools/activate.mjs --write --profile dsh-tui
 ```
 
-A geração resolve caminhos pelo checkout atual e os escreve **relativos ao
-diretório do perfil** (o overlay do repositório continua absoluto, porque linhas
-de `--patch` ancoram no perfil), preservando os bytes dos blocos
-não gerenciados, incluindo comentários/configs por máquina. Não clona forks,
-compila, instala bundles nem cria automaticamente perfis ausentes. A dependência
-`yaml` é local e fixada no lock deste repositório; não depende de um antigo npx.
+Generation resolves paths from current checkout and writes them **relative to
+the profile directory** (the repository overlay remains absolute, because `--patch`
+lines anchor in the profile), preserving unmanaged block bytes, including
+per-machine comments/configs. It does not clone forks, build, install bundles, or
+automatically create missing profiles. The `yaml` dependency is local and pinned in
+this repository's lock; it does not depend on a legacy npx.
 
-Opções: `--profile NAME` (repetível), `--root DIR`, `--json`, `--check`, `--write`.
-Sem `--profile`, o sync também pode atualizar o overlay do repositório.
-Manifestos inválidos, módulos ausentes e múltiplos blocos gerenciados separados
-são reportados; não se tenta adivinhar a configuração. As linhas do bloco
-`# BEGIN/END alex-research activation` pertencem ao `research-activation` e não
-contam como run nem são renderizadas aqui; um `- insert:` isolado só com linhas
-`alex-*` (forma que o migrador de resilience anexa) é dobrado no bloco gerenciado.
+Options: `--profile NAME` (repeatable), `--root DIR`, `--json`, `--check`, `--write`.
+Without `--profile`, sync can also update repository overlay.
+Invalid manifests, missing modules, and multiple separated managed blocks
+are reported; no attempt is made to guess configuration. Lines within
+`# BEGIN/END alex-research activation` belong to `research-activation` and do
+not count as a run or render here; an isolated `- insert:` containing only `alex-*`
+lines (the format appended by the resilience migrator) is folded into the managed block.
 
-## Estado da consolidação desta máquina
+## Consolidation State of this Machine
 
-Locais canônicos: fontes/receitas neste repositório; CLI em
-`~/.local/share/dsh-cli`; configurações no dotfiles/`.dsh`; backups já existentes
-em `~/.local/share/dsh-customs-backups`. O frontend externo/Android/companion
-protótipo não faz parte da instalação da oficina.
+Canonical locations: sources/recipes in this repo; CLI at
+`~/.local/share/dsh-cli`; configurations in dotfiles/`.dsh`; existing backups
+in `~/.local/share/dsh-customs-backups`. External frontend / Android / companion
+prototype is not part of the workshop installation.
 
-Na janela de 2026-10-13, o **web foi migrado do npx para a CLI canônica**, sem
-alterar flags/configs. Dois builds de ensaio antigos foram retirados do workspace
-e 597 diretórios de fixtures descartáveis foram enviados para `/tmp`. A fonte Pi
-foi consolidada em `sources/pi-ai/`: snapshot verificado, não checkout Git
-(remoto indisponível), com `SOURCE-PROVENANCE.json`; ver [o guia Pi](tools/pi-ai-fork/README.md).
+In the 2026-10-13 maintenance window, **web was migrated from npx to the canonical CLI**,
+without altering flags/configs. Two legacy dry-run builds were removed from workspace
+and 597 disposable fixture directories were moved to `/tmp`. Pi source was
+consolidated in `sources/pi-ai/`: verified snapshot, not Git checkout
+(remote unavailable), with `SOURCE-PROVENANCE.json`; see [the Pi guide](tools/pi-ai-fork/README.md).
 
-O proprietário aplicou o corte em terminal separado: **404 links canônicos e
-205 links obsoletos retirados**. A antiga instalação npx, dois runtimes scratch
-Pi e o diretório vazio `dsh-tui-cli` foram enviados para `/tmp` após verificação
-sem consumidores/referências operacionais nos locais auditados. A TUI reaberta
-resolve o adapter no canônico. `status.mjs` verifica o estado atual sem depender
-dessas raízes antigas; o executor de corte ficou histórico, não deve ser repetido.
-Consulte [o levantamento pós-limpeza](LOCAIS-DSH.md) para os locais preservados,
-tamanhos e limites da limpeza. Fontes, dados, backups e compilador necessário
-não foram confundidos com lixo descartável.
-O manifesto já declara o bundle self-heal com persistência, sem reescrever o
-perfil live. Os pins workshop continuam baseline histórica, não reprodução
-integral do host atualizado. Não há limpeza global de cache nem remoção automática
-no bootstrap.
+The owner executed the cut in a separate terminal: **404 canonical links retained and
+205 obsolete links removed**. The old npx installation, two scratch Pi runtimes,
+and empty directory `dsh-tui-cli` were moved to `/tmp` after confirming zero
+consumers/operational references across audited locations. Reopened TUI resolves
+adapter from canonical. `status.mjs` verifies current status without depending
+on retired roots; cut execution script remains historical and must not be repeated.
+See [the post-cleanup inventory](LOCAIS-DSH.md) for preserved locations,
+sizes, and cleanup boundaries. Sources, data, backups, and required compiler
+were not mistaken for disposable trash.
+The manifest already declares self-heal bundle with persistence, without rewriting
+live profile. Workshop pins remain historical baseline, not full reproduction
+of updated host. No global cache cleanup or automatic deletion occurs during bootstrap.
 
-## Browser nativo
+## Native Browser
 
-`plugins/browser` implementa uma única tool hierárquica `browser`, com Playwright
-estável1.64.0 público e worker SDK2 privado. Sessões/Pages pertencem ao Agent;
-screenshots, mobile, vídeo e trace usam artefatos próprios, sem código livre da LLM
-ou dependências no produto. Consulte [contrato e preparação](plugins/browser/README.md).
-A ativação continua controlada pelo manifest e pelos gates de smoke dos perfis;
-existência do módulo ou um doctor pronto não comprova rollout.
+`plugins/browser` implements a single hierarchical tool `browser`, with stable public
+Playwright 1.64.0 and private SDK2 worker. Sessions/Pages belong to the Agent;
+screenshots, mobile, video, and trace use dedicated artifacts, without arbitrary LLM
+code execution or product dependencies. See [contract and setup](plugins/browser/README.md).
+Activation remains controlled by manifest and profile smoke gates;
+module presence or a passing doctor does not prove live rollout.
 
-## Auditoria de prompt
+## Prompt Audit
 
-Depois de atualizar DSH, forks, plugins, presets ou perfis, ou de reinstalar o runtime,
-rode `npm run prompt:audit`. Ele compõe offline (sem rede, credenciais ou chamada de
-modelo) a primeira requisição de uma sessão nova dos perfis `dsh-tui` e `companion`,
-falha se texto do harness contiver frase proibida (contrato "playful" do status line,
-identidade "powered by DeepSeek Harness", persona dos presets, wrapper de AGENTS como
-"guidance") e compara o texto do harness com `tools/prompt-audit/baseline/<perfil>.txt`.
-Arquivos AGENTS/CLAUDE e skills pessoais entram só como placeholder. O boot usa uma
-cópia do perfil em `/tmp`, nunca o perfil real: reescrever o `cordis.yml` real recarrega
-o Companion do lab. O que fazer com cada falha, e quem aprova `--update`, está no
-[AGENTS.md](AGENTS.md).
+After updating DSH, forks, plugins, presets, or profiles, or reinstalling runtime,
+run `npm run prompt:audit`. It composes offline (no network, credentials, or model
+calls) the initial request of a fresh session for `dsh-tui` and `companion` profiles,
+fails if harness text contains a prohibited phrase ("playful" status line contract,
+"powered by DeepSeek Harness" identity, preset personas, AGENTS wrapper as "guidance"),
+and diffs harness text against `tools/prompt-audit/baseline/<profile>.txt`.
+AGENTS/CLAUDE files and personal skills enter only as placeholders. Boot uses a copy
+of the profile under `/tmp`, never the live profile: rewriting live `cordis.yml` reloads
+lab Companion. Handling of failures and who approves `--update` is in [AGENTS.md](AGENTS.md).
 
-## Validação
+## Validation
 
 ```fish
 npm run test:prompt-audit
@@ -329,7 +326,7 @@ npm run test:browser
 npm run test:browser:live
 ```
 
-Os testes da oficina usam fixtures isoladas e comandos controlados; não substituem
-um build real ou teste manual dos perfis. A documentação em `tools/task10-profile/`
-registra provisionamento/promoção históricos e suas restrições, não uma promessa de
-instalação universal nem permissão de alterar o runtime ativo.
+Workshop tests use isolated fixtures and controlled commands; they do not replace
+a real build or manual profile testing. Documentation in `tools/task10-profile/`
+records historical provisioning/promotion and constraints, not a promise of
+universal installation or permission to alter active runtime.

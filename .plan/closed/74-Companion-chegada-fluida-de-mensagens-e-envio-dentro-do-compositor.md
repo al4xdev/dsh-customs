@@ -1,18 +1,18 @@
-# Companion: chegada fluida de mensagens e envio dentro do compositor
+# Companion: fluid message arrival and send button inside composer
 
-## Pedido após teste físico bem-sucedido
-O proprietário confirmou 'deu certo' no Android atualizado. Pediu: (1) chegada de mensagens menos abrupta quando resposta muito rápida, com pequena latência mínima de apresentação se necessário para completar animações fluidas; (2) botão enviar dentro da caixa de mensagem para aproveitar espaço. Perguntou também modelo usado.
+## Request after successful physical test
+The owner confirmed 'it worked' on the updated Android. Requested: (1) less abrupt message arrival when responses are very fast, with small minimal presentation latency if necessary to complete fluid animations; (2) send button placed inside the message input box to save vertical space. Also inquired about the active model used.
 
-## Escopo
-- Inspecionar a cadeia atual de projeção/render/autoscroll/entrada220ms e identificar remounts/chaves ou saltos de layout que causam truncamento visual. Não esconder perda real de dados com animações: confirmar que a verdade do transcript e todos os tokens permanecem íntegros.
-- Adicionar coalescência/ritmo mínimo apenas na publicação/apresentação visual e transição de entrada/settlement quando necessário. Não atrasar backend, fila, ACK/cancel/approvals, nem persistir/repetir submissões. Completar a animação de entrada antes de trocar abruptamente de estado; duração curta e previsível, sem reter artificialmente stop após fim real.
-- Movimento reduzido/scale0 = apresentação imediata. Pausa/background/navegação/generation nova cancela ticker/latência e atualiza para verdade corrente, sem replay de histórico/paging nem deixar sequência antiga sobrepor nova.
-- Melhorar follow-bottom: acompanhar suavemente apenas usuário já perto do fim; respeitar scroll manual, leitura histórica e seleção. Evitar jump/remount de live para durable que repita ou trunque conteúdos.
-- Colocar send icon/button dentro da caixa do compositor com touch target48dp e descrição 'Enviar', preservando múltiplas linhas, IME, draft RAM, enabledguards SENDING/UNKNOWN/conexão/auth/busy e once-admission. Remover a linha extra do botão externo; não alterar política de envio automático/Enter.
-- Verificar configuração de modelo do perfil dedicado e informar valor configurado, sem alegar modelo histórico por conversa nem trocar modelo sem pedido.
+## Scope
+- Inspect the current projection/render/autoscroll/220ms entry pipeline and identify remounts/keys or layout jumps causing visual truncation. Do not mask real data loss with animations: confirm transcript integrity and all tokens remain intact.
+- Add coalescing/minimal pacing strictly at visual presentation/publication and entry/settlement transitions when needed. Do not delay backend, queue, ACK/cancel/approvals, nor persist/replay submissions. Complete entry animation before abruptly switching states; short and predictable duration, without artificially withholding stop status after actual completion.
+- Reduced motion / scale 0 = immediate presentation. Pause/background/navigation / new generation cancels ticker/latency and updates to current ground truth, without history/paging replay or letting older sequences overwrite newer ones.
+- Improve follow-bottom: smoothly follow only when user is already near the bottom; respect manual scrolling, historical reading, and text selection. Avoid live-to-durable jumps/remounts that repeat or truncate content.
+- Place send icon/button inside composer container with 48dp touch target and 'Send' accessibility description, preserving multiline input, IME, RAM draft, SENDING/UNKNOWN/connection/auth/busy enabled guards, and once-admission. Remove the extra external button row; do not alter auto-send / Enter policies.
+- Verify dedicated profile model configuration and report configured value, without claiming historical per-conversation models or switching models without request.
 
-## Validação
-Testes determinísticos de burst rápido/end antes da animação, partial→durable/chaves, redução de movimento, cancel/nova geração, leitura/scroll/seleção, composer botão interno e target48dp/disabled/doubletap. Build/lint/JVM/Compose no emulador e fixture sintética. Proprietário agora testa conversas reais: não instalar/reiniciar/capturar chat privado sem nova condição segura/confirmada.
+## Validation
+Deterministic tests covering fast burst/completion before animation finishes, partial -> durable key transitions, reduced motion, cancellation / new generation, reading/scroll/selection states, composer inner button, 48dp touch target, and disabled / double-tap protection. Build/lint/JVM/Compose tests on emulator with synthetic fixtures. Owner now tests real conversations: do not install/restart/capture private chat without a fresh safe/confirmed condition.
 
-## Aceite
-Mensagens rápidas chegam com transição curta e contínua sem perda/duplicação/replay, compositor ocupa menos altura e enviar fica interno acessível; modelo atual informado. Nenhuma mudança no modelo, backend, sandbox/aprovação ou serviço necessária para esses ajustes.
+## Acceptance
+Rapid messages arrive with smooth, continuous transitions without loss/duplication/replay; composer occupies less height with accessible inner send button; current model reported. No changes to model, backend, sandbox/approvals, or service required for these adjustments.

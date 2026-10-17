@@ -1,71 +1,71 @@
-# session_create: destino dsh-tui (plano129)
+# session_create: dsh-tui Target (Plan 129)
 
-## O que foi corrigido
+## What was Fixed
 
-A tool pública continua scoped ao Companion, mas seu owner não chama mais `agents.create` no processo Companion. Ele prepara o pedido, pede aprovação nativa `allowed-once` e envia uma autorização assinada a um bridge compatível no **host dsh-tui já aberto**. O host resolve/monta seu preset `standard`, usa seu modelo e suas políticas reais e mantém o novo handle root-owned. Não copia o preset do chamador, não muda a aba ativa e não fabrica origem apenas alterando o header.
+The public tool remains scoped to Companion, but its owner no longer calls `agents.create` inside the Companion process. It prepares the request, requests native `allowed-once` approval, and sends a signed authorization to a compatible bridge in the **already running dsh-tui host**. The host resolves/mounts its `standard` preset, uses its actual model and policies, and keeps the new handle root-owned. It does not copy caller preset, does not change the active tab, and does not fabricate origin by simply altering headers.
 
-A implementação interna antiga (`controller.mjs`/`provisioner.mjs`) permanece para testes legados explicitamente identificados; não é fallback do owner público.
+The legacy internal implementation (`controller.mjs`/`provisioner.mjs`) remains for explicitly identified legacy tests; it is not a fallback for the public owner.
 
-## Uso
+## Usage
 
-Argumentos da tool **session_create**, não da tool `session`:
+Tool arguments for **session_create**, not the `session` tool:
 
 ```json
 {"operation":"capabilities"}
 ```
 
-O retorno inclui `destination_profile:dsh-tui`, `preset:standard`, `hosts`, `available`, `new_project:false` e limites. Quando houver mais de um host, escolha um `host_id` exato retornado. Não escolher arbitrariamente o primeiro PID. Sem host compatível, retorna `destination_host_unavailable` antes de aprovar/criar: abrir/recarregar uma TUI com bridge atualizado é necessário. A existência de um canal antigo que só suporta send não prova suporte a create.
+The response includes `destination_profile:dsh-tui`, `preset:standard`, `hosts`, `available`, `new_project:false`, and limits. When multiple hosts exist, choose an exact returned `host_id`. Do not arbitrarily pick the first PID. Without a compatible host, it returns `destination_host_unavailable` prior to approval/creation: opening/reloading a TUI with an updated bridge is required. The existence of an older channel that only supports send does not prove create support.
 
 ```json
-{"operation":"create","request":{"version":1,"owner_intent":"Criar uma sessão separada no dsh-tui para o pedido do usuário","target":{"kind":"current"},"delivery":{"mode":"empty"},"idempotency_key":"pedido-123"}}
+{"operation":"create","request":{"version":1,"owner_intent":"Create a separate session in dsh-tui for user request","target":{"kind":"current"},"delivery":{"mode":"empty"},"idempotency_key":"request-123"}}
 ```
 
-Com vários hosts, adicione `request.host_id` com o ID real. `request.profile` e `request.preset`, quando fornecidos, só aceitam `dsh-tui` e `standard`. `preset:companion` é rejeitado, não reinterpretado.
+With multiple hosts, add `request.host_id` with the real ID. `request.profile` and `request.preset`, when provided, accept only `dsh-tui` and `standard`. `preset:companion` is rejected, not reinterpreted.
 
-`delivery:empty` é o padrão: cria/persiste a sessão sem prompt/draft/modelo executado. `delivery:{mode:submit,text:...}` exige texto literal não vazio até16KiB UTF-8 e também admite a tarefa para execução. A aprovação exibe o texto completo escapado reversivelmente, com `initial_text_utf8_bytes`, `initial_text_sha256` e a contagem de invisíveis. CRLF vira LF antes do cartão, do hash e do envio (o literal aprovado é o entregue). Tags Unicode (U+E0000–E007F), controles bidi, uso privado, CR isolado e demais controles (exceto LF/TAB) são recusados (`invalid_text`) antes da aprovação, em todo campo de texto: o dono (humano) não os veria, mas o agente destino leria. Invisíveis com uso legítimo raro (ZWJ, ZWSP, BOM, seletores de variação) passam, sempre exibidos como `\uXXXX`. ACK de admissão e `status:completed` do provisionamento não significam conclusão da tarefa.
+`delivery:empty` is default: creates/persists session without executing prompt/draft/model. `delivery:{mode:submit,text:...}` requires non-empty literal text up to 16 KiB UTF-8 and admits the task for execution. Approval displays full reversibly escaped text, with `initial_text_utf8_bytes`, `initial_text_sha256`, and invisible character count. CRLF becomes LF before card rendering, hash, and dispatch (approved literal is delivered literal). Unicode tags (U+E0000–E007F), bidi controls, private use, isolated CR, and other controls (except LF/TAB) are refused (`invalid_text`) before approval across all text fields: human owner would not see them, but target agent would read them. Rare legitimate invisibles (ZWJ, ZWSP, BOM, variation selectors) pass, always displayed as `\uXXXX`. Admission ACK and provisioning `status:completed` do not mean task completion.
 
-O modelo padrão é o do host destino. `request.model` é uma asserção opcional exata desse modelo/provider/effort, não uma seleção arbitrária nem cópia do Companion. Nenhum default global é salvo.
+Default model is that of destination host. `request.model` is an optional exact assertion of model/provider/effort, not arbitrary selection or copy from Companion. No global default is saved.
 
-## Políticas e fronteiras
+## Policies and Boundaries
 
-A aprovação no Companion permanece obrigatoriamente `allowed-once`, mesmo quando o destino tem `approval:never`. A confirmação mostra perfil, host, modelo, cwd, preset e políticas reais do destino. Se o dsh-tui usa `danger-full-access/never`, isso é declarado como execução futura ampla sem aprovações de ferramentas; não é escondido nem silenciosamente substituído por outra política.
+Companion approval remains strictly `allowed-once`, even if destination has `approval:never`. Confirmation displays profile, host, model, cwd, preset, and actual destination policies. If dsh-tui uses `danger-full-access/never`, that is declared as broad future execution without tool approvals; it is neither concealed nor silently replaced by another policy.
 
-- `current`: cwd comprovado do chamador, dentro do workspace dedicado ou child autorizado.
-- `existing_project`: projeto nativo exato já existente dentro da fronteira autorizada, com fatos revalidados nos dois hosts.
-- `new_project`: **indisponível** nesta versão e por isso **fora do schema anunciado** ao modelo (o parser interno ainda o reconhece para recusar explicitamente). A API nativa de registro é create-or-reuse e não comprova propriedade exclusiva de novo projeto; a tool não adota resultados de uma corrida nem inventa `created:true`. Retorna `new_project_unavailable`, sem criação/aprovação. Não criar diretórios/projetos por outro caminho para contornar a recusa.
+- `current`: proven caller cwd, inside dedicated workspace or authorized child.
+- `existing_project`: exact native project existing within authorized boundary, with revalidated facts across both hosts.
+- `new_project`: **unavailable** in this version and therefore **excluded from advertised schema** to model (internal parser still recognizes it to explicitly reject). Native registration API is create-or-reuse and does not prove exclusive ownership of new project; tool does not adopt race outcomes or invent `created:true`. Returns `new_project_unavailable`, without creation/approval. Do not create directories/projects via another route to bypass refusal.
 
-A descrição e o schema evitam jargão interno: "workspace dedicado do Companion" é a pasta raiz (`~/git/my/dsh-companion-workspace`); `existing_project` é o ID de um projeto já registrado no DSH cuja pasta fica diretamente em `projects/` desse workspace. "Dono (humano)" é sempre a pessoa; serviços internos `*Owner` não aparecem no texto do modelo.
+Description and schema avoid internal jargon: "dedicated Companion workspace" is the root folder (`~/git/my/dsh-companion-workspace`); `existing_project` is the ID of an already registered DSH project whose folder sits directly in `projects/` of that workspace. "Human owner" is always the person; internal `*Owner` services do not appear in model text.
 
-O host destino mantém a sessão independente do chamador Companion. Cancelamento/desconexão do chamador após envio não mata a sessão de destino. Fechar o host dono drena/fecha somente seus handles. Não há promessa de preservar modelo no cold resume de uma sessão vazia: binding é live-pinned e essa limitação permanece explícita.
+Target host maintains session independently from caller Companion. Caller cancellation/disconnect after dispatch does not kill target session. Closing owner host drains/closes only its handles. No guarantee of preserving model across cold resume of an empty session: binding is live-pinned and this limitation remains explicit.
 
-## Protocolo e integridade
+## Protocol and Integrity
 
-- `list` anuncia `capabilities.createProfile` sem efeitos de criação.
-- `prepare-create` é somente leitura e registra preparação limitada/temporária, com hash de proposta, perfil, preset, modelo, política, configuração, módulos e fatos de caminhos.
-- `create-session` exige grant próprio, separado do grant de send, com MAC sobre identidade do processo/bridge, preparação/hash, nonce e TTL. A preparação inclui IDs e literal; não existem campos `confirmed`/grant aceitos do modelo.
-- Host revalida antes dos efeitos, publicação e admissão. Fences bloqueiam requests/tools não aprovados durante startup.
-- Journal durável e reserva anterior ao efeito; nonces e IDs não são reusados como autorização. Preparação pode expirar enquanto se aguarda aprovação: erro explícito, sem replay de aprovação antiga.
-- Perda de resposta após dispatch é UNKNOWN, nunca confirmação de que nada aconteceu. `status` lê o recibo do chamador; não reexecuta. Sem retry automático, rollback destrutivo, delete/archive ou remoção de lock incerto.
-- Só respostas que **provam ausência de efeito** viram `not_started` (sem `recovery_required`): falha local antes de enviar o frame (`retrySafe:true`: cancelamento, chave indisponível, bridge inalcançável) ou recusa autenticada do destino antes de ele abrir seu próprio ledger (`effect:none`). O recibo fica no journal; a mesma chave devolve esse recibo, sem retry.
-- `owner.lock` grava `pid`+`startTime` (ticks do kernel). Lock de processo vivo: `ledger_owner_held`; de processo morto (PID ausente ou reutilizado): `ledger_owner_dead`, com PID e operação, pedindo verificação do `status` e remoção **manual** pelo dono (humano). Nunca há tomada automática. Lock antigo sem dono verificável continua `ledger_owner_held`.
-- O bridge não executa um pedido enfileirado cujo socket já fechou ou cujo prazo (3s, ou30s para criação) passou; `close()` do host de criação é limitado (5s por etapa) e sempre libera fences.
+- `list` announces `capabilities.createProfile` without creation side-effects.
+- `prepare-create` is read-only and records bounded/ephemeral preparation, with proposal hash, profile, preset, model, policy, configuration, modules, and path facts.
+- `create-session` requires its own grant, separate from send grant, with MAC over process/bridge identity, preparation/hash, nonce, and TTL. Preparation includes IDs and literals; no accepted `confirmed`/grant fields from model.
+- Host revalidates before effects, publication, and admission. Fences block unapproved requests/tools during startup.
+- Durable journal and reservation prior to effect; nonces and IDs are not reused as authorization. Preparation may expire while awaiting approval: explicit error, without replaying stale approval.
+- Response loss after dispatch is UNKNOWN, never confirmation that nothing occurred. `status` reads caller receipt; does not re-execute. No auto-retry, destructive rollback, delete/archive, or removal of uncertain locks.
+- Only responses that **prove absence of effect** become `not_started` (without `recovery_required`): local failure prior to sending frame (`retrySafe:true`: cancellation, unavailable key, unreachable bridge) or authenticated destination rejection before opening its own ledger (`effect:none`). Receipt stays in journal; same key returns that receipt, without retry.
+- `owner.lock` records `pid`+`startTime` (kernel ticks). Live process lock: `ledger_owner_held`; dead process lock (PID absent or reused): `ledger_owner_dead`, with PID and operation, prompting verification of `status` and **manual** removal by human owner. No automated takeover. Older lock without verifiable owner remains `ledger_owner_held`.
+- Bridge does not execute queued request whose socket already closed or whose deadline (3s, or 30s for creation) passed; creation host `close()` is bounded (5s per step) and always clears fences.
 
-Ledgers: owner Companion em `~/.dsh/session-create/profile-dsh-tui`; destino em `<bridge-root>/profile-create-ledger`. Não migrar recibos legados nem reutilizar aprovação salva. `operation_id` é restrito ao caller. IPC de criação tem timeout30s; timeout não cancela um efeito já admitido. Send/read conservam seus protocolos e limites anteriores.
+Ledgers: owner Companion in `~/.dsh/session-create/profile-dsh-tui`; destination in `<bridge-root>/profile-create-ledger`. Do not migrate legacy receipts or reuse saved approvals. `operation_id` is scoped to caller. Creation IPC timeout is 30s; timeout does not cancel already admitted effect. Send/read retain prior protocols and limits.
 
-## Skills no Companion (plano128)
+## Skills in Companion (Plan 128)
 
-O bundle web desativa `skill-filesystem` e `tool-skill` globais. Ambos foram adicionados **dentro do preset Companion**, no perfil instalado e no gerador, sem mudar modelo/permissões. O provider usa `customSkillDirs` para `~/git/my/dsh-companion-workspace/.agents/skills`, inclusive quando a sessão está em um projeto filho com `.git` próprio. O próprio `tool-skill` entrega a ferramenta e a mensagem `skill-catalog`.
+Web bundle disables global `skill-filesystem` and `tool-skill`. Both were added **inside Companion preset**, in installed profile and generator, without changing model/permissions. Provider uses `customSkillDirs` targeting `~/git/my/dsh-companion-workspace/.agents/skills`, even when session resides in child project with its own `.git`. `tool-skill` itself delivers tool and `skill-catalog` message.
 
-O arquivo de instruções original é `~/.dsh/AGENTS-Companion.md`. `~/.dsh/Companion/AGENTS.md` é seu link necessário ao loader, não uma cópia duplicada.
+Original instructions file is `~/.dsh/AGENTS-Companion.md`. `~/.dsh/Companion/AGENTS.md` is its necessary symlink to loader, not a duplicate copy.
 
-## Validação e ativação
+## Validation and Activation
 
 ```sh
 env SESSION_RESUME_REAL=0 node --test plugins/session/*.test.mjs plugins/session-create/*.test.mjs tools/session-companion/profile.test.mjs tools/session-companion/companion-skills.native.test.mjs
 ```
 
-As fixtures usam armazenamento/identidades isolados e adapter fake, sem chamadas a modelos externos. Cobrem owner approval, contratos fechados, ambiguidades, perfis incorretos, adulteração/replay/drift, UNKNOWN, SDK AgentLoop/preset/policies/writer e criação via Unix IPC real. A fixture de destino é um perfil dsh-tui sintético com preset standard real montado, não boot completo do inventário de plugins instalado pelo usuário.
+Fixtures use isolated storage/identities and fake adapter, without calls to external models. They cover owner approval, closed contracts, ambiguities, invalid profiles, tampering/replay/drift, UNKNOWN, SDK AgentLoop/preset/policies/writer, and real Unix IPC creation. Target fixture is a synthetic dsh-tui profile with mounted real standard preset, not a full boot of user-installed plugin inventory.
 
-O teste de skills verifica tool schemas, quatro chamadas pela API pública e `skill-catalog` no primeiro request fake, em raiz e child repo. Isso é mais forte que apenas descobrir arquivos com um provider isolado, mas não é uma afirmação de inspeção de cada sessão já aberta.
+Skills test validates tool schemas, four public API calls, and `skill-catalog` in initial fake request, across root and child repo. This is stronger than merely finding files with an isolated provider, but does not claim inspection of every already-open session.
 
-Não foi forçado restart. O perfil Companion tem reload live de configuração; processos TUI com bridge antigo precisam de nova carga. A checagem somente leitura em `.dumps/companion-guides/live-capabilities.json` registrou zero hosts compatíveis naquele instante. Não foi criada/enviada nenhuma sessão de produção para testar ativação.
+No restart was forced. Companion profile live-reloads config; TUI processes with legacy bridges require fresh launch. Read-only probe in `.dumps/companion-guides/live-capabilities.json` recorded zero compatible hosts at that instant. No production session was created/sent to test activation.

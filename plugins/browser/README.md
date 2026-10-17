@@ -1,25 +1,25 @@
-# Browser nativo DSH
+# Native DSH Browser
 
-Uma única tool `browser` expõe uma árvore de operações. O backend é **Playwright estável 1.64.0**, com Browser/Context/Page próprios por Agent, por uma fronteira MCP SDK2 privada. Não há Playwright MCP upstream, SDK1, `currentTab`, código da LLM ou APIs privadas do motor.
+A single `browser` tool exposes an operation tree. The backend is **stable Playwright 1.64.0**, featuring dedicated Browser/Context/Page instances per Agent behind a private SDK2 MCP boundary. There is no upstream Playwright MCP, SDK1, `currentTab`, arbitrary LLM code execution, or private engine APIs.
 
-Registro global herdado permite que uma allowlist de subagente exclua `browser`. Cada operação valida schema, owner, geração, efeitos e política antes de executar. Popup/fechamento não muda o alvo para uma aba vizinha. O estado não é compartilhado por cwd; fork/resume não restaura handles vivos por replay.
+Inherited global registration allows subagent allowlists to exclude `browser`. Each operation validates schema, owner, generation, side-effects, and policy prior to execution. Popups or window closures do not switch target to a neighboring tab. State is not shared across cwds; fork/resume does not restore live handles via replay.
 
-## Preparar o ambiente, não o produto
+## Prepare Environment, Not the Product
 
-Execute **neste checkout dsh-customs**; o helper também resolve seu runtime pela localização do módulo, não pelo projeto/cwd do usuário:
+Run inside **this dsh-customs checkout**; the helper resolves its runtime from module location, not user project/cwd:
 
 ```fish
 node tools/browser-runtime.mjs --doctor
 node tools/browser-runtime.mjs --install
 ```
 
-`--doctor` é o default: JSON com pins, versões instaladas, cache, executablePath/existência dos browsers selecionados, encoder gerenciado e `ffmpeg`/`ffprobe`. Não inicia browser, consulta modelo/provedor, instala packages, altera perfis ou skills. Existência de binário **não** prova launch/sandbox, policy do host, imagem no modelo ou ativação.
+`--doctor` is default: JSON output with pins, installed versions, cache location, executablePath/existence of selected browsers, managed encoder, and `ffmpeg`/`ffprobe`. It does not launch browsers, query models/providers, install packages, or modify profiles/skills. Binary existence does **not** prove successful launch, sandbox viability, host policy enforcement, model vision support, or activation.
 
-`--install` é explícito: verifica manifest/lock, executa `npm ci --ignore-scripts` **somente em `plugins/browser/runtime`**, confere as versões e chama a CLI oficial pinada para instalar Chromium/encoder. Cache administrativo default: `~/.cache/dsh-browser/playwright-1.64.0`. Não instala dependências no produto, roda apt, ignora TLS/desativa sandbox ou aceita flags/code/env/path livres. Não instala automaticamente a partir de uma chamada da tool.
+`--install` is explicit: verifies manifest/lock, runs `npm ci --ignore-scripts` **strictly in `plugins/browser/runtime`**, verifies versions, and invokes the pinned official CLI to install Chromium/encoder. Default administrative cache: `~/.cache/dsh-browser/playwright-1.64.0`. It does not install dependencies into the product, run apt, disable TLS/sandbox, or accept freeform flags/code/env/paths. It is never automatically triggered from tool calls.
 
-Pins: Playwright/core `1.64.0`, SDK client/server `2.3.1`, AJV `8.17.1`, YAML `2.9.1`; Node ≥20. Versions mismatch falha antes do download do browser. Downloads e npm têm deadlines finitos; logs de filhos não são despejados no JSON com credentials.
+Pins: Playwright/core `1.64.0`, SDK client/server `2.3.1`, AJV `8.17.1`, YAML `2.9.1`; Node ≥20. Version mismatches fail before browser downloads. Downloads and npm calls have finite deadlines; child logs are not dumped into JSON with credentials.
 
-Outros engines só por pedido administrativo explícito:
+Other browser engines require explicit administrative request:
 
 ```fish
 node tools/browser-runtime.mjs --doctor --engine firefox
@@ -27,11 +27,11 @@ node tools/browser-runtime.mjs --install --engine firefox
 node tools/browser-runtime.mjs --install --engine webkit
 ```
 
-Instalar um engine **não** o autoriza: `allowedEngines` no perfil continua `['chromium']` por default. Pode repetir `--engine` para nomes curados distintos. Dependências de SO ausentes precisam de diagnóstico/decisão separada; não há `--with-deps`/apt automático.
+Installing an engine does **not** authorize it: `allowedEngines` in profile remains `['chromium']` by default. You may repeat `--engine` for distinct curated names. Missing OS dependencies require separate diagnosis/decision; no automatic `--with-deps`/apt is invoked.
 
-## Descobrir e chamar a única tool
+## Discover and Invoke the Single Tool
 
-Os blocos abaixo são **argumentos JSON para a tool `browser`**, não comandos shell. `args` é sempre obrigatório. O schema wire é pequeno; cada leaf tem schema estrito próprio retornado por `describe`.
+The blocks below are **JSON arguments for the `browser` tool**, not shell commands. `args` is always required. The wire schema is minimal; each leaf operation provides its own strict schema via `describe`.
 
 ```json
 {"operation":"help","args":{}}
@@ -49,49 +49,49 @@ Os blocos abaixo são **argumentos JSON para a tool `browser`**, não comandos s
 {"operation":"capabilities","args":{}}
 ```
 
-Help lista apenas filhos imediatos, com limites/cursor; describe retorna uma operação. `path` é apenas de discovery; execução usa `operation` dotted. Metadados não fazem launch/install. `session.list/status` e `media.video/trace.status` consultam somente um worker já conectado quando a policy permite; sem worker/read-only retornam `LAST_KNOWN_STATUS`, sem afirmar que uma ação continua possível. Capture metadata não cria attachments nem entrega frames em chamadas de discovery. `catalogRevision` opcional detecta drift, **não** é token de aprovação.
+Help lists only immediate children, with bounds and cursors; describe details a single leaf operation. `path` is used strictly for discovery; execution uses dotted `operation`. Metadata queries do not perform launches or installations. `session.list/status` and `media.video/trace.status` query only an already connected worker when policy permits; without worker or in read-only mode they return `LAST_KNOWN_STATUS`, without asserting an action remains possible. Capture metadata does not create attachments or deliver frames in discovery calls. Optional `catalogRevision` detects schema drift; it is **not** an approval token.
 
-### Recuperação de erros de envelope
+### Envelope Error Recovery
 
-Cada item do help traz `nextCall` completo: `help` para uma branch e `describe` para uma leaf. O help raiz traz `quickStart` com abrir → navegar → observar → screenshot. Describe inclui campos obrigatórios, não só defaults. Exemplos são **templates não executados**: substitua placeholders, URL, nomes e coordenadas por valores pretendidos e refs reais. Aprovação, disponibilidade e ownership continuam sendo verificados na execução.
+Each help entry includes a complete `nextCall`: `help` for a branch and `describe` for a leaf. Root help includes `quickStart` covering open → navigate → observe → screenshot. Describe includes mandatory fields, not just defaults. Examples are **non-executed templates**: replace placeholders, URLs, names, and coordinates with intended values and real refs. Approval, availability, and ownership are verified during execution.
 
-A forma preferida continua sendo metacampos **no topo**, como nos exemplos. Para evitar loops por erro de posicionamento, o validator aceita também `args.path` apenas em help/describe, `args.sessionId` apenas quando a operação requer sessão, `args.pageId` apenas quando usa Page e `args.catalogRevision`. Eles são relocados antes dos mesmos checks, sem alterar o input original. Duplicatas idênticas são coalescidas; valores conflitantes falham **antes de efeitos**, sem escolher uma precedência.
+Top-level placement of meta-fields remains preferred, as shown in examples. To prevent loops from argument positioning errors, the validator also accepts `args.path` in help/describe, `args.sessionId` when required, `args.pageId` when Page-bound, and `args.catalogRevision`. They are safely relocated before validation checks without modifying original input. Identical duplicates are coalesced; conflicting values fail **before side-effects**, without picking precedence.
 
-Assim, esta chamada também funciona com refs válidas:
+Thus, this call also succeeds with valid refs:
 
 ```json
-{"operation":"page.navigate","args":{"sessionId":"bs_retornado","pageId":"bp_retornado","url":"http://127.0.0.1:8888/index.html"}}
+{"operation":"page.navigate","args":{"sessionId":"returned_bs","pageId":"returned_bp","url":"http://127.0.0.1:8888/index.html"}}
 ```
 
-Não há flatten genérico, coerção, seleção de sessão/aba ou alias executável. `page.goto` continua inválido, mas o erro ensina `page.navigate`. Describe sem path ou com uma branch ensina uma chamada completa de recuperação. Erros de args apontam para o describe correto no próprio texto, porque o erro nativo não preserva todos os details. Campos desconhecidos, código, IDs estrangeiros/stale, URLs proibidas, paths arbitrários de screenshot e ações sem aprovação continuam negados. **Não abra outra sessão só para corrigir o lugar dos IDs**: reutilize os retornados por `session.open`.
+There is no generic flattening, coercion, session/tab auto-selection, or executable alias. `page.goto` remains invalid, but the error guides to `page.navigate`. Describe without path or targeting a branch instructs with a complete recovery call. Argument errors reference the correct describe path in the message text. Unknown fields, arbitrary code, foreign/stale IDs, disallowed URLs, arbitrary screenshot paths, and unapproved actions remain rejected. **Do not spawn a new session merely to fix ID placement**: reuse IDs returned by `session.open`.
 
-Na composição padrão, alterações no código `.mjs` entram ao **reabrir o DSH**; `/reload` da TUI só recarrega preferências, não esta implementação. Faça isso quando o agente estiver ocioso, sem parar o servidor do modelo. Após a reabertura, crie uma nova sessão browser: os handles do processo anterior não são restaurados pelo journal.
+Under standard configuration, changes in `.mjs` code take effect upon **reopening DSH**; TUI `/reload` only refreshes preferences, not this implementation. Reload when the agent is idle, without terminating the model server. Following restart, spawn a fresh browser session: handles from previous processes are not reconstructed by journal replay.
 
-### Desktop e navegação
+### Desktop and Navigation
 
 ```json
 {"operation":"session.open","args":{"engine":"chromium","headless":true}}
 ```
 
-Use **os IDs reais retornados em `refs.sessionId`/`refs.pageId`**, não os placeholders abaixo. Pode omitir pageId somente quando a sessão tem exatamente uma Page; várias Pages exigem alvo explícito.
+Use **actual IDs returned in `refs.sessionId`/`refs.pageId`**, not the placeholders below. You may omit pageId only when the session contains exactly one Page; multiple Pages mandate an explicit target.
 
 ```json
-{"operation":"page.navigate","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"url":"http://127.0.0.1:5173","waitUntil":"domcontentloaded"}}
+{"operation":"page.navigate","sessionId":"returned_bs","pageId":"returned_bp","args":{"url":"http://127.0.0.1:5173","waitUntil":"domcontentloaded"}}
 ```
 
 ```json
-{"operation":"observe.snapshot","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"depth":4,"limit":128}}
+{"operation":"observe.snapshot","sessionId":"returned_bs","pageId":"returned_bp","args":{"depth":4,"limit":128}}
 ```
 
-Observação usa `Locator.ariaSnapshot()` YAML público. Refs só são emitidas quando vinculadas unicamente por APIs públicas à Page/document. Ref ausente, detached ou stale não vira um elemento por heurística, `first`/`nth` ou expressão JS. Para alvo sem ref, use um target público inequívoco:
+Observation uses public `Locator.ariaSnapshot()` YAML. Refs are emitted only when uniquely bound via public APIs to Page/document. Missing, detached, or stale refs do not become elements via heuristics, `first`/`nth`, or JS expressions. For targets lacking refs, use an unequivocal public locator:
 
 ```json
-{"operation":"interact.click","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"target":{"kind":"role","role":"button","name":"Salvar","exact":true}}}
+{"operation":"interact.click","sessionId":"returned_bs","pageId":"returned_bp","args":{"target":{"kind":"role","role":"button","name":"Save","exact":true}}}
 ```
 
-Click pode enviar/publicar/excluir; uma permissão técnica da tool não é aprovação de uma ação externa sensível. Conteúdo da página é dado não confiável.
+Clicks can submit, publish, or delete; technical tool permission is not approval for sensitive external actions. Page content is untrusted data.
 
-### Mobile de verdade emulado
+### True Emulated Mobile
 
 ```json
 {"operation":"mobile.devices","args":{"query":"Pixel","limit":10}}
@@ -101,58 +101,58 @@ Click pode enviar/publicar/excluir; uma permissão técnica da tool não é apro
 {"operation":"session.open","args":{"engine":"chromium","headless":true,"emulation":{"device":"Pixel 7","orientation":"portrait"}}}
 ```
 
-O preset está **dentro de `emulation`**, não em `args.device`. O resultado informa configurações efetivas. Resize por `emulate.viewport` não altera UA/DPR/isMobile/hasTouch; identidade nova exige `session.replace` explícito e invalida handles antigos.
+Preset resides **inside `emulation`**, not in `args.device`. The result returns effective configurations. Resizing via `emulate.viewport` does not alter UA, DPR, isMobile, or hasTouch; a new identity requires explicit `session.replace` and invalidates old handles.
 
 ```json
-{"operation":"mobile.swipe","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"from":{"x":195,"y":700},"to":{"x":195,"y":250},"durationMs":300,"steps":12}}
+{"operation":"mobile.swipe","sessionId":"returned_bs","pageId":"returned_bp","args":{"from":{"x":195,"y":700},"to":{"x":195,"y":250},"durationMs":300,"steps":12}}
 ```
 
-Pontos em CSS pixels do viewport. Swipe trusted é adapter Chromium-only; não há fallback mouse/synthetic oculto para Firefox/WebKit. Emulação não comprova UI Android/iOS nativa.
+Coordinates in viewport CSS pixels. Trusted swipe is Chromium-only adapter; no hidden mouse/synthetic fallback for Firefox/WebKit. Emulation does not verify native Android/iOS UI.
 
-### Screenshot e vídeo
+### Screenshot and Video
 
 ```json
-{"operation":"media.screenshot","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"mode":"viewport","format":"png","scale":"css","readiness":{"fonts":true,"images":true}}}
+{"operation":"media.screenshot","sessionId":"returned_bs","pageId":"returned_bp","args":{"mode":"viewport","format":"png","scale":"css","readiness":{"fonts":true,"images":true}}}
 ```
 
-Modos viewport/fullPage/element, conforme describe; element exige target. FullPage/element/clip incompatíveis falham, não são inferidos. Nenhum filename/path arbitrário chega ao engine. Screenshot é artifact original e, quando rota/modelo+AttachmentStore admitem, imagem nativa. `imageUnavailable` significa arquivo disponível sem alegar que o modelo viu pixels.
+Modes viewport/fullPage/element, as documented in describe; element requires target. Incompatible fullPage/element/clip fail explicitly, without guessing. No arbitrary filename/path reaches the engine. Screenshots are original artifacts and, when route/model and AttachmentStore permit, native images. `imageUnavailable` signifies file availability without asserting the model processed pixels.
 
 ```json
-{"operation":"media.video.start","sessionId":"bs_retornado","pageId":"bp_retornado","args":{"scope":"page","fps":25,"maxDurationMs":15000}}
+{"operation":"media.video.start","sessionId":"returned_bs","pageId":"returned_bp","args":{"scope":"page","fps":25,"maxDurationMs":15000}}
 ```
 
-Guarde `data.captureId`/`refs.captureId`, interaja na mesma Page e finalize:
+Retain `data.captureId`/`refs.captureId`, interact within the same Page, then conclude:
 
 ```json
-{"operation":"media.video.stop","sessionId":"bs_retornado","args":{"captureId":"bc_retornado","inspectFrames":true}}
+{"operation":"media.video.stop","sessionId":"returned_bs","args":{"captureId":"returned_bc","inspectFrames":true}}
 ```
 
-A captura é WebM por Page, não trace ou gravação de ações. Stop verifica container/duração/dimensões e entrega artifacts de frames representativos por default; leia os frames para comprovar resting/transição/final. Dimensões efetivas do encoder podem diferir de bounds solicitados. Não afirmar que o modelo assistiu ao vídeo inteiro. Inspecione o artifact retornado sem fabricar IDs:
+Capture produces WebM per Page, not execution traces or action recordings. Stop verifies container, duration, dimensions, and provides representative frame artifacts by default; inspect frames to verify resting, transition, and final states. Effective encoder dimensions may differ from requested bounds. Do not claim the model watched the entire video. Inspect returned artifacts without fabricating IDs:
 
 ```json
-{"operation":"artifacts.inspect","args":{"artifactId":"ba_retornado"}}
+{"operation":"artifacts.inspect","args":{"artifactId":"returned_ba"}}
 ```
 
-Trace ZIP é context-scoped, sensível e sujeito a aprovação explícita. Vídeo/trace simultâneos são bloqueados onde recorder conflita; `partial`/`failed` não é entrega pronta.
+Trace ZIP is context-scoped, sensitive, and requires explicit approval. Simultaneous video and trace are blocked where recorder conflicts; `partial`/`failed` is not a delivered capture.
 
-## Políticas, artefatos e limites
+## Policies, Artifacts, and Limits
 
-Configuração opcional em `<raiz Git>/.agents/config.json`, no namespace `dshCustoms.browser`, preservando os demais campos. Um projeto pode desabilitar ou estreitar limites/recursos, não ampliar a política administrativa; `browserCache` é configuração do perfil, não override de projeto. Exemplo de opt-out:
+Optional configuration in `<git-root>/.agents/config.json` under namespace `dshCustoms.browser`, preserving existing fields. A project can disable or tighten limits/features, but cannot expand administrative policy; `browserCache` is a profile setting, not a project override. Example opt-out:
 
 ```json
 {"dshCustoms":{"browser":{"enabled":false}}}
 ```
 
-- Read-only: discovery/metadados locais, sem iniciar browser/captura que escreve cache. Stateful startup exige integração com a política nativa; ausência de suporte falha fechada. Approval ausente/desabilitada **nega** operações que exigem ask.
-- Sem perfil pessoal/attach, auth export/import, RCE/evaluate livre, shell, métodos CDP livres, TLS-ignore ou sandbox desativado. Extras disabled aparecem no catálogo, não ganham autorização por discovery.
-- Defaults: 2 sessões/Agent, 4 Pages/sessão, 16 MP de imagem, vídeo até60s/30fps/100MiB; 250MiB artifacts/sessão e 500MiB/owner, com reserva de disco1GiB. Consulte describe/capabilities para limites efetivos.
-- O broker nativo compartilha entre Agents uma reserva conservadora de até **4 workers/8 contexts/2GiB de orçamento dos owners ativos**. Ela é tomada antes do bootstrap e liberada apenas após join do range próprio ou startup cancelado sem worker. `capabilities.hostCapacity` mostra os contadores. Não é quota de filesystem, contador entre processos DSH independentes nem limite sobre raw archives retidos de owners inativos.
-- Bytes de vídeo são vigiados a cada **500ms** e excessos pedem auto-finalização. Essa quota é **soft**, com possível overshoot; não equivale a limite de filesystem/OS. Finalização marca excesso como partial, não sucesso útil.
-- Runtime/artifacts são namespaces gerados próprios e paths/export/upload passam pelo guard de host. Não gravar caches/prints/scripts no produto; `.dumps` só é destino local quando ignored e permitido. Path guard não é sandbox completo contra processo comprometido.
-- Retenção default raw24h/entrega7dias aparece em metadata. Um artifact final efetivamente retornado por uma operação stateful tem o TTL de entrega confirmado no worker privado, após revalidar owner/path/bytes/hash; o TTL de projeto mais curto é respeitado. Discovery não promove retenção. Imagens normalizadas pertencem ao serviço nativo de attachments: o plugin não promete nem implementa GC/TTL de arquivos desse serviço; a retenção declarada aqui se refere aos originais managed. `retentionUntil` determina **elegibilidade** de cleanup guardado, não exclusão instantânea garantida por um daemon global. Policy pode adiar cleanup; arquivo retido não restaura Page/handle/session. Exporte deliberadamente entrega necessária, com destino autorizado e sem overwrite silencioso.
-- Fechar sessão/Agent/worker fecha apenas recursos próprios; sem `kill-all`. Timeout/cancelamento não faz rollback de envio/navegação nem autoriza replay mutante. Após falha com efeito unknown, observe antes de repetir.
+- Read-only: local discovery/metadata only, without launching browsers or writing cache. Stateful boot requires native policy integration; absent support fails closed. Absent or disabled approval **denies** operations requiring user consent.
+- No personal profile attachment, auth export/import, arbitrary evaluate/RCE, shell execution, arbitrary CDP methods, TLS bypass, or disabled sandboxes. Disabled extras appear in the catalog without gaining authorization via discovery.
+- Defaults: 2 sessions per Agent, 4 Pages per session, 16 MP image cap, video up to 60s / 30fps / 100 MiB; 250 MiB artifacts per session and 500 MiB per owner, with 1 GiB disk reservation. Consult describe/capabilities for effective limits.
+- Native broker shares a conservative reservation across Agents of up to **4 workers / 8 contexts / 2 GiB active owner budget**. It is acquired prior to bootstrap and released only upon joining its range or upon cancelled startup without workers. `capabilities.hostCapacity` reports counters. Not a filesystem quota, inter-process DSH counter, or limit on retained raw archives from inactive owners.
+- Video bytes are monitored every **500ms**; excesses trigger automatic finalization. This is a **soft quota** with potential overshoot; it is not a filesystem/OS hard limit. Finalization flags excess as partial, not completed success.
+- Runtime/artifacts live in dedicated generated namespaces; paths, exports, and uploads pass host guards. Do not write caches, prints, or scripts into product source; `.dumps` is only a local target when ignored and permitted. Path guard is not a full sandbox against a compromised process.
+- Default retention of raw 24h / delivery 7d appears in metadata. A final artifact returned by a stateful operation has delivery TTL confirmed in the private worker after revalidating owner, path, bytes, and hash; shorter project TTLs are honored. Discovery does not extend retention. Normalized images belong to the native attachments service: the plugin neither promises nor implements GC/TTL for files in that service; retention declared here applies to managed originals. `retentionUntil` defines **eligibility** for guarded cleanup, not instant deletion guaranteed by a global daemon. Policy may postpone cleanup; retained files do not restore Page/handle/session. Deliberately export required deliverables to authorized destinations without silent overwrites.
+- Closing session/Agent/worker terminates strictly owned resources; no `kill-all`. Timeout/cancellation does not roll back dispatch/navigation or authorize mutating replay. Following an unknown-effect failure, inspect before retrying.
 
-## Validação e ativação
+## Validation and Activation
 
 ```fish
 npm run browser:doctor
@@ -160,8 +160,8 @@ npm run test:browser
 npm run test:browser:live
 ```
 
-O teste default não inicia os casos live do worker; `:live` os habilita explicitamente no cache administrativo pinado. Ambos usam fixtures offline e não chamam LLM/providers, instalam dependências ou ativam perfis. O runner resolve o checkout por sua própria localização e ignora cache/Node flags do caller.
+Default test suite skips worker live cases; `:live` enables them explicitly against pinned administrative cache. Both use offline fixtures and make no LLM/provider calls, package installations, or profile activations. The test runner resolves checkout from its own module location, ignoring caller cache/Node flags.
 
-A ativação é declarada pela entrada `alex-browser` em `plugins/activation.json` e gerada pelo bootstrap existente para **dsh-tui/headless/web/tui**. `npm run check` verifica a sincronização dos perfis; reabra o DSH para uma composição nova quando necessário. Doctor, suites de contrato/runtime/host, closure failclosed Page-bound, imagens/vídeo/frames reais, políticas native/PTC e smokes dos perfis são gates distintos: configuração em sync não substitui execução real. Os smokes offline não geram respostas de modelo; ImageBlocks no terminal podem aparecer como placeholders, sem comprovar pixels físicos.
+Activation is declared by `alex-browser` entry in `plugins/activation.json` and generated by existing bootstrap for **dsh-tui/headless/web/tui**. `npm run check` verifies profile sync; reopen DSH for a fresh composition when required. Doctor, contract/runtime/host suites, Page-bound fail-closed closure, actual images/video/frames, native/PTC policies, and profile smokes are separate gates: synchronized configuration does not replace execution verification. Offline smokes generate no model responses; terminal ImageBlocks may render as placeholders without proving physical pixel display.
 
-Nenhuma nova skill/substituta é criada. Somente a skill antiga `playwright` tem remoção recuperável autorizada ao final da implementação validada; o provisionador não remove skills, não ativa perfis e não altera configuração MCP do dono. `playwright-mobile-media` e demais skills ficam preservadas.
+No new or replacement skills are created. Only legacy `playwright` skill has recoverable removal authorized upon completing validated implementation; provisioner does not remove skills, activate profiles, or alter owner MCP configuration. `playwright-mobile-media` and other skills remain preserved.

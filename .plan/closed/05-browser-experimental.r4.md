@@ -1,140 +1,140 @@
-# Task 5 — Browser DSH Page-bound com Playwright estável
+# Task 5 — Page-bound DSH Browser with stable Playwright
 
-## 0. Estado, autorização e leitura deste documento
+## 0. Status, authorization, and reading this document
 
-Esta revisão 4 substitui integralmente a revisão 3, preservando seus contratos, regras, limites e matriz detalhada, com a alteração de backend explicitamente aprovada pelo dono após o spike G3. O dono selecionou via `ask_user_question` a opção **“Playwright estável direto (Recommended)”** depois da reprodução de mutação na página errada pelo MCP upstream. Não é fallback silencioso nem mudança autorizada por um subagente.
+This revision 4 fully replaces revision 3, preserving its contracts, rules, limits, and detailed matrix, with the backend change explicitly approved by the owner after the G3 spike. The owner selected via `ask_user_question` the option **“Playwright estável direto (Recommended)”** (Direct stable Playwright) after reproducing mutation on the wrong page by the upstream MCP. It is neither a silent fallback nor a change authorized by a subagent.
 
-O dono autorizou a implementação e, ao final da validação, a ativação em **todos os perfis gerenciados: `dsh-tui`, `headless`, `web` e `tui`**. Também instruiu remover recuperavelmente **somente a skill antiga `playwright`, no final**, **sem criar skill substituta ou qualquer nova skill**. A skill `playwright-mobile-media` e as demais não devem ser removidas. Nesta subetapa editorial apenas o artefato de plano é revisado; a execução permanece coordenada pela sessão pai.
+The owner authorized implementation and, upon completion of validation, activation across **all managed profiles: `dsh-tui`, `headless`, `web`, and `tui`**. They also instructed to recoverably remove **only the old `playwright` skill at the end**, **without creating a replacement skill or any new skill**. The `playwright-mobile-media` skill and others must not be removed. In this editorial sub-step only the plan artifact is revised; execution remains coordinated by the parent session.
 
-Este documento define arquitetura, contratos públicos, ownership, segurança, módulos e aceitação. Exemplos continuam sendo API proposta até implementação/validação. Evidência do spike alpha não comprova execução no Playwright estável: repetir os gates necessários. Gates explícitos não autorizam improvisar outra arquitetura.
+This document defines architecture, public contracts, ownership, security, modules, and acceptance. Examples remain proposed API until implementation/validation. Evidence from the alpha spike does not prove execution on stable Playwright: repeat the necessary gates. Explicit gates do not authorize improvising another architecture.
 
-Na execução: reusar o goal pai ativo, atualizá-lo para esta revisão exata após aprovação, registrar todos por fase, reunir evidências e só fechar a task quando critérios de pronto estiverem demonstrados. Alteração relevante de arquitetura/core, ampliação de privilégios ou remoção de requisito retorna ao dono.
+During execution: reuse the active parent goal, update it to this exact revision after approval, record todos per phase, gather evidence, and only close the task when definition of done criteria are demonstrated. Any material change to architecture/core, privilege escalation, or removal of requirements returns to the owner.
 
-## 1. Objetivo e decisões principais
+## 1. Objective and main decisions
 
-Browser é uma capacidade mantida pelo ambiente DSH, reutilizável entre projetos/modelos. Agentes não devem instalar Playwright, escrever scripts ad hoc ou espalhar perfis, screenshots e vídeos no produto só para navegar.
+Browser is a capability maintained by the DSH environment, reusable across projects/models. Agents should not install Playwright, write ad hoc scripts, or scatter profiles, screenshots, and videos across the product just to browse.
 
-Decisões aprovadas/propostas dentro do escopo autorizado:
+Decisions approved/proposed within the authorized scope:
 
-1. **UMA tool nativa `browser`**, com `operation` como caminho hierárquico e `args` validados por operação. Árvore lógica navegável pela própria tool (`help`, `describe`, `capabilities`), sem depender de descoberta provider-specific.
-2. Registro da root no perfil/root registry do DSH, **não uma nova contribuição própria em cada Agent**. A root é herdada pelos agentes, para allowlists de filhos poderem realmente excluí-la. Estado e autoridade permanecem por Agent, nunca globais por cwd.
-3. Native gateway → cliente MCP **SDK v2 oficial privado** → worker com servidor MCP **SDK v2 oficial e uma root interna** → **Playwright estável `1.64.0` direto**, com Browser/BrowserContext/Page owned. Nenhuma leaf adicional registrada no ToolRuntime/modelo. Outras tools DSH continuam nativas e inalteradas.
-4. Todo efeito, observação e captura recebe uma **Page pública concreta vinculada ao owner/session/document**, não currentTab, título, URL ou índice de aba. **ZERO embed de `@playwright/mcp`, ZERO SDK1/InMemory pair, ZERO RCE/templates de código livre, ZERO exports privados** na implementação de produção desta revisão.
-5. Screenshots, mobile/touch e vídeo fazem parte da entrega. Extras têm catálogo/availability explícitos; não há promessa de suportar antecipadamente todo pedido possível.
-6. Sem `run_code_unsafe`, shell, flags, `_meta`, init scripts ou métodos CDP livres na API inicial. Nenhum fallback inseguro para preencher capability ausente.
-7. Browser lazy; `help`/`describe`/status local não lançam browser nem instalam nada. Worker pode existir para uma sessão ativa; sessão de coding sem uso não inicia worker/browser.
-8. Instalação reproduzível e artefatos controlados, fora dos arquivos rastreáveis do produto.
-9. Observação baseline usa **`Locator.ariaSnapshot()` público em YAML** mais targets/ref registry próprios. Refs só são emitidas quando podem ser vinculadas unicamente por APIs públicas a role/name locator ou ElementHandle na Page/document corretos; nenhuma ref inventada por parser ou dependência de `_snapshotForAI`.
-10. Orientação fica na própria tool/help/describe, prompt nativo e README do plugin. **Não criar nova skill**. Remover apenas a antiga `playwright` recuperavelmente como última etapa depois da integração validada/ativada.
+1. **ONE native `browser` tool**, with `operation` as a hierarchical path and `args` validated per operation. Logical tree navigable through the tool itself (`help`, `describe`, `capabilities`), without depending on provider-specific discovery.
+2. Registration of the root in the profile/root registry of DSH, **not a separate contribution within each Agent**. The root is inherited by agents, so child allowlists can genuinely exclude it. State and authority remain per-Agent, never global per cwd.
+3. Native gateway → private official **MCP SDK v2 client** → worker with official **MCP SDK v2 server and an internal root** → **direct stable Playwright `1.64.0`**, with owned Browser/BrowserContext/Page. No additional leaf registered in ToolRuntime/model. Other DSH tools remain native and unchanged.
+4. Every effect, observation, and capture receives a **concrete public Page bound to owner/session/document**, not currentTab, title, URL, or tab index. **ZERO embedding of `@playwright/mcp`, ZERO SDK1/InMemory pair, ZERO RCE/free-form code templates, ZERO private exports** in the production implementation of this revision.
+5. Screenshots, mobile/touch, and video are part of the delivery. Extras have explicit catalog/availability; there is no promise of supporting every possible request in advance.
+6. No `run_code_unsafe`, shell, flags, `_meta`, init scripts, or unconstrained CDP methods in the initial API. No insecure fallback to fulfill a missing capability.
+7. Lazy browser: `help`/`describe`/local status do not launch browser or install anything. A worker may exist for an active session; a coding session with no usage does not start worker/browser.
+8. Reproducible installation and controlled artifacts, outside trackable product files.
+9. Baseline observation uses **public `Locator.ariaSnapshot()` in YAML** plus custom targets/ref registry. Refs are only issued when they can be uniquely bound via public APIs to a role/name locator or ElementHandle on the correct Page/document; no refs fabricated by parser or dependency on `_snapshotForAI`.
+10. Guidance is contained within the tool itself/help/describe, native prompt, and plugin README. **Do not create a new skill**. Remove only the old `playwright` skill recoverably as the final step after validated/activated integration.
 
-Não confundir quantidade de tools com custo total: uma root reduz schemas enviados, mas discovery e respostas também custam tokens. Medir no mesmo fluxo antes de afirmar economia.
+Do not confuse tool count with total cost: a single root reduces schemas sent, but discovery and responses also cost tokens. Measure within the same flow before claiming savings.
 
-## 2. Evidências e correções em relação ao plano anterior
+## 2. Evidence and corrections relative to the previous plan
 
-### 2.1 DSH observado
+### 2.1 Observed DSH
 
-Pacotes resolvidos por realpath da instalação ativa; caminho npx observado **não** vira dependência ou path hardcoded. `dsh-tools` observado: `0.2.0-rc.2`.
+Packages resolved via realpath of the active installation; observed npx path does **not** become a dependency or hardcoded path. Observed `dsh-tools`: `0.2.0-rc.2`.
 
-- `dsh-tools`: registro nativo, scopes, guards, pre/post-execute, output canônico, modos `native`/`ptc`/`both` e `presentAs` por Agent/scope.
-- Restrição filtra contribuições **herdadas**, não as registradas no próprio scope. Portanto registrar browser novamente no filho pode contornar sua allowlist. A root global herdada evita essa falha de composição; operação stateful ainda exige `exec.agent` válido.
-- Bridge MCP normal registra as tools descobertas individualmente. Montar Playwright plano e acrescentar uma fachada não esconde leaves nem reduz seu custo. A implementação r4 não monta o Playwright MCP upstream.
-- Existe `ToolSchema.deferLoading` e metadata `toolUpdate`, mas pi-ai observado rejeita deferred loading; rotas sem suporte removem a flag e tornam tools imediatas. Não é solução portátil, nem prova de uma API de tree/search nativa.
-- PTC expõe `run_code` + SDK gerado de tools. É por Agent inteiro, não solução para esconder somente browser e manter o restante nativo. Não ativar PTC globalmente nesta task.
-- JSON Schema do DSH tem subset estrito: `type`, `properties`, `required`, `additionalProperties` booleano, `items`, `enum`, `const`, `oneOf`. Não presumir `pattern`, limites, `$ref` ou `anyOf` no schema wire. `defineTool` valida no body, depois do pre-hook: validação por operação precisa ocorrer também **antes da decisão de policy**.
-- Sucesso nativo contém `value`; falha nativa não promete `value`. Não transformar deny/abort em sucesso JSON `{ok:false}` só para uniformizar envelopes.
-- APIs públicas de attachments oferecem `saveImages`, `saveImage`, leitura e referências serializáveis; `llm.resolveModelInfo` permite verificar imagem no modelo da rota atual. Render nativo pode emitir `{type:'image', attachment:ref}`. Não copiar helpers privados do bridge MCP.
+- `dsh-tools`: native registration, scopes, guards, pre/post-execute, canonical output, `native`/`ptc`/`both` modes, and `presentAs` per Agent/scope.
+- Restriction filters **inherited** contributions, not those registered in the scope itself. Therefore, registering browser again on the child can bypass its allowlist. The global inherited root avoids this composition failure; stateful operations still require a valid `exec.agent`.
+- Standard MCP bridge registers discovered tools individually. Setting up flat Playwright and adding a facade does not hide leaves or reduce their cost. The r4 implementation does not mount upstream Playwright MCP.
+- `ToolSchema.deferLoading` and `toolUpdate` metadata exist, but observed pi-ai rejects deferred loading; routes without support remove the flag and make tools immediate. It is not a portable solution, nor proof of a native tree/search API.
+- PTC exposes `run_code` + generated tool SDK. It operates per whole Agent, not a solution to hide only browser while keeping the rest native. Do not enable PTC globally in this task.
+- DSH JSON Schema has a strict subset: `type`, `properties`, `required`, boolean `additionalProperties`, `items`, `enum`, `const`, `oneOf`. Do not assume `pattern`, limits, `$ref`, or `anyOf` in the wire schema. `defineTool` validates in the body, after the pre-hook: per-operation validation must also take place **before the policy decision**.
+- Native success contains `value`; native failure does not promise `value`. Do not turn deny/abort into JSON success `{ok:false}` merely to uniformize envelopes.
+- Public attachment APIs provide `saveImages`, `saveImage`, reading, and serializable references; `llm.resolveModelInfo` allows checking image support on the current route model. Native render can emit `{type:'image', attachment:ref}`. Do not copy private helpers from the MCP bridge.
 
-### 2.2 Versões selecionadas e histórico MCP
+### 2.2 Selected versions and MCP history
 
-| Componente | Decisão / evidência |
+| Component | Decision / evidence |
 | --- | --- |
-| **Playwright estável** | **`1.64.0` selecionado pelo dono para backend direto**, com core/browsers/encoder compatíveis; runtime desta combinação ainda precisa ser validado |
-| **SDK MCP v2** | client/server/core `2.3.1`, fronteira privada host↔worker; handshake/stdin/stdout/cancelamento ainda precisam prova real |
-| `@playwright/mcp` histórico | `0.0.83`, gitHead `f183dad4a52965583e3cc1d59b88cdc279e2e57d`; usado somente no spike rejeitado e referências históricas, não dependência de produção r4 |
-| `@playwright/cli` histórico | `0.1.22`, possível benchmark externo de ergonomia, não rota de execução |
-| dependência MCP/CLI histórica | `1.64.0-alpha-1790635538000`, core gitHead `e8149b8257d32dcf8f72573ecc43e72439da7080`; não override/pin transitivo da nova implementação |
-| SDK MCP v1 histórico | `@modelcontextprotocol/sdk` `1.32.1`; par in-memory testado no spike, **não integrar em produção r4** |
+| **Stable Playwright** | **`1.64.0` selected by owner for direct backend**, with compatible core/browsers/encoder; runtime of this combination still needs validation |
+| **MCP SDK v2** | client/server/core `2.3.1`, private host↔worker boundary; handshake/stdin/stdout/cancellation still require real proof |
+| Historical `@playwright/mcp` | `0.0.83`, gitHead `f183dad4a52965583e3cc1d59b88cdc279e2e57d`; used only in rejected spike and historical references, not a production r4 dependency |
+| Historical `@playwright/cli` | `0.1.22`, possible external ergonomic benchmark, not an execution route |
+| Historical MCP/CLI dependency | `1.64.0-alpha-1790635538000`, core gitHead `e8149b8257d32dcf8f72573ecc43e72439da7080`; not a transitive override/pin for the new implementation |
+| Historical MCP SDK v1 | `@modelcontextprotocol/sdk` `1.32.1`; in-memory pair tested in spike, **do not integrate into production r4** |
 
-Node efetivo: 20+ para Playwright estável/SDK v2 selecionados. Novo grafo de produção usa o pin estável direto, não override da alpha do wrapper. Scratch histórico mantém pins/lock próprios para reprodução; não adulterar o spike para fingir que ele testou stable.
+Effective Node: 20+ for selected stable Playwright / SDK v2. New production graph uses direct stable pin, not wrapper alpha override. Historical scratch retains its own pins/lock for reproduction; do not alter the spike to pretend it tested stable.
 
-Achados históricos que seguem úteis para desenho de contratos, não autorização de reutilizar backend rejeitado:
+Historical findings that remain useful for contract design, not authorization to reuse rejected backend:
 
-- `createConnection(config, contextGetter)` era export público da versão MCP pesquisada; seu uso está **removido da arquitetura r4**. Não importar `coreBundle`, `BrowserBackend`, `Tab` ou outros internals.
-- Supplied context exigia `isolated:false` na implementação alpha; a isolação real vinha de `browser.newContext()` owned/incognito. Na r4 criar diretamente esse contexto público, sem flag/selector do wrapper.
-- Screenshot MCP com filename explícito podia não incluir image block. Na r4 produzir buffer/arquivo por Page.screenshot público e projetar deliberadamente via attachment DSH.
-- `--output-dir` upstream não controlava todos os filenames. Paths e quotas seguem responsabilidade própria; eviction posterior ao efeito não é hard quota.
-- Vídeo MCP era context-wide, não por aba. R4 não usa essa tool; qualquer captura context-wide extra exige implementação própria, scope explícito e artifacts por Page.
-- API pública `page.screencast.start({path})` realmente salva vídeo WebM, desde 1.59; `fps` desde 1.64. Stream de frames sem arquivo não é entrega de vídeo; Screencast com arquivo validado é.
-- `recordVideo` exige configuração de contexto e fechamento para flush; não simular start/stop recriando contexto silenciosamente.
-- Trace MCP produzia live artifacts, não necessariamente ZIP. R4 usa `context.tracing.stop({path})` público para ZIP; nenhum adapter upstream live automático.
-- Touchscreen público oferece tap. Swipe não é mouse drag/wheel nem dispatch sintético. Adapter Chromium via CDP fechado precisa comprovar eventos trusted e efeito de scroll/gesto; WebKit/Firefox não herdam essa capability.
-- Caps upstream não eram barreira de segurança: core incluía `browser_run_code_unsafe`. R4 não carrega o catálogo upstream; WebMCP/page-provided tools continuam proibidas como fonte de autoridade.
+- `createConnection(config, contextGetter)` was a public export of the investigated MCP version; its use is **removed from the r4 architecture**. Do not import `coreBundle`, `BrowserBackend`, `Tab`, or other internals.
+- Supplied context required `isolated:false` in the alpha implementation; real isolation came from owned/incognito `browser.newContext()`. In r4, create this public context directly, without wrapper flag/selector.
+- MCP screenshot with explicit filename could fail to include an image block. In r4, produce buffer/file via public Page.screenshot and deliberately project via DSH attachment.
+- Upstream `--output-dir` did not control all filenames. Paths and quotas remain custom responsibility; eviction after the effect is not a hard quota.
+- MCP video was context-wide, not per-tab. R4 does not use that tool; any extra context-wide capture requires custom implementation, explicit scope, and per-Page artifacts.
+- Public API `page.screencast.start({path})` genuinely saves WebM video, since 1.59; `fps` since 1.64. Frame stream without file is not video delivery; Screencast with validated file is.
+- `recordVideo` requires context configuration and closure to flush; do not simulate start/stop by silently recreating context.
+- MCP trace produced live artifacts, not necessarily ZIP. R4 uses public `context.tracing.stop({path})` for ZIP; no automatic live upstream adapter.
+- Public touchscreen provides tap. Swipe is not mouse drag/wheel or synthetic dispatch. Chromium adapter via closed CDP must prove trusted events and scroll/gesture effect; WebKit/Firefox do not inherit this capability.
+- Upstream caps were not a security barrier: core included `browser_run_code_unsafe`. R4 does not load upstream catalog; WebMCP/page-provided tools remain forbidden as an authority source.
 
-### 2.3 Spike executado, blocker e decisão do dono
+### 2.3 Executed spike, blocker, and owner decision
 
-Scratch ignorado: `.dumps/tasks/task05-backend-spike/`. Evidências completas em `RESULT.md`, `output/report.json`, `output/selection-race.json`, `probe.mjs`, `selection-race.mjs`, `run-history.json` e artefatos de imagem/vídeo/trace.
+Ignored scratch: `.dumps/tasks/task05-backend-spike/`. Complete evidence in `RESULT.md`, `output/report.json`, `output/selection-race.json`, `probe.mjs`, `selection-race.mjs`, `run-history.json`, and image/video/trace artifacts.
 
-No grafo histórico alpha, G2 passou: factory pública, SDK1 matched pair, listTools lazy e um contexto incognito own. G5 passou no fixture local: bytes de screenshots, touch trusted/CDP swipe, vídeo/trace públicos same context; WebM final medido 392×852, 25 fps, 2.28 s, frames inspecionados com count0→1→2 e ZIP CRC válido. Isso é evidência histórica, não conclusão de gates stable/DSH.
+In the historical alpha graph, G2 passed: public factory, matched SDK1 pair, lazy listTools, and an owned incognito context. G5 passed in local fixture: screenshot bytes, trusted touch/CDP swipe, public same-context video/trace; measured final WebM 392×852, 25 fps, 2.28 s, inspected frames with count 0→1→2, and valid ZIP CRC. This is historical evidence, not conclusion of stable/DSH gates.
 
-**G3 falhou de forma reproduzida:** fechar selected Page depois da aceitação do request e antes do dispatcher upstream, usando callback público Transport.onmessage no teste, fez `browser_click` responder `isError:false` e incrementar o contador de uma **outra Page sobrevivente**. `selectedClosedBeforeDispatch:true`, `survivorCount:1`, `unexpectedOtherPageEffect:true`; assertion esperado0 falhou. As páginas tinham URL/título iguais; testes sequenciais com popup/close/reindex haviam passado e eram insuficientes. Locks de chamadas não bloqueiam eventos de lifecycle e o currentTab upstream não fornece vínculo público ao Page esperado.
+**G3 failed in a reproduced manner:** closing selected Page after request acceptance and before upstream dispatcher, using public Transport.onmessage callback in test, caused `browser_click` to respond `isError:false` and increment the counter of **another surviving Page**. `selectedClosedBeforeDispatch:true`, `survivorCount:1`, `unexpectedOtherPageEffect:true`; expected 0 assertion failed. The pages had identical URL/title; sequential tests with popup/close/reindex had passed and were insufficient. Call locks do not block lifecycle events, and upstream currentTab provides no public binding to the expected Page.
 
-O dono foi consultado depois dessa evidência e aprovou **“Playwright estável direto (Recommended)”**. Preservar r3 e scratch como histórico; a r4 elimina o currentTab/SDK1/embed, não reclassifica a falha como pass e não executa outra arquitetura silenciosamente.
+The owner was consulted after this evidence and approved **“Playwright estável direto (Recommended)”** (Direct stable Playwright). Preserve r3 and scratch as history; r4 eliminates currentTab/SDK1/embed, does not reclassify the failure as a pass, and does not silently execute a different architecture.
 
-## 3. Desenho de componentes e fronteiras
+## 3. Component and boundary design
 
 ```text
-Modelo / Agent (native; PTC apenas se já selecionado pelo dono)
+Model / Agent (native; PTC only if already selected by owner)
   |
-  | UMA browser {operation, path?, sessionId?, pageId?, args, catalogRevision?}
+  | ONE browser {operation, path?, sessionId?, pageId?, args, catalogRevision?}
   v
-ToolRuntime DSH — root herdada, filtro por Agent, log/callId e cancelamento
+DSH ToolRuntime — inherited root, filter per Agent, log/callId, and cancellation
   |
   +-> pre-execute / guard browser
-  |     bounds -> manifest -> schema leaf -> efeitos -> policy/ask/deny
+  |     bounds -> manifest -> schema leaf -> effects -> policy/ask/deny
   |
   v
 Native Gateway
-  +-> meta-ops locais: help / describe / capabilities
-  +-> broker por exec.agent: owner, generation, quota, lifecycle
-  +-> host FS/policy: staging de uploads e export de artefatos
-  +-> projeção nativa: texto + attachment refs + erro nativo
+  +-> local meta-ops: help / describe / capabilities
+  +-> broker per exec.agent: owner, generation, quota, lifecycle
+  +-> host FS/policy: upload staging and artifact export
+  +-> native projection: text + attachment refs + native error
   |
-  | cliente SDK MCP v2 oficial privado, stdio, sem shell/servidor público
+  | private official MCP SDK v2 client, stdio, no shell / public server
   v
-Worker owned do Agent — servidor SDK v2, API interna de uma root
-  +-> handshake versões / manifestHash / owner
-  +-> revalidação + fila/locks + target registry + artifact/capture manager
+Owned Worker of Agent — SDK v2 server, internal root API
+  +-> handshake versions / manifestHash / owner
+  +-> revalidation + queue/locks + target registry + artifact/capture manager
   |
-  +-> Playwright ESTÁVEL 1.64.0, imports/APIs públicos diretos
-         Browser owned -> BrowserContext incognito owned -> Page registry próprio
-         cada request resolve UMA Page concreta; nenhum currentTab upstream
-         observação -> Locator.ariaSnapshot YAML + refs/targets próprios
-         interação -> Locator/ElementHandle vinculados Page/document
-         screenshot -> buffer/arquivo guardado
-         touch -> tap / CDP Chromium de comandos fechados
-         vídeo -> Screencast page-scoped
-         trace -> tracing ZIP context-scoped
+  +-> STABLE Playwright 1.64.0, direct public imports/APIs
+         Owned Browser -> owned incognito BrowserContext -> custom Page registry
+         each request resolves ONE concrete Page; no upstream currentTab
+         observation -> Locator.ariaSnapshot YAML + custom refs/targets
+         interaction -> Locator/ElementHandle bound to Page/document
+         screenshot -> guarded buffer/file
+         touch -> tap / Chromium CDP with closed commands
+         video -> page-scoped Screencast
+         trace -> context-scoped tracing ZIP
 ```
 
-Fronteiras:
+Boundaries:
 
-- Serviços DSH/tools/cordis/scope/attachments resolvidos no grafo do host. Não carregar segunda cópia dos peers que identifiquem scopes.
-- Dependências de Playwright estável, validadores e SDK v2 do worker pertencem ao checkout/pacote worker pinado. Nada emprestado de cache privado DSH/Claude.
-- SDK v2 client/server/core da fronteira usam versões compatíveis. Apenas dados JSON/protocolo cruzam host↔worker; sem SDK1/InMemory/createConnection ou objetos Page transportados ao host/modelo.
-- O worker vê scratch gerenciado e cópias staged, não recebe root do produto como cwd/default roots.
-- O modelo não escolhe owner, grants, `_meta`, cwd, scripts, flags, executablePath ou transport.
-- Uma instância Browser por worker; contextos isolados por session. Nenhum compartilhamento entre Agents. Inicialmente até duas sessions por Agent, sujeitas a limites globais; otimizar pooling entre Agents está fora de escopo.
-- Funções fixas de probe/readiness/geometry são código confiado do adapter usando APIs públicas, não scripts da LLM, templates RCE ou strings de expressão Playwright.
+- DSH/tools/cordis/scope/attachment services resolved in host graph. Do not load second copy of peers identifying scopes.
+- Dependencies of stable Playwright, validators, and worker SDK v2 belong to pinned worker checkout/package. Nothing borrowed from private DSH/Claude cache.
+- SDK v2 client/server/core at boundary use compatible versions. Only JSON/protocol data crosses host↔worker; no SDK1/InMemory/createConnection or Page objects transported to host/model.
+- The worker sees managed scratch and staged copies; does not receive product root as cwd/default roots.
+- The model does not choose owner, grants, `_meta`, cwd, scripts, flags, executablePath, or transport.
+- One Browser instance per worker; isolated contexts per session. No sharing between Agents. Initially up to two sessions per Agent, subject to global limits; cross-Agent pooling optimization is out of scope.
+- Fixed probe/readiness/geometry functions are trusted adapter code using public APIs, not LLM scripts, RCE templates, or Playwright expression strings.
 
-### Escolhas alternativas controladas
+### Controlled alternative choices
 
-A troca de backend foi **decidida pelo dono**; não há seleção dinâmica entre MCP/CLI/stable. Se stable Page-bound, SDK2 stdio ou observação pública não satisfizer um gate, parar e registrar a causa/voltar ao dono. Não reinstalar SDK1/MCP, usar API privada ou iniciar segundo motor como workaround.
+Backend switch was **decided by the owner**; there is no dynamic selection between MCP/CLI/stable. If stable Page-bound, SDK2 stdio, or public observation does not satisfy a gate, halt, record cause, and return to owner. Do not reinstall SDK1/MCP, use private APIs, or start a second engine as a workaround.
 
-Fachada MCP pública + bridge nativo não é fallback automático; qualquer mudança da root nativa/global e das restrições herdadas exige nova decisão. CLI oficial pode ser baseline de comparação de tokens/ergonomia, não rota de execução nem licença para instalar skills. PTC/deferred loading são otimizações opcionais comprovadas, não mudanças da arquitetura default.
+Public MCP facade + native bridge is not an automatic fallback; any change to native/global root and inherited restrictions requires a new decision. Official CLI can serve as token/ergonomics comparison baseline, not execution route or license to install skills. PTC/deferred loading are proven optional optimizations, not default architecture changes.
 
-## 4. API pública: uma tool, não um schema-monstro
+## 4. Public API: one tool, not a monster-schema
 
-### 4.1 Envelope wire mínimo
+### 4.1 Minimal wire envelope
 
 ```json
 {
@@ -146,7 +146,7 @@ Fachada MCP pública + bridge nativo não é fallback automático; qualquer muda
 }
 ```
 
-Schema wire conceitual, dentro do subset DSH:
+Conceptual wire schema, within DSH subset:
 
 ```json
 {
@@ -164,17 +164,17 @@ Schema wire conceitual, dentro do subset DSH:
 }
 ```
 
-`args` aberto no **wire** não é aberto no executor. Cada operação possui schema/semântica próprios obrigatórios. Não usar enum gigante, union de todas as leaves, aliases silenciosos, campo action redundante ou milhares de parâmetros opcionais.
+Open `args` on the **wire** is not open on the executor. Each operation has its own mandatory schema/semantics. Do not use a giant enum, union of all leaves, silent aliases, redundant action field, or thousands of optional parameters.
 
-Regras:
+Rules:
 
-- `operation` exata/case-sensitive; leaf usa caminho dotted curado. Sem pass-through de nome MCP/Playwright desconhecido.
-- `path` somente em `help`/`describe`; proibido em execução. IDs são aceitos apenas onde descriptor permite; não ignorar campos indevidos.
-- `catalogRevision` é detecção de drift opcional, não token de aprovação. Drift informado retorna `CATALOG_CHANGED` antes do efeito.
-- `args` obrigatório, mesmo `{}`; nenhuma operação batch/array no MVP. Uma chamada corresponde a uma decisão auditável.
-- Bounds preliminares de bytes/depth/strings/arrays precedem AJV e resolução de paths. Como o host pode logar argumentos antes do hook, isso não garante que input enorme jamais entre no transcript.
+- Exact, case-sensitive `operation`; leaf uses curated dotted path. No pass-through of unknown MCP/Playwright name.
+- `path` only in `help`/`describe`; forbidden in execution. IDs accepted only where descriptor permits; do not ignore improper fields.
+- `catalogRevision` is optional drift detection, not an approval token. Reported drift returns `CATALOG_CHANGED` prior to effect.
+- Mandatory `args`, even `{}`; no batch/array operations in MVP. One call corresponds to one auditable decision.
+- Preliminary bounds on bytes/depth/strings/arrays precede AJV and path resolution. Since host may log arguments before hook, this does not guarantee huge input never enters transcript.
 
-### 4.2 Navegação do catálogo
+### 4.2 Catalog navigation
 
 ```json
 {"operation":"help","args":{}}
@@ -184,52 +184,52 @@ Regras:
 {"operation":"capabilities","args":{}}
 ```
 
-- Help root: ramos imediatos e resumo curto; sem todos os schemas.
-- Help ramo: filhos imediatos, finalidade, availability e efeitos resumidos. Busca textual opcional somente no catálogo curado.
-- `describe`: uma leaf, input/output schemas, refs requeridas, defaults, limites, efeitos, disponibilidade/razão, versão/hash e um exemplo curto.
-- `capabilities`: versões/preflight local, dependências instaladas, engine support, suporte do provider a imagens, limites e estado conhecido. Não lança browser para provar capability; distingue `declared`, `verified`, `unverified`, `disabled`, `unsupported`.
-- Discovery não concede permissão nem revela cookies, profiles pessoais, tokens ou endpoints credenciados.
-- Help: default 12/max 30 filhos, cursor owner/path/revision-bound, texto até 8 KiB. Describe: até 16 KiB; schemas excepcionalmente grandes usam spill acessível por artifactId, nunca truncamento silencioso que invalide schema.
-- Não exigir describe antes de toda chamada; root e catálogo ficam prefix-stable. Policy/runtime status não geram churn gratuito de schema.
+- Help root: immediate branches and short summary; not all schemas.
+- Help branch: immediate children, purpose, availability, and summarized effects. Optional text search only on curated catalog.
+- `describe`: single leaf, input/output schemas, required refs, defaults, limits, effects, availability/reason, version/hash, and short example.
+- `capabilities`: local versions/preflight, installed dependencies, engine support, provider image support, limits, and known state. Does not launch browser to prove capability; distinguishes `declared`, `verified`, `unverified`, `disabled`, `unsupported`.
+- Discovery does not grant permission or reveal cookies, personal profiles, tokens, or credentialed endpoints.
+- Help: default 12 / max 30 children, cursor bound to owner/path/revision, text up to 8 KiB. Describe: up to 16 KiB; exceptionally large schemas use spill accessible via artifactId, never silent truncation that invalidates schema.
+- Do not require describe before every call; root and catalog remain prefix-stable. Policy/runtime status do not generate gratuitous schema churn.
 
-### 4.3 Fonte única dos descriptors
+### 4.3 Single source of descriptors
 
-Manifest compartilhado host/worker, versionado, gera catálogo/describe/validator/classifier/backend map/test fixtures. Cada descriptor contém:
+Shared versioned host/worker manifest generates catalog/describe/validator/classifier/backend map/test fixtures. Each descriptor contains:
 
 ```text
-operation, public input/output schema e dialect
+operation, public input/output schema and dialect
 required refs / supported engines / capability prerequisites
-effects e classifier / defaults explícitos / limits
-availability resolver / adapter id/version / public Playwright mapping allowlisted
+effects and classifier / explicit defaults / limits
+availability resolver / adapter id/version / allowlisted public Playwright mapping
 ```
 
-AJV/SDK validadores pinados, sem coerção, remoção automática de propriedades ou defaults mutantes silenciosos. `$ref` somente local resolvido no build/bootstrap; sem fetch remoto/import arbitrário. Defaults explícitos geram effectiveArgs determinísticos após validação; policy examina a mesma normalização que o worker executa.
+Pinned AJV/SDK validators, without coercion, automatic property removal, or silent mutating defaults. Local-only `$ref` resolved at build/bootstrap; no remote fetch / arbitrary import. Explicit defaults produce deterministic effectiveArgs after validation; policy examines same normalization that worker executes.
 
-Schema público da fachada é estável e não expõe opções genéricas Playwright: IDs, paths e opções são adaptados deliberadamente. Guardar contrato do adapter público separadamente e testar a transformação. Schemas completos das leaves são **dados retornados**, não schemas wire DSH/PTC. Não há schema/discovery MCP upstream na produção r4.
+Public facade schema is stable and does not expose generic Playwright options: IDs, paths, and options are deliberately adapted. Keep public adapter contract separately and test transformation. Full leaf schemas are **returned data**, not DSH/PTC wire schemas. There is no upstream MCP schema/discovery in r4 production.
 
-## 5. Catálogo inicial e estratégia de expansão
+## 5. Initial catalog and expansion strategy
 
-| Ramo | Operações propostas | Disponibilidade / observações |
+| Branch | Proposed operations | Availability / notes |
 | --- | --- | --- |
-| session | open, list, status, close, replace | Central; open explícito antes de efeito stateful |
-| page | list, create, close, navigate, back, forward, reload, wait, frames, dialog.respond | Central; Page concreta, sem current tab global invisível |
-| observe | snapshot, text, attributes, geometry | Central; ariaSnapshot público + targets próprios; dados da página não confiáveis, limites/spill |
-| interact | click, fill, select, check, press, hover, drag, scroll | Central; locators/handles Page-bound, ambiguidade não resolvida com first/nth |
-| mobile | devices, tap, swipe | Tap touch público; swipe trusted Chromium após gate estável |
-| emulate | viewport, media, offline | Mudanças de identidade por session.replace; viewport não significa mobile |
-| diagnostics | console, errors, requests, request | Eventos Page/Context públicos, cursores/filtros; bodies/headers sensíveis opt-in |
-| media | screenshot, video.start/status/stop, trace.start/status/stop | Screenshot/vídeo centrais; trace opt-in; scopes explícitos |
-| files | upload, downloads.list/status | Upload autorizado/staged; download disabled no contexto default |
-| artifacts | list, inspect, export | Central, separado de handle vivo; paths controlados |
-| advanced | pdf, routes.add/list/remove, actions.start/stop, auth.import/export, session.attach/detach | Extras disabled/unsupported até API pública, gate e autorização específica; sem codegen privado |
+| session | open, list, status, close, replace | Core; explicit open before stateful effect |
+| page | list, create, close, navigate, back, forward, reload, wait, frames, dialog.respond | Core; concrete Page, no invisible global current tab |
+| observe | snapshot, text, attributes, geometry | Core; public ariaSnapshot + custom targets; untrusted page data, limits/spill |
+| interact | click, fill, select, check, press, hover, drag, scroll | Core; Page-bound locators/handles, ambiguity not resolved via first/nth |
+| mobile | devices, tap, swipe | Public touch tap; trusted Chromium swipe after stable gate |
+| emulate | viewport, media, offline | Identity changes via session.replace; viewport does not imply mobile |
+| diagnostics | console, errors, requests, request | Public Page/Context events, cursors/filters; sensitive bodies/headers opt-in |
+| media | screenshot, video.start/status/stop, trace.start/status/stop | Core screenshot/video; trace opt-in; explicit scopes |
+| files | upload, downloads.list/status | Authorized/staged upload; download disabled in default context |
+| artifacts | list, inspect, export | Core, separated from live handle; controlled paths |
+| advanced | pdf, routes.add/list/remove, actions.start/stop, auth.import/export, session.attach/detach | Extras disabled/unsupported until public API, gate, and specific authorization; no private codegen |
 
-Sem `advanced.run_code`, evaluate livre, request HTTP livre ou método CDP fornecido pela LLM no baseline. Geometry/text/readiness usam funções fixas internas, não scripts da página. Se o dono pedir capacidade não representável, responder capability ausente e propor extensão revisável; não escapar por bash/Python automaticamente.
+No `advanced.run_code`, unconstrained evaluate, arbitrary HTTP request, or LLM-supplied CDP method in baseline. Geometry/text/readiness use fixed internal functions, not page scripts. If owner requests non-representable capability, answer missing capability and propose reviewable extension; do not automatically escape via bash/Python.
 
-Novas APIs/dependências/tools externas não entram automaticamente na árvore autorizada. Mudança precisa descriptor, classificador, schema, output/paths e testes. Page-provided tools/WebMCP não ampliam privilégios.
+New APIs/dependencies/external tools do not automatically enter authorized tree. Changes require descriptor, classifier, schema, output/paths, and tests. Page-provided tools / WebMCP do not escalate privileges.
 
-## 6. Output canônico, multimodal e falhas
+## 6. Canonical output, multimodal, and failures
 
-### 6.1 Sucesso
+### 6.1 Success
 
 ```json
 {
@@ -247,459 +247,459 @@ Novas APIs/dependências/tools externas não entram automaticamente na árvore a
 }
 ```
 
-Valores acima ilustrativos. Root output usa subset DSH; `data` específico é validado por leaf no worker/host antes da projeção. IDs/callId vêm do host/broker, não do modelo. Schema interno de erro/sucesso no protocolo worker não altera o contrato de falha nativo DSH.
+Values above are illustrative. Root output uses DSH subset; leaf-specific `data` is validated in worker/host before projection. IDs/callId originate from host/broker, not model. Internal error/success schema in worker protocol does not alter native DSH failure contract.
 
-- `completed`: efeito esperado concluído e artefatos finalizados conforme verificação.
-- `partial`: efeito realmente parcial, com fatos, artefatos parciais e recuperação; nunca denial mascarada ou vídeo incompleto chamado pronto.
-- `effects` registra `none`/`applied`/`partial`/`unknown`; unknown não autoriza replay.
-- Resposta normal resumida/bounded; não anexar snapshot completo automaticamente depois de toda interação.
+- `completed`: expected effect finished and artifacts finalized per verification.
+- `partial`: genuinely partial effect, with facts, partial artifacts, and recovery; never a masked denial or incomplete video declared ready.
+- `effects` records `none`/`applied`/`partial`/`unknown`; unknown does not authorize replay.
+- Normal response summarized/bounded; do not automatically attach full snapshot after every interaction.
 
-### 6.2 Screenshot visível ao modelo
+### 6.2 Screenshot visible to model
 
-- Worker retorna bytes/image content e metadata verificáveis, separados do artifact original.
-- Host verifica rota atual `session.requestHeader`/modelo, não rota congelada na criação. Exigir `inputModalities` com image e AttachmentStore público.
-- Usar APIs públicas `attachments.saveImages` e output.render com image attachment refs. Não guardar base64 de imagem no canonical value/transcript; referências serializáveis e metadata bastam.
-- Artifact original e attachment normalizado são distintos. Normalização pode reduzir pixels; preservar originalDimensions e informar coordenadas CSS versus image pixels.
-- Ausência de store/modelo image-capable: artifact continua disponível e resposta informa `imageUnavailable`; não fabricar image block nem dizer que a LLM viu a imagem.
-- Verificar cancelamento antes e depois de save; API pública observada não aceita signal para hard-abort do commit. Não prometer cancelamento atômico; aguardar quiescência e tratar attachment/arquivo criado como efeito conhecido.
-- Vídeo/trace são entregas de arquivo, não image blocks mágicos. Inspeção de vídeo usa metadata + frames, e não equivale a modelo assistindo vídeo/áudio.
+- Worker returns verifiable bytes/image content and metadata, separated from original artifact.
+- Host checks current route `session.requestHeader`/model, not frozen route from creation. Require `inputModalities` with image and public AttachmentStore.
+- Use public APIs `attachments.saveImages` and output.render with image attachment refs. Do not keep base64 image data in canonical value/transcript; serializable references and metadata suffice.
+- Original artifact and normalized attachment are distinct. Normalization may downscale pixels; preserve originalDimensions and report CSS coordinates versus image pixels.
+- Absence of image-capable store/model: artifact remains available and response reports `imageUnavailable`; do not fabricate image block or claim LLM saw image.
+- Check cancellation before and after save; observed public API does not accept signal for hard-abort of commit. Do not promise atomic cancellation; await quiescence and treat created attachment/file as known effect.
+- Video/trace are file deliveries, not magic image blocks. Video inspection uses metadata + frames, not equivalent to model watching video/audio.
 
-### 6.3 Falhas e recuperação
+### 6.3 Failures and recovery
 
-Usar erro nativo/HarnessError da instalação host, mantendo código durável e mensagem sanitizada. Worker envelope de erro é convertido pelo gateway; não afirmar que native failures contém canonical `value`. Deny/ask indisponível/timeout/abort nativos permanecem autoritativos (`ABORTED_BEFORE_DISPATCH`, `ABORTED`, `TOOL_TIMEOUT` etc.).
+Use native error / HarnessError from host installation, maintaining durable code and sanitized message. Worker error envelope is converted by gateway; do not claim native failures contain canonical `value`. Native deny / unavailable ask / timeout / abort remain authoritative (`ABORTED_BEFORE_DISPATCH`, `ABORTED`, `TOOL_TIMEOUT`, etc.).
 
-Códigos de domínio mínimos: `INVALID_ENVELOPE`, `UNKNOWN_OPERATION`, `INVALID_ARGS`, `UNSUPPORTED_CAPABILITY`, `CATALOG_CHANGED`, `SESSION_NOT_FOUND`, `PAGE_NOT_FOUND`, `STALE_HANDLE`, `STALE_SNAPSHOT`, `AMBIGUOUS_TARGET`, `INVALID_STATE`, `LIMIT_EXCEEDED`, `ARTIFACT_PATH_DENIED`, `BACKEND_UNAVAILABLE`, `BACKEND_ERROR`.
+Minimal domain codes: `INVALID_ENVELOPE`, `UNKNOWN_OPERATION`, `INVALID_ARGS`, `UNSUPPORTED_CAPABILITY`, `CATALOG_CHANGED`, `SESSION_NOT_FOUND`, `PAGE_NOT_FOUND`, `STALE_HANDLE`, `STALE_SNAPSHOT`, `AMBIGUOUS_TARGET`, `INVALID_STATE`, `LIMIT_EXCEEDED`, `ARTIFACT_PATH_DENIED`, `BACKEND_UNAVAILABLE`, `BACKEND_ERROR`.
 
-Diagnostic interno seguro: operation/callId, fields bounded, effectState, retryable e recovery proposta. Mensagem ao modelo inclui apenas fatos/recuperação sem tokens/headers/stack bruto. Foreign IDs respondem not-found sem revelar vizinhos. Não transformar authorization violation em sucesso com status:error. Partial success é permitido somente com resultado parcial conhecido; falha desconhecida é erro com orientação para observar antes de repetir.
+Safe internal diagnostics: operation/callId, bounded fields, effectState, retryable flag, and proposed recovery. Message to model includes only facts/recovery without raw tokens/headers/stack. Foreign IDs answer not-found without revealing neighbors. Do not turn authorization violation into status:error success. Partial success is permitted only with known partial result; unknown failure is error with guidance to observe before repeating.
 
-Não prometer entrega universal de JSON de erro após políticas de terceiros. Validar observabilidade nativa/PTC/replay durante gate.
+Do not promise universal error JSON delivery across third-party policies. Validate native observability / PTC / replay during gate.
 
-## 7. Pipeline, policy e handshake
+## 7. Pipeline, policy, and handshake
 
 ```text
-1. ToolRuntime resolve root visível ao Agent (allowlist/guard nativo)
-2. Pre-hook valida bounds e envelope; lookup exato no manifest
-3. AJV leaf + refs + revisão + effectiveArgs; classificar efeitos reais
-4. Policy administrativa + policy efetiva da sessão + ask quando exigido
-5. Body revalida, resolve owner e adquire fila/lock de contexto
-6. Rechecar state/generation/policy epoch/quotas e capturar Page bound antes do efeito
-7. Worker SDK2 handshake validado; revalidar request/manifest/refs/limites
-8. Adapter público executa UMA operação na Page/Context concreta, com deadline/cancelamento
-9. Validar/mapear output, registrar artefatos, projetar imagem/erro
-10. ToolRuntime registra outcome canônico e fatos auditáveis
+1. ToolRuntime resolves root visible to Agent (native allowlist/guard)
+2. Pre-hook validates bounds and envelope; exact lookup in manifest
+3. Leaf AJV + refs + revision + effectiveArgs; classify real effects
+4. Administrative policy + session effective policy + ask when required
+5. Body revalidates, resolves owner, and acquires context queue/lock
+6. Recheck state/generation/policy epoch/quotas and capture bound Page prior to effect
+7. Validated worker SDK2 handshake; revalidate request/manifest/refs/limits
+8. Public adapter executes ONE operation on concrete Page/Context, with deadline/cancellation
+9. Validate/map output, register artifacts, project image/error
+10. ToolRuntime records canonical outcome and auditable facts
 ```
 
-- A root autorizada não autoriza todas as leaves. Classificador usa operation+args normalizados e efeitos, não annotations readOnly de terceiros.
-- Pre-hook e body usam a mesma fonte de schema; worker repete validação e limites. Operação sem classificador, desconhecida ou com manifest mismatch é negada antes do efeito.
-- Não emitir pre-execute falso com nome virtual, chamar browser recursivamente ou inventar leaf logs nativos. SDK2 privado é I/O do body, não subdispatch ToolRuntime.
-- Hashes de manifest/schema/adapters e policy epoch relevantes são verificados host↔worker. Não incluir segredos em hashes expostos, nem permitir `approved:true`/owner `_meta` no input público.
-- API MCP interna do worker transporta request público normalizado + contexto de execução **injetado pelo host**: owner opaco, generation, manifestHash, callId/rootCallId, deadline e policy snapshot permitida. Nenhuma dessas autoridades é um campo repassável pelo modelo.
-- Process/stdin owned, sem HTTP listener/CDP exposto. O worker confia no canal privado host, não em payload de página. Processo separado por si só não é contenção contra código com mesmo usuário e acesso shell irrestrito.
-- Se policy muda enquanto aguarda lock, revalidar; grant once não vira standing grant. Store de owner não pode ser escolhido por IDs/cwd do modelo.
-- `isConcurrencySafe`: false para stateful no início; true somente meta-ops locais comprovadamente puras. Locks protegem chamadas/cleanup, mas não impedem eventos de fechamento/navegação: Page concreta é o vínculo de efeito, não mutex/current tab.
-- Depois de resolver Page, não consultar de novo “primeira/current/vizinha” após await. Se ela fechar/crash/navegar invalidando document/ref, falhar com estado conhecido/unknown, sem retarget/retry em outro Page.
+- Authorized root does not authorize all leaves. Classifier uses normalized operation+args and effects, not third-party readOnly annotations.
+- Pre-hook and body use same schema source; worker repeats validation and limits. Operation without classifier, unknown, or with manifest mismatch is denied prior to effect.
+- Do not emit fake pre-execute with virtual name, recursively call browser, or invent native leaf logs. Private SDK2 is body I/O, not ToolRuntime subdispatch.
+- Manifest/schema/adapter hashes and relevant policy epoch are verified host↔worker. Do not include secrets in exposed hashes, or permit `approved:true` / owner `_meta` in public input.
+- Worker internal MCP API carries normalized public request + execution context **injected by host**: opaque owner, generation, manifestHash, callId/rootCallId, deadline, and permitted policy snapshot. None of these authorities is a model-passable field.
+- Owned process/stdin, no HTTP listener / exposed CDP. Worker trusts private host channel, not page payload. Separate process alone is not containment against code running under same user with unrestricted shell access.
+- If policy changes while awaiting lock, revalidate; grant-once does not become standing grant. Owner store cannot be chosen by model IDs/cwd.
+- `isConcurrencySafe`: false for stateful initially; true only for proven pure local meta-ops. Locks protect calls/cleanup, but do not prevent close/navigation events: concrete Page is the effect binding, not mutex/current tab.
+- After resolving Page, do not re-query "first/current/neighbor" after await. If it closes/crashes/navigates invalidating document/ref, fail with known/unknown state, without retargeting/retrying on another Page.
 
-## 8. Classes de efeitos e políticas reais do host
+## 8. Effect classes and real host policies
 
-| Classe | Exemplos | Tratamento |
+| Class | Examples | Handling |
 | --- | --- | --- |
-| discovery/status | help, describe, capabilities local | Sem browser/instalação/efeitos externos |
-| observe-page | snapshot/text/geometry | Conteúdo não confiável; pode ler dados sensíveis de página autorizada |
-| navigate-network | navigate/reload/open URL | Rede/redirects/localhost; não prometer GET sem efeitos |
-| mutate-page | click/fill/select/press/touch | Pode enviar/excluir/publicar; autorização de workflow sensível continua necessária |
-| capture-managed | screenshot/video/trace | Grava disco, quotas e retenção; não é read-only só por annotation de terceiros |
-| upload/download/export | files/artifacts | FS host, staging, destino e dados específicos autorizados |
-| auth/profile/attach | auth.import/export, Chrome pessoal | Opt-in separado, desligado por padrão |
-| unsafe code | run_code/eval/CDP livre | Ausente no baseline; nova revisão se necessário |
+| discovery/status | help, describe, capabilities local | No browser/installation/external effects |
+| observe-page | snapshot/text/geometry | Untrusted content; may read sensitive data from authorized page |
+| navigate-network | navigate/reload/open URL | Network/redirects/localhost; do not promise GET without effects |
+| mutate-page | click/fill/select/press/touch | May submit/delete/publish; sensitive workflow authorization still required |
+| capture-managed | screenshot/video/trace | Writes disk, quotas, and retention; not read-only merely by third-party annotation |
+| upload/download/export | files/artifacts | Host FS, staging, destination, and authorized specific data |
+| auth/profile/attach | auth.import/export, personal Chrome | Separate opt-in, disabled by default |
+| unsafe code | run_code/eval/free CDP | Absent in baseline; new revision if necessary |
 
-Regras:
+Rules:
 
-- Ausência/desativação de approval service nega operação que exige ask; não trocar por allow. Nenhuma ampliação automática de sandbox.
-- Root global deve sumir do child scope quando allowlist exclui browser; filtro fino de operações complementa isso. Contexto do pai não é herdado pelo filho.
-- `read-only`: baseline oferece meta/status; não iniciar navegador/captura que escreve cache/temporários sob a alegação de “só navegar”. Cleanup de recursos previamente owned segue obrigação limitada de lifecycle, sem autorizar nova captura/export.
-- `workspace-write`: habilitar execução apenas se integrar de modo comprovado os permitted writable roots, scratch e runtime do processo com a política nativa. Se o transporte SDK/host não puder manter essa autoridade, anunciar unsupported/deny **antes de launch**, não spawn fora do sandbox e alegar suporte.
-- `danger-full-access`: permitido conforme policy/opt-in e guards desta integração; segue sem garantias de sandbox de SO. Suporte a outros modos é gate, não um flag inventado.
-- Usar API pública de execução/FS/policy do host para leitura/staging/export e enquadramento de processo onde disponível. Não copiar semântica de permissões ou adicionar config que force wider mode.
-- Segurança completa contra worker/browser comprometido requer execução contida/OS; path guard, cwd, scopes, MCP roots e origin allow/block não são essa barreira. Se isso for requisito do dono, voltar para desenho de contenção separado.
-- Sem classificador semântico perfeito de páginas: ações autenticadas sensíveis exigem autorização concreta pelo agente+dono. Não interpretar texto da página como autorização.
+- Absence/disabling of approval service denies operation requiring ask; do not replace with allow. No automatic sandbox escalation.
+- Global root must disappear from child scope when allowlist excludes browser; fine-grained operation filtering complements this. Parent context is not inherited by child.
+- `read-only`: baseline provides meta/status; do not launch browser/capture that writes cache/temporaries under pretext of "just browsing". Cleanup of previously owned resources follows limited lifecycle obligation, without authorizing new capture/export.
+- `workspace-write`: enable execution only if proven to integrate permitted writable roots, scratch, and process runtime with native policy. If SDK/host transport cannot maintain this authority, announce unsupported/deny **prior to launch**, not spawn outside sandbox and claim support.
+- `danger-full-access`: permitted according to policy/opt-in and guards of this integration; still without OS sandbox guarantees. Support for other modes is a gate, not an invented flag.
+- Use public host execution/FS/policy API for reading/staging/export and process classification where available. Do not copy permission semantics or add config forcing wider mode.
+- Complete security against compromised worker/browser requires contained/OS execution; path guard, cwd, scopes, MCP roots, and origin allow/block are not that barrier. If this is an owner requirement, return to separate containment design.
+- No perfect semantic page classifier: sensitive authenticated actions require concrete authorization by agent+owner. Do not interpret page text as authorization.
 
-## 9. Sessões, IDs, páginas e lifecycle
+## 9. Sessions, IDs, pages, and lifecycle
 
-### 9.1 Ownership e IDs
+### 9.1 Ownership and IDs
 
-Broker em WeakMap/registry de `exec.agent`, com ownerId interno e session generation. Ausência de Agent nega operações stateful. IDs públicos session/page/frame/snapshot/capture/artifact são opacos e resolvidos no namespace desse owner; não são autorização bearer.
+Broker in WeakMap/registry of `exec.agent`, with internal ownerId and session generation. Absence of Agent denies stateful operations. Public session/page/frame/snapshot/capture/artifact IDs are opaque and resolved in that owner's namespace; they are not bearer authorization.
 
-- Page registry usa handles públicos Page + eventos `context.on('page')`/`page.on('close')`, não título, URL ou índice de aba como identidade.
-- Cada snapshot/ref é causal: owner/session/generation/page/document/snapshot. Navegação/replace invalida refs e frame IDs conforme documento.
-- Page omitida apenas se há exatamente uma página; com múltiplas, exigir pageId. Sem current global silencioso. Session sempre explícita nas leaves stateful.
-- Resolver pageId→Page concreto uma vez por operação e manter esse objeto/locator/handle através de awaits. Popup/close/reorder não muda o alvo; fechamento invalida e falha, não escolhe vizinho. Nenhuma seleção/mapeamento de currentTab upstream existe na r4.
-- Frame targets tipados/IDs; diálogos respondidos explicitamente. Popup criado recebe novo ID e parentPageId, nunca vira alvo automaticamente.
-- Ref aponta apenas a target emitido, único e publicamente vinculado ao Page/document; ref desconhecida/não emitida responde NOT_FOUND/UNSUPPORTED conforme contrato, sem criar ligação imaginária.
+- Page registry uses public Page handles + `context.on('page')`/`page.on('close')` events, not title, URL, or tab index as identity.
+- Each snapshot/ref is causal: owner/session/generation/page/document/snapshot. Navigation/replace invalidates refs and frame IDs according to document.
+- Page omitted only if exactly one page exists; with multiple, require pageId. No silent global current tab. Session always explicit in stateful leaves.
+- Resolve pageId→concrete Page once per operation and maintain that object/locator/handle across awaits. Popup/close/reorder does not alter target; closing invalidates and fails, does not choose neighbor. No upstream currentTab selection/mapping exists in r4.
+- Typed frame targets/IDs; dialogs answered explicitly. Created popup receives new ID and parentPageId, never becomes target automatically.
+- Ref points only to issued target, unique and publicly bound to Page/document; unknown/unissued ref answers NOT_FOUND/UNSUPPORTED per contract, without creating imaginary link.
 
 ### 9.2 State machines
 
 ```text
 Session: NEW -> STARTING -> READY -> REPLACING | CLOSING -> CLOSED
-                         \-> FAILED (efeitos/recursos conhecidos informados)
+                         \-> FAILED (known effects/resources reported)
 
 Capture: STARTING -> RECORDING -> STOPPING -> FINALIZED | PARTIAL | FAILED
 
 Artifact: PENDING -> FINALIZED | PARTIAL | FAILED -> EXPIRED
 ```
 
-- `session.open`: valida options/limites/policy, reserva owner recursos, cria Browser stable lazy se necessário e contexto incognito; handshake/adapter readiness antes de retornar IDs.
-- `session.replace`: operação explícita para identidade/device/DPR/UA/locale que exige contexto novo. BUSY se captura ativa, salvo opção finalize-first autorizada. Drenar fila, finalizar captures, desconectar listeners/descartar handles antigos, fechar old context, criar novo contexto no browser owned, nova geração e IDs. Informar perda de DOM/abas e quais cookies/storage foram ou não restaurados.
-- `session.close`: scoped; fecha resources próprios, não browser pessoal ou todos browsers da máquina. Artefatos finalizados sobrevivem segundo retenção.
-- Compaction/resume/clear com novo Agent: baseline fecha/desassocia recursos do Agent anterior e reporta handles stale/state lost. Não fingir que replay restaura browser vivo ou que storageState restaura DOM. Persistência de daemon entre Agents é fora do MVP.
-- Fork/spawn: owner/context novo; conversa seed não copia conexão/auth/live handles.
-- Idle/unload/crash: impede novos effects, cancela fila, finaliza mídia bounded, fecha context/browser/SDK2/client/worker owned, aguarda quiescência. Timeout não abandona promises/processos indefinidamente.
-- Falha após mutação não faz rollback nem retry automático. Reconexão restabelece transporte/status; não reexecuta submissão/click/download.
-- Graceful teardown tem prazo; hard-stop apenas processos próprios com identidade verificada. Worker perdido pode deixar arquivo partial; não chamá-lo finalized.
+- `session.open`: validates options/limits/policy, reserves owner resources, creates lazy stable Browser if needed and incognito context; handshake/adapter readiness before returning IDs.
+- `session.replace`: explicit operation for identity/device/DPR/UA/locale requiring new context. BUSY if capture active, unless finalize-first option authorized. Drain queue, finalize captures, disconnect listeners / discard old handles, close old context, create new context in owned browser, new generation and IDs. Report loss of DOM/tabs and which cookies/storage were or were not restored.
+- `session.close`: scoped; closes owned resources, not personal browser or all machine browsers. Finalized artifacts survive per retention.
+- Compaction/resume/clear with new Agent: baseline closes/disassociates resources from previous Agent and reports stale handles / state lost. Do not pretend replay restores live browser or storageState restores DOM. Cross-Agent daemon persistence is out of MVP.
+- Fork/spawn: new owner/context; seed conversation does not copy connection/auth/live handles.
+- Idle/unload/crash: prevents new effects, cancels queue, finalizes bounded media, closes owned context/browser/SDK2/client/worker, awaits quiescence. Timeout does not abandon promises/processes indefinitely.
+- Failure after mutation does not perform rollback or automatic retry. Reconnection re-establishes transport/status; does not re-execute submission/click/download.
+- Graceful teardown has deadline; hard-stop only owned processes with verified identity. Lost worker may leave partial file; do not call it finalized.
 
-## 10. Alvos, prontidão e interação
+## 10. Targets, readiness, and interaction
 
-Target leaf tipado, validado localmente por AJV:
+Typed leaf target, validated locally by AJV:
 
 ```text
 {kind:'ref', snapshotId, ref}
 {kind:'role', role, name, exact?}
 {kind:'testId', value}
-{kind:'css', value}       # escape-hatch bounded, opt-in/configurado
+{kind:'css', value}       # bounded escape-hatch, opt-in/configured
 ```
 
-Sem string de expressão Playwright/JS. Match count diferente de 1 gera AMBIGUOUS_TARGET/NOT_FOUND; não usar first/nth automaticamente. Refs somente de snapshot emitido para a mesma Page/document geração.
+No Playwright/JS expression strings. Match count other than 1 produces AMBIGUOUS_TARGET/NOT_FOUND; do not use first/nth automatically. Refs only from snapshot issued for same Page/document generation.
 
-### 10.1 Observação pública e registry de refs
+### 10.1 Public observation and ref registry
 
-Baseline `observe.snapshot`: `Page`/`Frame` owned → Locator público apropriado → **`Locator.ariaSnapshot()` YAML**. Snapshot é dado não confiável, delimitado por alvo/profundidade/bytes; resultado contém snapshotId, Page/document/generation, formato e refs realmente emitidas. Não chamar `_snapshotForAI`, importar helpers privados ou reaproveitar refs eN de MCP.
+Baseline `observe.snapshot`: owned `Page`/`Frame` → appropriate public Locator → **YAML `Locator.ariaSnapshot()`**. Snapshot is untrusted data, delimited by target/depth/bytes; result contains snapshotId, Page/document/generation, format, and genuinely issued refs. Do not call `_snapshotForAI`, import private helpers, or reuse MCP eN refs.
 
-Parser YAML serve apenas para interpretar dados/apresentação; não executa expressões, não gera locator JS, não elege `nth` ou assume vínculo por ordem da árvore. Candidatos role/name são aceitos somente quando um **locator público Page-bound resolve exatamente um elemento**, com schema/role/name limitados e verificações de owner/document. Ref pode registrar esse locator explicitamente vinculado e/ou ElementHandle público capturado; para identidade de node, preferir handle e invalidar se detach/document mudou. Uma ref não pode retarget silenciosamente um novo nó equivalente após drift.
+YAML parser serves only to interpret data/presentation; does not execute expressions, generate JS locators, select `nth`, or assume binding by tree order. Candidate role/name are accepted only when a **public Page-bound locator resolves exactly one element**, with limited schema/role/name and owner/document checks. Ref may register this explicitly bound locator and/or captured public ElementHandle; for node identity, prefer handle and invalidate if detached or document changed. A ref cannot silently retarget a new equivalent node after drift.
 
-Se ariaSnapshot não fornece vínculo suficiente, emitir observação sem ref para esse nó e orientar target público role/name/testId; chamadas de ref ausente/não emitida dão NOT_FOUND/UNSUPPORTED. Não inventar IDs/handles para aparentar paridade com MCP. Ambiguidade, detached node e snapshot stale falham antes de efeito; nenhuma resolução “primeiro que combina”.
+If ariaSnapshot does not provide sufficient binding, issue observation without ref for that node and guide toward public role/name/testId target; calls with missing/unissued ref return NOT_FOUND/UNSUPPORTED. Do not invent IDs/handles to simulate parity with MCP. Ambiguity, detached node, and stale snapshot fail prior to effect; no "first match" resolution.
 
-Text/attributes/geometry usam Locator/ElementHandle/APIs públicas e funções fixas de probes; console/errors/requests usam eventos públicos Page/Context e registros bounded. Probes não aceitam código da LLM. Navegação, frame detach e Page close invalidam document/frame/ref registry.
+Text/attributes/geometry use Locator/ElementHandle/public APIs and fixed probe functions; console/errors/requests use public Page/Context events and bounded records. Probes do not accept LLM code. Navigation, frame detach, and Page close invalidate document/frame/ref registry.
 
-### 10.2 Gestos e readiness
+### 10.2 Gestures and readiness
 
-Tap aceita target ou point CSS, exatamente um. Swipe aceita pontos CSS explícitos e duração/steps bounded. Coordinates são relativas ao viewport do main frame; iframe/offset precisa conversão conhecida, não chute a partir de screenshot normalizada.
+Tap accepts target or CSS point, exactly one. Swipe accepts explicit CSS points and bounded duration/steps. Coordinates are relative to main frame viewport; iframe/offset requires known transformation, not guess from normalized screenshot.
 
-Wait/readiness é explícito: elemento/texto/estado, fonts/images quando solicitado, deadline. `networkidle` não é garantia universal de app pronta; não depender de sleeps indefinidos. Captura retorna condições verificadas/timeout. Não esconder banners/dados ou alterar UI por padrão; masks/estado demo precisam seleção explícita.
+Wait/readiness is explicit: element/text/state, fonts/images when requested, deadline. `networkidle` is not universal guarantee of ready app; do not rely on indefinite sleeps. Capture returns verified conditions or timeout. Do not hide banners/data or alter UI by default; masks/demo state require explicit selection.
 
-## 11. Desktop, mobile e emulação
+## 11. Desktop, mobile, and emulation
 
-`session.open.args` aceita subset curado: engine/headless e emulation via preset **ou** custom completo. Não aceitar launchOptions/contextOptions genéricos, executablePath/proxy/ignoreHTTPS/noSandbox do modelo.
+`session.open.args` accepts curated subset: engine/headless and emulation via preset **or** full custom. Do not accept generic launchOptions/contextOptions, executablePath/proxy/ignoreHTTPS/noSandbox from model.
 
-- Desktop default: Chromium headless, viewport 1280×720, sem touch/mobile.
-- Mobile canônico para custom: 393×852, DPR 2, isMobile/hasTouch verdadeiros e UA/preset efetivo explícito. Preferir devices oficiais; preset name é validado na versão estável pinada, não inventado.
-- Merge device + overrides documentado; retornar engine, viewport, screen, DPR, hasTouch, isMobile, UA, orientação, locale/timezone/media reais.
-- `emulate.viewport` altera viewport, não UA/DPR/touch/mobile. Troca de identidade por `session.replace`.
-- `emulate.media`/offline podem operar no contexto/page existente quando API suporta. Geolocation/permissões extras são capabilities opt-in, não grant default.
-- `mobile.tap`: Playwright touchscreen público com hasTouch; não alias de mouse click.
-- `mobile.swipe`: adapter Chromium público `context.newCDPSession(page)` usando somente Input.dispatchTouchEvent com lista fechada de tipos, pointer id, steps e finally end/cancel. Capability só vira verified após fixture na **stable** provar touch/pointer isTrusted e scroll/gesto esperado. WebKit/Firefox unsupported para esse adapter; nunca fallback sintético/mouse oculto.
-- Emulação não comprova Android/iOS físico, barra de sistema, teclado nativo, permissions picker ou app shell. Acesso físico/ADB é outra capacidade.
+- Default desktop: headless Chromium, viewport 1280×720, no touch/mobile.
+- Canonical mobile for custom: 393×852, DPR 2, true isMobile/hasTouch, and explicit effective UA/preset. Prefer official devices; preset name is validated against pinned stable version, not invented.
+- Documented device + overrides merge; return actual engine, viewport, screen, DPR, hasTouch, isMobile, UA, orientation, locale/timezone/media.
+- `emulate.viewport` changes viewport, not UA/DPR/touch/mobile. Identity change via `session.replace`.
+- `emulate.media`/offline may operate on existing context/page when API supports it. Geolocation/extra permissions are opt-in capabilities, not default grants.
+- `mobile.tap`: public Playwright touchscreen with hasTouch; not mouse click alias.
+- `mobile.swipe`: public Chromium adapter `context.newCDPSession(page)` using only Input.dispatchTouchEvent with closed list of types, pointer id, steps, and finally end/cancel. Capability only becomes verified after fixture on **stable** proves touch/pointer isTrusted and expected scroll/gesture. WebKit/Firefox unsupported for this adapter; never synthetic fallback / hidden mouse.
+- Emulation does not prove physical Android/iOS, system bar, native keyboard, permissions picker, or app shell. Physical/ADB access is a different capability.
 
 ## 12. Screenshots
 
-Input público proposto:
+Proposed public input:
 
 ```text
 mode: viewport | fullPage | element
 format: png | jpeg | webp
 scale: css | device
- target obrigatório só no modo element
-clip? / maskTargets? / readiness? apenas nas combinações declaradas
+target mandatory only in element mode
+clip? / maskTargets? / readiness? only in declared combinations
 ```
 
-Sem filename/path livre. FullPage+element/clip incompatíveis; conflito é erro de schema/semântica, não preferência implícita.
+No unconstrained filename/path. FullPage+element/clip incompatible; conflict is schema/semantic error, not implicit preference.
 
-Adapter público **`Page.screenshot` na Page owned** produz buffer/arquivo gerenciado + imagem. Não usar tool MCP upstream/filename/image inline na produção r4. Host realiza admissão/projeção explícita como definido na seção 6.
+Public adapter **`Page.screenshot` on owned Page** produces guarded buffer/file + image. Do not use upstream MCP tool / filename / inline image in r4 production. Host performs explicit admission/projection as defined in Section 6.
 
-- Validar dimensão/DPR/pixel budget antes, tamanho após e condições de readiness.
-- FullPage enorme não é cortada silenciosamente; negar com sugestão de viewport/element/clip.
-- Metadata: CSS viewport, pixels do original, scale, formato, página/generation, capture time e artifactId. Attachment normalizado informa suas próprias dimensões.
-- Máscara é opt-in por targets autorizados; não garantia de redaction universal.
-- Testar layout/composição lendo a imagem real, não apenas screenshot path.
+- Validate dimension/DPR/pixel budget beforehand, size afterward, and readiness conditions.
+- Giant fullPage is not silently cropped; deny with suggestion of viewport/element/clip.
+- Metadata: CSS viewport, original pixels, scale, format, page/generation, capture time, and artifactId. Normalized attachment reports its own dimensions.
+- Mask is opt-in via authorized targets; not universal redaction guarantee.
+- Test layout/composition by reading the real image, not just screenshot path.
 
-## 13. Vídeo, trace e gravação de ações
+## 13. Video, trace, and action recording
 
-### 13.1 Vídeo baseline page-scoped
+### 13.1 Page-scoped baseline video
 
-Adapter público Screencast com path owned na Page concreta; start/stop não recriam contexto. Esse é o baseline. Captura context-wide extra é implementação própria/opcional, **explicitamente distinta**, não MCP reutilizado.
+Public Screencast adapter with owned path on concrete Page; start/stop do not recreate context. This is the baseline. Extra context-wide capture is a separate/optional implementation, **explicitly distinct**, not reused MCP.
 
 ```text
 media.video.start args:
   scope:'page', size? {width,height}, fps?, cursorPreset?, maxDurationMs?
-  retorna captureId, scope, pageId, generation, state, limites efetivos
+  returns captureId, scope, pageId, generation, state, effective limits
 media.video.status/stop args:
   captureId
 ```
 
-- Size é max bounds/aspect ratio quando API assim define; retornar dimensão efetiva medida, não prometer exatos 1280×720. Spike alpha mostrou canvas padding e arredondamento de width ímpar; repetir stable e verificar frames antes de declarar mídia útil.
-- Reservar ID/path/quota antes de iniciar. Start duplicado no mesmo recorder => INVALID_STATE; stop do mesmo captureId pode retornar resultado já finalizado, sem reexecutar efeitos.
-- Auto-stop por duração, quota/idle/close segue state machine; não manter recorder indefinidamente após cancelamento.
-- Stop aguarda flush, stat/metadata/container/duração/dimensões e frames representativos. Se encoder/browser morreu, retornar partial/failure factual.
-- Page fechada/crash ainda precisa finalização/path verificado. Sem áudio/câmera/desktop recording no baseline.
-- FPS configurável apenas se runtime suporta; Firefox/WebKit podem produzir menos frames. Disponibilidade de encoder FFmpeg gerenciado faz parte do preflight; não instalar sistema automaticamente.
-- Cursor/action overlay é preset curado, não HTML/CSS/code livre da LLM; se pacing altera ações, declarar no resultado.
-- `recordVideo` é fallback somente como sessão de captura explicitamente criada com opções iniciais e perda de estado informada; nunca recriação silenciosa da sessão existente.
+- Size is max bounds/aspect ratio when API defines it as such; return measured effective dimension, do not promise exact 1280×720. Alpha spike showed canvas padding and odd width rounding; repeat on stable and inspect frames before declaring usable media.
+- Reserve ID/path/quota before starting. Duplicate start on same recorder => INVALID_STATE; stop on same captureId may return already-finalized result, without re-executing effects.
+- Auto-stop by duration, quota/idle/close follows state machine; do not keep recorder running indefinitely after cancellation.
+- Stop awaits flush, stat/metadata/container/duration/dimensions, and representative frames. If encoder/browser died, return factual partial/failure.
+- Closed/crashed Page still requires verified finalization/path. No audio/camera/desktop recording in baseline.
+- Configurable FPS only if runtime supports it; Firefox/WebKit may produce fewer frames. Availability of managed FFmpeg encoder is part of preflight; do not automatically install system packages.
+- Cursor/action overlay is curated preset, not LLM HTML/CSS/free code; if pacing alters actions, declare in result.
+- `recordVideo` is fallback only as capture session explicitly created with initial options and state loss reported; never silent recreation of existing session.
 
-### 13.2 Context-wide opcional Page-bound
+### 13.2 Optional page-bound context-wide
 
-Se implementado por adapters públicos diretos, declarar `scope:'context'`, páginas existentes/futuras e `artifacts[]` por pageId. Registrar failures em páginas futuras; path planejado não conta como sucesso. Limitar tabs/bytes e permitir captura apenas das Pages autorizadas do contexto. Não expor isso como uma gravação exclusiva da aba atual. Disabled/unsupported até gate específico; não reintroduzir start_video MCP.
+If implemented via direct public adapters, declare `scope:'context'`, existing/future pages, and `artifacts[]` per pageId. Record failures on future pages; planned path does not count as success. Limit tabs/bytes and permit capture only of authorized Pages in context. Do not expose this as exclusive recording of current tab. Disabled/unsupported until specific gate; do not reintroduce start_video MCP.
 
-### 13.3 Trace/ações
+### 13.3 Trace / actions
 
-Trace é opt-in devido a snapshots/network/auth. Baseline ZIP via `context.tracing.start/stop({path})` público, context-scoped. Sources:false por default. Snapshots/screenshots são opções explícitas; redaction não elimina necessariamente segredos.
+Trace is opt-in due to snapshots/network/auth. Baseline ZIP via public `context.tracing.start/stop({path})`, context-scoped. Sources:false by default. Snapshots/screenshots are explicit options; redaction does not necessarily eliminate secrets.
 
-Trace live é capability diferente de ZIP, com arquivos/recursos múltiplos, não baseline. Não chamar diretório live de trace.zip. Library tracing não registra automaticamente assertions de um test runner. Nenhuma API privada ou trace upstream para preencher gap.
+Live trace is a capability different from ZIP, with multiple files/resources, not baseline. Do not call live directory trace.zip. Library tracing does not automatically record assertions from a test runner. No private API or upstream trace to fill gap.
 
-Inicialmente trace+vídeo e recordVideo+Screencast são mutuamente exclusivos no mesmo recorder/context onde houver conflito de configuração. Só liberar combinação após testes de size/ownership/flush; não deixar recorder existente ignorar size silenciosamente.
+Initially, trace+video and recordVideo+Screencast are mutually exclusive on same recorder/context where configuration conflicts. Only permit combination after size/ownership/flush testing; do not allow existing recorder to silently ignore size.
 
-Gravação de ações/codegen não é vídeo. Extra opt-in, dados sensíveis possíveis, output em artifact e sem commitar teste gerado automaticamente. Se não houver API pública estável compatível, declarar unsupported, não chamar `_startRecording`/internals.
+Action recording / codegen is not video. Opt-in extra, possible sensitive data, output in artifact, and no automatic commit of generated test. If no compatible stable public API exists, declare unsupported, do not call `_startRecording`/internals.
 
-MP4/GIF/trim/otimização são pós-processamento opcional com entradas/saídas limitadas e dependência declarada. Não fazem parte do baseline nem autorizam ffmpeg/shell arbitrário.
+MP4/GIF/trim/optimization are optional post-processing with bounded inputs/outputs and declared dependency. They are not part of baseline nor do they authorize arbitrary ffmpeg/shell.
 
-## 14. Artefatos, arquivos, paths e retenção
+## 14. Artifacts, files, paths, and retention
 
 ### 14.1 Layout
 
 ```text
-ambiente gerenciado fora do repo
+managed environment outside repo
   installation/cache/browser binaries
   runtime/<owner>/<session>/<generation>/
     observation-output/  downloads/  uploads-staged/  captures/  traces/
 
-projeto, somente se .dumps estiver ignorado e policy permitir
+project, only if .dumps is ignored and policy permits
   .dumps/browser/<session>/<capture>/
-    evidência local/export deliberado + manifest de artifacts
+    local evidence / deliberate export + artifact manifest
 ```
 
-Worker cwd absoluto é scratch private; no host `process.chdir`. Dependendo do modo/policy, scratch precisa estar dentro de writable roots permitidos; path de ambiente não é autorização automática. Se `.dumps` não é ignored, usar runtime permitido e avisar, sem alterar gitignore.
+Worker absolute cwd is private scratch; on host `process.chdir`. Depending on mode/policy, scratch must be within permitted writable roots; environment path is not automatic authorization. If `.dumps` is not ignored, use permitted runtime and notify, without altering gitignore.
 
-Artifact schema: artifactId, owner interno, kind/MIME/bytes, state, path local existente quando aplicável, page/session generation de origem, dimensões/duração, checksum quando útil, retentionUntil e export/attachment relationships. Não derivar authority de markdown/link da página ou de processo externo.
+Artifact schema: artifactId, internal owner, kind/MIME/bytes, state, existing local path when applicable, origin page/session generation, dimensions/duration, checksum when useful, retentionUntil, and export/attachment relationships. Do not derive authority from page markdown/links or external processes.
 
-### 14.2 Todas as rotas de escrita
+### 14.2 All write routes
 
-- Nomes gerados, collision-safe; nenhum modelo fornece filename backend/cwd/_meta/roots.
-- Auditar screenshot, vídeo, snapshots, console/rede, tracing, downloads, storage-state e eventos popup. Diretório configurado isolado não substitui controle de todo writer/overwrite.
-- Verificar paths absolutos/relativos, `..`, symlinks, ancestors e colisões antes de abrir/publicar. Não sobrescrever arquivos do dono silenciosamente. Guards com paths não prometem TOCTOU race-free contra escritor hostil.
-- Private dirs/permissões, criação exclusiva e publicação atômica quando suportadas. Arquivos incompletos ficam pending/partial e não são exportados como final.
-- Quotas reservadas antes; watcher/accounting durante gravação detecta excesso e finaliza. Sem limite de filesystem/OS, overshoot é possível: não chamar watcher de hard quota absoluta.
-- Cleanup próprio respeita retenção/IDs e recursos owned; não usar eviction de biblioteca para remover entregas. Nada de glob sobre produto ou kill-all.
-- Artifact de servidor remoto não tem path local fictício. Remote browser/file delivery está fora do baseline; futura transferência precisa validar bytes/origem antes de presentar local.
+- Generated, collision-safe names; no model provides backend filename / cwd / _meta / roots.
+- Audit screenshot, video, snapshots, console/network, tracing, downloads, storage-state, and popup events. Configured isolated directory does not replace control of every writer/overwrite.
+- Verify absolute/relative paths, `..`, symlinks, ancestors, and collisions before opening/publishing. Do not overwrite owner files silently. Path guards do not promise TOCTOU race-free operation against a hostile writer.
+- Private dirs/permissions, exclusive creation, and atomic publication when supported. Incomplete files remain pending/partial and are not exported as final.
+- Quotas reserved beforehand; watcher/accounting during recording detects overage and finalizes. Without filesystem/OS limits, overshoot is possible: do not call watcher an absolute hard quota.
+- Custom cleanup respects retention/IDs and owned resources; do not use library eviction to remove deliverables. No product-wide globbing or kill-all.
+- Remote server artifact has no fictitious local path. Remote browser / file delivery is outside baseline; future transfer must validate bytes/origin before presenting locally.
 
 ### 14.3 Upload/download/export/auth
 
-- Upload: host resolve e autoriza leitura pelo serviço/policy nativos; copia/stages arquivo bounded em namespace próprio, passa handle/path staged ao worker. Não dar worker acesso geral ao produto/home.
-- Download: `acceptDownloads:false` default; contexto explicitamente download-enabled após autorização. Nome do site não define destino; mapear ID/nome gerado e verificar bytes/tipo/colisões. Disparar download pode ter efeitos externos, não repetir automaticamente.
-- Export: artifactId -> destino concreto autorizado pelo host, sem overwrite silencioso. Owner e retention verificados; cópia de fonte owned não equivale a permissão no destino. Import/export de auth usa caminho separado e nunca resposta textual/Git default.
-- Artifact final apresentado ao dono tem retenção declarada; antes de expirar, informar/preservar export quando pedido. Raw scratch e entrega não têm necessariamente mesmo TTL.
+- Upload: host resolves and authorizes reading via native service/policy; copies/stages bounded file into custom namespace, passes staged handle/path to worker. Do not grant worker broad product/home access.
+- Download: `acceptDownloads:false` default; explicitly download-enabled context after authorization. Site name does not define target; map ID/generated name and verify bytes/type/collisions. Triggering download may have external effects; do not repeat automatically.
+- Export: artifactId -> concrete destination authorized by host, without silent overwrite. Owner and retention verified; copying from owned source does not equal destination permission. Auth import/export uses separate path and never text response / default Git.
+- Final artifact presented to owner has declared retention; before expiration, inform/preserve export when requested. Raw scratch and deliverable do not necessarily have same TTL.
 
-## 15. Defaults propostos e limites administrativos
+## 15. Proposed defaults and administrative limits
 
-Valores são decisões de projeto para validar no spike stable, não requisitos de biblioteca. Owner/admin pode ajustar dentro de limites explícitos; LLM não ganha acesso a overrides de instalação/policy.
+Values are design choices to validate in stable spike, not library requirements. Owner/admin can adjust within explicit limits; LLM gains no access to installation/policy overrides.
 
-| Recurso | Default inicial proposto |
+| Resource | Proposed initial default |
 | --- | --- |
-| Sessions por Agent / contexts | até 2; cada session um contexto isolated |
-| Tabs por session | 4 |
-| Capturas simultâneas | 1 vídeo; trace exclusivo onde recorder conflita |
-| Action / navigation / root deadline | 5 s / 30 s / 60 s; root limitada por operação |
-| Finalização / graceful teardown | 15 s / prazo bounded com hard-stop own fallback |
-| Idle browser | 10 min, com captura respeitando maxDuration |
-| Viewport / DPR | até 2560×1440 / DPR até 3 no default |
-| Imagem | até 16 MP; fullPage até 12000 CSS px e pixel budget |
-| Vídeo | default 25 fps, bounds 1280×720; até 30 fps e 60 s |
-| Bytes de vídeo / session artifacts | 100 MiB / 250 MiB |
-| Runtime scratch por Agent | 500 MiB, sujeito a limite total host |
-| Free disk reserve | 1 GiB; falhar antes de nova captura quando insuficiente |
-| Input | até 64 KiB, depth 12, limites de strings/arrays por leaf |
-| Help / describe / resposta normal | 8 KiB / 16 KiB / 64 KiB + spill |
-| Retenção raw / entrega | 24 h / 7 dias, visível e ajustável pelo dono |
+| Sessions per Agent / contexts | up to 2; each session an isolated context |
+| Tabs per session | 4 |
+| Simultaneous captures | 1 video; trace exclusive where recorder conflicts |
+| Action / navigation / root deadline | 5 s / 30 s / 60 s; root bounded per operation |
+| Finalization / graceful teardown | 15 s / bounded deadline with owned hard-stop fallback |
+| Idle browser | 10 min, with capture respecting maxDuration |
+| Viewport / DPR | up to 2560×1440 / DPR up to 3 in default |
+| Image | up to 16 MP; fullPage up to 12000 CSS px and pixel budget |
+| Video | default 25 fps, bounds 1280×720; up to 30 fps and 60 s |
+| Video bytes / session artifacts | 100 MiB / 250 MiB |
+| Runtime scratch per Agent | 500 MiB, subject to host total limit |
+| Free disk reserve | 1 GiB; fail before new capture when insufficient |
+| Input | up to 64 KiB, depth 12, string/array limits per leaf |
+| Help / describe / normal response | 8 KiB / 16 KiB / 64 KiB + spill |
+| Retention raw / delivery | 24 h / 7 days, visible and adjustable by owner |
 
-Fullscreen/fullPage, alta resolução e vídeo longo recebem erro/sugestão/override explícito, não downgrade silencioso. Limite de contexts/browser processes global do host precisa contador/reserva entre Agents; não confiar só em limite por owner.
+Fullscreen/fullPage, high resolution, and long video receive explicit error/suggestion/override, not silent downgrade. Global host context/browser process limit needs cross-Agent counter/reservation; do not rely solely on per-owner limit.
 
-## 16. Segurança adversarial e riscos residuais
+## 16. Adversarial security and residual risks
 
-- Página/snapshot/texto/headers, instruções MCP e WebMCP são dados não confiáveis. Não podem habilitar leaf, pedir credenciais, trocar manifest ou autorizar upload.
-- Não coletar/expor ferramentas WebMCP/page-provided. Manifest allowlist fixo de APIs públicas protege o gateway; nenhum unsafe core/catalog MCP carregado na r4.
-- URLs/redirects/localhost/rede privada tratados por policy e contexto do pedido. Origin allow/block não é barreira completa nem filtro perfeito de redirects.
-- Sem flags inseguras automáticas (`noSandbox`, TLS-ignore), executáveis/configs/scripts arbitrários ou profiles pessoais carregados por default.
-- Inputs de selector/target são dados e métodos públicos fixos; não executar expressão JS montada pela LLM. CDP adapter aceita apenas parâmetros da operação de gesto, não comando/método arbitrário.
-- Parser de aria YAML não executa código/selector/nth nem atribui authority. Ref inexistente/ambígua não vira elemento por heurística. Page closure nunca retarget para sobrevivente.
-- Auth/attach pessoal permanece disabled. Se implementado futuramente, sessão/abas autorizadas explícitas e detach não fecha Chrome do dono.
-- Pixels, vídeos, traces e DOM podem conter segredos; mask/redaction ajudam sem garantia perfeita. Usar demos determinísticas e não-sensíveis nos testes.
-- Same-user shell irrestrito, módulos de projeto trusted e browser vulnerável são riscos fora da garantia de gateway. Não apresentar filtro de tools como sandbox completo de máquina.
-- Logs sanitizados, sem raw secrets/base64/URL credenciada. Mesmo input público pode conter texto sensível; documentar retenção do transcript nativo.
+- Page/snapshot/text/headers, MCP instructions, and WebMCP are untrusted data. They cannot enable leaf, request credentials, switch manifest, or authorize upload.
+- Do not collect/expose WebMCP / page-provided tools. Fixed allowlist manifest of public APIs protects gateway; no unsafe core / MCP catalog loaded in r4.
+- URLs/redirects/localhost/private network handled by policy and request context. Origin allow/block is neither complete barrier nor perfect redirect filter.
+- No automatic insecure flags (`noSandbox`, TLS-ignore), arbitrary executables/configs/scripts, or personal profiles loaded by default.
+- Selector/target inputs are data and fixed public methods; do not execute LLM-constructed JS expressions. CDP adapter accepts only gesture operation parameters, not arbitrary command/method.
+- YAML aria parser does not execute code/selector/nth or assign authority. Nonexistent/ambiguous ref does not become element via heuristics. Page closure never retargets to survivor.
+- Personal auth/attach remains disabled. If implemented in the future, explicit authorized session/tabs and detach does not close owner's Chrome.
+- Pixels, videos, traces, and DOM may contain secrets; mask/redaction help without perfect guarantee. Use deterministic non-sensitive demos in tests.
+- Unrestricted same-user shell, trusted project modules, and vulnerable browser are risks outside gateway guarantee. Do not present tool filtering as full machine sandbox.
+- Sanitized logs, no raw secrets/base64/credentialed URLs. Even public input may contain sensitive text; document native transcript retention.
 
-## 17. Configuração, instalação e integração com o checkout
+## 17. Configuration, installation, and integration with checkout
 
-- Plugin novo: `plugins/browser`. Ativação via `plugins/activation.json` e bootstrap existente, sem editar mirrors/perfis manualmente como fonte de verdade.
-- Dono autorizou ativação final nos **quatro perfis gerenciados `dsh-tui`, `headless`, `web`, `tui`**, depois da validação; não transformar `project-mcp` em leitor global nem mudar outros plugins/policies para vencer gates.
-- Config namespace proposto no `.agents/config.json`: `dshCustoms.browser`, validado, preservando managedPlans/outros campos. Ausência permite defaults do perfil; enabled:false de projeto nega browser naquele projeto. Projeto pode estreitar policy, não ampliar admin grant.
-- Config administrativa e opt-ins sensíveis vêm de perfil/dono; projeto não pode selecionar executable/unsafe scripts/Chrome pessoal sozinho.
-- Precedência: negações admin/preset/session + projeto; quotas por mínimo autorizado; overrides compatíveis somente onde permitido. Reload não altera manifest vivo silenciosamente: nova geração/Agent conforme política documentada.
-- MCP Playwright já configurado: detectar diagnóstico/config duplicada. Não eliminar/mutar server do usuário. Escolha explícita entre rota existente e gateway; não expor ambos automaticamente e chamar integração padronizada. Remoção da skill antiga não é autorização para remover servidores/configs MCP.
-- Worker dependencies em pacote dedicado ou root checkout lock conforme gate; grafo **Playwright estável1.64.0+SDK2**, sem MCP wrapper/SDK1. Bootstrap reproduzível; não adicionar packages ao produto inspecionado.
-- Downloads/instalação de browser apenas operação administrativa autorizada do ambiente. Preflight é somente verificação; dependência ausente retorna BACKEND_UNAVAILABLE/capabilities claro e não quebra sessão de coding.
-- Root meta-ops devem continuar disponíveis se backend faltar; por isso registro native não depende de SDK/Playwright worker importado eager.
-- Versionar Node/Playwright/core/SDK2/validator/browsers/encoder e compatibilidade por matriz. Não `npx @latest` no caminho normal.
-- Não criar `.agents/skills/browser`, skill substituta ou instalar/copiar skills de Playwright/MCP/CLI. Documentação funcional é README e orientação nativa/help.
+- New plugin: `plugins/browser`. Activation via `plugins/activation.json` and existing bootstrap, without manually editing mirrors/profiles as source of truth.
+- Owner authorized final activation across the **four managed profiles `dsh-tui`, `headless`, `web`, `tui`**, after validation; do not turn `project-mcp` into global reader or alter other plugins/policies to pass gates.
+- Proposed config namespace in `.agents/config.json`: `dshCustoms.browser`, validated, preserving managedPlans/other fields. Absence permits profile defaults; project enabled:false denies browser in that project. Project may narrow policy, not widen admin grant.
+- Administrative configuration and sensitive opt-ins come from profile/owner; project cannot select executable / unsafe scripts / personal Chrome alone.
+- Precedence: admin/preset/session denials + project; quotas by authorized minimum; compatible overrides only where permitted. Reload does not silently alter live manifest: new generation/Agent per documented policy.
+- Already configured Playwright MCP: detect diagnostic/duplicate config. Do not eliminate/mutate user server. Explicit choice between existing route and gateway; do not expose both automatically and call it standardized integration. Removal of old skill is not authorization to remove MCP servers/configs.
+- Worker dependencies in dedicated package or root checkout lock per gate; **stable Playwright 1.64.0 + SDK2** graph, without MCP wrapper / SDK1. Reproducible bootstrap; do not add packages to inspected product.
+- Browser download/installation only as authorized administrative environment operation. Preflight is verification only; missing dependency returns BACKEND_UNAVAILABLE / clear capabilities and does not break coding session.
+- Root meta-ops must remain available if backend is absent; therefore native registration does not depend on eagerly imported SDK/Playwright worker.
+- Version Node/Playwright/core/SDK2/validator/browsers/encoder and compatibility via matrix. No `npx @latest` in normal path.
+- Do not create `.agents/skills/browser`, replacement skill, or install/copy Playwright/MCP/CLI skills. Functional documentation is README and native orientation / help.
 
-## 18. Módulos propostos e responsabilidade
+## 18. Proposed modules and responsibilities
 
-Nomes são desenho; criação de produção ocorre pela implementação coordenada, não pela subetapa de revisão do plano:
+Names are design; production creation occurs through coordinated implementation, not plan review sub-step:
 
 ```text
 plugins/browser/
-  index.mjs                 root nativa global, hooks/prompt, lifecycle/plugin unload
-  host.mjs                  resolve peers host + serviços públicos sem identity drift
-  config.mjs                precedência/admin/project/read-only preflight
-  manifest.mjs              catálogo público curado, schemas/effects/adapter metadata
-  validation.mjs            bounds/AJV/normalização pura/hash
-  policy.mjs                classificação, prehook/guard e recheck efetivo
-  broker.mjs                Agent ownership, worker lazy, reservations/lifecycle
-  render.mjs                texto/images/errors usando APIs públicas
-  host-files.mjs            leitura/staging/export guardados
+  index.mjs                 global native root, hooks/prompt, lifecycle/plugin unload
+  host.mjs                  resolves host peers + public services without identity drift
+  config.mjs                precedence/admin/project/read-only preflight
+  manifest.mjs              curated public catalog, schemas/effects/adapter metadata
+  validation.mjs            bounds/AJV/pure normalization/hash
+  policy.mjs                classification, prehook/guard, and effective recheck
+  broker.mjs                Agent ownership, lazy worker, reservations/lifecycle
+  render.mjs                text/images/errors using public APIs
+  host-files.mjs            guarded read/staging/export
   worker/
-    server.mjs              servidor SDK2 MCP privado, root interna e handshake
+    server.mjs              private SDK2 MCP server, internal root, and handshake
     sessions.mjs            Playwright stable Browser/Context ownership/state/replace/close
-    targets.mjs             Page/frame/document/ref registries públicos, sem currentTab
-    observation.mjs         Locator.ariaSnapshot YAML, targets únicos, probes/eventos públicos
-    capture.mjs             states de vídeo/trace, finalize e quotas
-    artifacts.mjs           namespaces/writers/manifests/retenção
-    adapters/               interação/screenshot/touch/video/trace Page-bound públicos
-  *.test.mjs                suites puras, SDK2 integration e native contracts
-  fixtures/                 páginas locais determinísticas/hostis, closure-race regression
-  live-check.mjs            prova opt-in host/TUI/providers/browser real
-  README.md                 contrato, autorização, instalação, limits/recovery
+    targets.mjs             public Page/frame/document/ref registries, no currentTab
+    observation.mjs         Locator.ariaSnapshot YAML, unique targets, public probes/events
+    capture.mjs             video/trace states, finalize, and quotas
+    artifacts.mjs           namespaces/writers/manifests/retention
+    adapters/               public Page-bound interaction/screenshot/touch/video/trace
+  *.test.mjs                pure suites, SDK2 integration, and native contracts
+  fixtures/                 deterministic/hostile local pages, closure-race regression
+  live-check.mjs            opt-in real host/TUI/providers/browser proof
+  README.md                 contract, authorization, installation, limits/recovery
 ```
 
-Nenhum `upstream.mjs`/SDK1/embed/factoryMCP/internal helper é necessário. Dependency graph deve ser acíclico: manifest/validation puros compartilhados; policy host não importa backend; meta-ops não carregam Playwright; worker não importa peers DSH; render não decide autorização. Extrair utilidades existentes apenas quando necessário e com regressão, sem refactor amplo de project-mcp/common por conveniência.
+No `upstream.mjs` / SDK1 / embed / MCP factory / internal helper is needed. Dependency graph must be acyclic: pure shared manifest/validation; host policy does not import backend; meta-ops do not load Playwright; worker does not import DSH peers; render does not decide authorization. Extract existing utilities only when necessary and with regression test, without broad refactoring of project-mcp/common for convenience.
 
-## 19. Gates de viabilidade antes da entrega de produção
+## 19. Feasibility gates before production delivery
 
-**G0 — Host/authority:** root global herdada, child restrictions, prehook validado antes do efeito, erro nativo, policy modes e processo/scratch não burlando host. Se suporte a um modo não for provado, denied/unsupported nesse modo.
+**G0 — Host/authority:** inherited global root, child restrictions, prehook validated prior to effect, native error, policy modes, and process/scratch not bypassing host. If support for a mode is not proven, denied/unsupported in that mode.
 
-**G1 — Schema/provider:** wire `args` aberto roundtrip nos providers ativos (Codex/pi-ai, Antigravity/Gemini, DeepSeek, demais realmente configurados). Strict providers podem não aceitar open object: testar adapter não-strict com AJV obrigatório; se inviável, voltar ao dono antes de argsJson/schema gigante. Não converter silenciosamente.
+**G1 — Schema/provider:** wire open `args` roundtrip across active providers (Codex/pi-ai, Antigravity/Gemini, DeepSeek, and others actually configured). Strict providers may not accept open object: test non-strict adapter with mandatory AJV; if infeasible, return to owner before giant argsJson/schema. Do not convert silently.
 
-**G2 — Backend stable e fronteira SDK2:** imports/types/exports Playwright1.64.0 públicos, own Browser/Context/Page e lazy lifecycle/close. **Provar runtime real SDK2 client/server handshake+stdio/root única**, manifest/owner/errors/cancelamento/quiescência; outerSDK2 ainda não foi testado pelo spike histórico. Zero SDK1/embed/private exports/templates RCE.
+**G2 — Stable backend and SDK2 boundary:** public Playwright 1.64.0 imports/types/exports, owned Browser/Context/Page, and lazy lifecycle/close. **Prove real runtime SDK2 client/server handshake + stdio / single root**, manifest/owner/errors/cancellation/quiescence; outer SDK2 was not yet tested by historical spike. Zero SDK1 / embed / private exports / RCE templates.
 
-**G3 — Page-bound failclosed:** resolver Page owned por ID e manter esse objeto através de awaits. Fixture idênticaURL/título com popup/close/reorder/frame/document invalidados e closure-race **durante request/efeito** deve falhar sem mutar sobrevivente. Ref só unique/publicly bound; nenhuma API currentTab ou fallback por index/URL/title. Reproduzir o counterexample histórico como regressão inversa: survivorCount deve permanecer0.
+**G3 — Page-bound failclosed:** resolve owned Page by ID and maintain that object across awaits. Identical URL/title fixture with popup/close/reorder/frame/document invalidated and closure-race **during request/effect** must fail without mutating survivor. Ref only unique/publicly bound; no currentTab API or index/URL/title fallback. Reproduce historical counterexample as inverse regression: survivorCount must remain 0.
 
-**G4 — Multimodal:** screenshot real vira attachment para modelo image-capable; modelos sem imagem recebem diagnóstico/arquivo. Native/PTC/replay e cancelamento de armazenamento respeitados.
+**G4 — Multimodal:** real screenshot becomes attachment for image-capable model; models without image support receive diagnostic/file. Native/PTC/replay and storage cancellation respected.
 
-**G5 — Mobile/mídia STABLE:** repetir settings efetivos mobile, tap, trusted swipe Chromium, vídeo per-page finalizado e trace scope/conflicts no grafo estável/browsers/encoder selecionados. Arquivo/container/dimensão efetiva/frames verificados. Pass alpha histórico não satisfaz este gate.
+**G5 — STABLE mobile/media:** repeat effective mobile settings, tap, trusted Chromium swipe, finalized per-page video, and trace scope/conflicts on selected stable graph/browsers/encoder. Verified file/container/effective dimension/frames. Historical alpha pass does not satisfy this gate.
 
-Saída: relatório curto versionado, inventário capability verified/unverified, tokens/latência baseline, arquitetura confirmada/gaps e decisão. Gates não autorizam remover requisitos ou mudar novamente de arquitetura sem dono.
+Output: short versioned report, capability verified/unverified inventory, baseline tokens/latency, confirmed architecture / gaps, and decision. Gates do not authorize removing requirements or changing architecture again without owner.
 
-## 20. Fases de execução autorizada
+## 20. Authorized execution phases
 
-| Fase | Entrega | Dependência / saída |
+| Phase | Delivery | Dependency / output |
 | --- | --- | --- |
-| A — stable/protocolo spike bounded | G0–G5 com fixture local/temporários ignorados; closure regression e SDK2stdioruntime | Registrar diferenças para spike histórico; nenhuma ativação final prematura |
-| B — contratos | manifest, wire, validators, errors, help/describe, hashes | Pure suites passam; catálogo sem Playwright eager |
-| C — integração native | root global, policy, broker/worker lazy, lifecycle | child filters e denies native/PTC demonstrados |
-| D — sessão/observação | stable público, Page/document/ref registry, ariaSnapshot YAML, nav/interact/diagnostics | G3, stale refs sem inventar, popups/frames/targets corretos |
-| E — mobile/mídia | screenshot/image, mobile gestures, vídeo/trace states | G4/G5stable + artefatos reais validados |
-| F — arquivos/limites | uploads staged/export/download opt-in, quotas/cleanup | path/ownership/adversarial/regressões |
-| G — rollout | instalação pinada, README/help/prompt nativo, ativação nos quatro perfis gerenciados | TUI/providers/perfis e repo hygiene; rollback testado; **nenhuma nova skill** |
-| H — cleanup final específico | remover recuperavelmente somente skill antiga `playwright`, com path/identidade verificados | Só após integração validada/ativada; sem substituta e sem remover mobile-media/outras skills |
+| A — stable/protocol bounded spike | G0–G5 with local fixture / ignored temporaries; closure regression and SDK2 stdio runtime | Record differences from historical spike; no premature final activation |
+| B — contracts | manifest, wire, validators, errors, help/describe, hashes | Pure suites pass; catalog without eager Playwright |
+| C — native integration | global root, policy, lazy broker/worker, lifecycle | Child filters and native/PTC denies demonstrated |
+| D — session/observation | public stable, Page/document/ref registry, ariaSnapshot YAML, nav/interact/diagnostics | G3, stale refs without inventing, correct popups/frames/targets |
+| E — mobile/media | screenshot/image, mobile gestures, video/trace states | G4/G5 stable + verified real artifacts |
+| F — files/limits | staged uploads / export / opt-in download, quotas/cleanup | path/ownership/adversarial/regressions |
+| G — rollout | pinned installation, README/help/native prompt, activation across four managed profiles | TUI/providers/profiles and repo hygiene; tested rollback; **no new skill** |
+| H — specific final cleanup | recoverably remove only old `playwright` skill, with verified path/identity | Only after validated/activated integration; no replacement and without removing mobile-media/other skills |
 
-Algumas provas de spike exercitam APIs finais antes das fases; não significa construir toda solução no spike. Manter cada mudança pequena/reversível e atualizar goal/todos. Não fechar etapas por mocks quando exigem runtime real.
+Some spike proofs exercise final APIs before phases; this does not mean building the entire solution in the spike. Keep each change small/reversible and update goal/todos. Do not close steps via mocks when they require real runtime.
 
-## 21. Matriz de testes e evidências de aceitação
+## 21. Test matrix and acceptance evidence
 
-| ID | Prova obrigatória |
+| ID | Mandatory proof |
 | --- | --- |
-| API-01 | Apenas uma browser root em schemas(scope); zero Playwright leaves |
-| API-02 | Help por níveis bounded; describe um schema/exemplo; nenhum browser/worker launch em meta-op |
-| API-03 | Unknown leaf/new backend capability/meta/code/command rejeitados antes do efeito |
-| API-04 | Root/subset DSH e leaf AJV distintos; unknown fields/default/coercion/drift testados |
-| API-05 | Providers ativos roundtrip args open; failure não encerra Agent; native/PTC mesma policy |
-| SDK-01 | SDK2stdioruntime: Client/server handshake/root única/schema/manifest/owner/error/cancel/close reais, sem SDK1 |
-| POL-01 | Child allowlist sem browser: sem schema e UNKNOWN_TOOL antes body/worker |
-| POL-02 | Child com browser: owner novo; IDs/auth do pai não acessíveis |
-| POL-03 | Deny/ask ausente/read-only/unsupported workspace authority não causam launch/escrita |
-| POL-04 | Policy muda na fila: recheck; grant once não habilita outra op/params |
-| POL-05 | Direct worker malformed authority/manifest/hash/owner rejeitado; nenhum approved flag do modelo |
-| LIFE-01 | Dois Agents mesmo cwd/projetos isolados: cookies/tabs/files/captures |
-| LIFE-02 | Fork/spawn/compaction/resume/clear comunicam state loss/generation sem replay de efeitos |
-| LIFE-03 | Unload/startup/crash/reconnect/idle/cancel deixam recursos owned finalizados ou partial conhecidos |
-| LIFE-04 | Concurrent mutações/lifecycle serializados; sem reentrância/browser recursive calls |
-| PAGE-01 | Navigate/fill/click/wait estado real local; stale/ambiguous sem first fallback |
-| PAGE-02 | Popup/close/reorder/frames/dialogs atingem Page concreto, sem confiar título/URL/index como ID |
-| PAGE-03 | Closure-race durante dispatch/await: Page fecha, operação failclosed e survivorCount==0; sem retarget/ref equivalentes |
-| OBS-01 | Snapshot/text/console/rede delimitados com cursor/spill e payload hostil como dado |
-| OBS-02 | Locator.ariaSnapshot YAML público; parser não executaJS/nth; refs só unique locator/handle Page/document-bound |
-| OBS-03 | Ref não emitida/desconhecida/ambígua/detached/document stale falha; sem inventar eN ou helper privado |
-| IMG-01 | Viewport/fullPage/element/clip válido + conflicts inválidos + DPR/scale/masks explícitos |
-| IMG-02 | Imagem realmente no contexto modelo/TUI/PTC, não só path/base64; no-image route diagnóstico |
-| IMG-03 | Original vs normalized attachment dimensions, fonts/images readiness e limites pixels |
-| MOB-01 | Desktop/preset/custom assertions viewport/UA/DPR/isMobile/hasTouch/orientação no stable |
-| MOB-02 | Tap touch e swipe Chromium trusted+default scroll no stable; WebKit/Firefox unsupported, sem mouse fallback |
-| VID-01 | Start -> interação -> stop produz WebM stable com duração/dimensões efetivas/frames corretos |
-| VID-02 | Page scope exclusivo; context-wide extra descreve todas páginas/falhas/artifacts ou unsupported |
-| VID-03 | Duplicate start/stop already-finalized/page close/crash/encoder ausente/time/bytes/disk/abort |
-| VID-04 | Cancel/idle/teardown não deixa gravação eterna; partial nunca entregue como finalized |
-| TRACE-01 | ZIP real vs live declarado/unsupported, scope context e artefatos múltiplos; sources default false |
-| TRACE-02 | Trace/vídeo/recordVideo conflito negado ou combination comprovada, sem size ignorado |
-| FILE-01 | Upload autorizado/staged; worker não recebe root/home path livre |
-| FILE-02 | Traversal/symlink/absolute/relative/filename/site-name/collision/overwrite rejeitados |
-| FILE-03 | Todos writers e spontaneous downloads/popups contabilizados; nenhum writer fora do artifact manager |
-| ART-01 | Artifact metadata corresponde arquivo/container; remote path não fingido local |
-| ART-02 | Retenção/pending/finalized/partial/expiry/export/cleanup owned, sem apagar entrega/produto |
-| ADV-01 | WebMCP/unsafe code/init/config/CDP livre não habilitados via args/caps/discovery; zero exports privados |
-| ENV-01 | Browser/SDK2/encoder ausentes/offline/version mismatch diagnosticam sem quebrar coding |
-| ENV-02 | Reinstalação lock+stable/browser binaries/Node version reproduzível; nenhum @latest runtime/MCP/SDK1 produzido |
-| CLEAN-01 | Produto fixture não ganha package/lock/scripts/config/media/cache rastreáveis; git status antes/depois preserva sujeira preexistente |
-| LIVE-01 | Host/TUI real: root call, deny, imagem, arquivo/vídeo e teardown, não apenas mock dispatch |
-| PROFILE-01 | Ativação e root/policy/lifecycle comprovados em dsh-tui/headless/web/tui sem mudar outros plugins |
-| SKILL-01 | Última etapa remove recuperavelmente somente playwright antigo; mobile-media/outras preservadas; ZERO skill nova/substituta |
-| PERF-01 | Prompt+discovery+respostas+turnos/processos/latência comparados no mesmo fluxo contra MCP plano/CLI como benchmark, não backend |
+| API-01 | Only one browser root in schemas(scope); zero Playwright leaves |
+| API-02 | Bounded multi-level help; describe single schema/example; no browser/worker launch in meta-op |
+| API-03 | Unknown leaf / new backend capability / meta / code / command rejected before effect |
+| API-04 | Distinct root/subset DSH and leaf AJV; tested unknown fields / default / coercion / drift |
+| API-05 | Active providers roundtrip open args; failure does not terminate Agent; native/PTC share same policy |
+| SDK-01 | SDK2 stdio runtime: real client/server handshake / single root / schema / manifest / owner / error / cancel / close, no SDK1 |
+| POL-01 | Child allowlist without browser: no schema and UNKNOWN_TOOL before body/worker |
+| POL-02 | Child with browser: new owner; parent IDs/auth not accessible |
+| POL-03 | Deny / missing ask / read-only / unsupported workspace authority do not cause launch/write |
+| POL-04 | Policy changes in queue: recheck; grant-once does not enable another op/params |
+| POL-05 | Direct worker malformed authority/manifest/hash/owner rejected; no approved flag from model |
+| LIFE-01 | Two Agents same cwd / isolated projects: cookies/tabs/files/captures |
+| LIFE-02 | Fork/spawn/compaction/resume/clear communicate state loss/generation without replay of effects |
+| LIFE-03 | Unload/startup/crash/reconnect/idle/cancel leave owned resources finalized or known partial |
+| LIFE-04 | Concurrent mutations/lifecycle serialized; no reentrancy / recursive browser calls |
+| PAGE-01 | Navigate/fill/click/wait local real state; stale/ambiguous without first fallback |
+| PAGE-02 | Popup/close/reorder/frames/dialogs hit concrete Page, without trusting title/URL/index as ID |
+| PAGE-03 | Closure-race during dispatch/await: Page closes, operation fails closed, and survivorCount==0; no equivalent retarget/ref |
+| OBS-01 | Bounded snapshot/text/console/network with cursor/spill and hostile payload treated as data |
+| OBS-02 | Public Locator.ariaSnapshot YAML; parser does not execute JS/nth; refs only unique locator/handle Page/document-bound |
+| OBS-03 | Unissued / unknown / ambiguous / detached / stale document ref fails; no invented eN or private helper |
+| IMG-01 | Valid viewport/fullPage/element/clip + invalid conflicts + explicit DPR/scale/masks |
+| IMG-02 | Image genuinely in model context / TUI / PTC, not just path/base64; diagnostic on no-image route |
+| IMG-03 | Original vs normalized attachment dimensions, fonts/images readiness, and pixel limits |
+| MOB-01 | Desktop/preset/custom assertions for viewport/UA/DPR/isMobile/hasTouch/orientation in stable |
+| MOB-02 | Trusted touch tap and Chromium swipe + default scroll in stable; WebKit/Firefox unsupported, no mouse fallback |
+| VID-01 | Start -> interaction -> stop produces stable WebM with verified duration/effective dimensions/frames |
+| VID-02 | Exclusive page scope; extra context-wide describes all pages/failures/artifacts or unsupported |
+| VID-03 | Duplicate start / stop already-finalized / page close / crash / missing encoder / time / bytes / disk / abort |
+| VID-04 | Cancel/idle/teardown does not leave endless recording; partial never delivered as finalized |
+| TRACE-01 | Real ZIP vs declared/unsupported live, context scope, and multiple artifacts; sources default false |
+| TRACE-02 | Trace/video/recordVideo conflict denied or proven combination, without ignored size |
+| FILE-01 | Authorized/staged upload; worker receives no unconstrained root/home path |
+| FILE-02 | Traversal / symlink / absolute / relative / filename / site-name / collision / overwrite rejected |
+| FILE-03 | All writers and spontaneous downloads/popups accounted for; no writer outside artifact manager |
+| ART-01 | Artifact metadata matches file/container; remote path not feigned local |
+| ART-02 | Retention / pending / finalized / partial / expiry / export / cleanup owned, without deleting delivery/product |
+| ADV-01 | WebMCP / unsafe code / init / config / free CDP not enabled via args/caps/discovery; zero private exports |
+| ENV-01 | Missing/offline/version-mismatched browser/SDK2/encoder diagnosed without breaking coding |
+| ENV-02 | Reproducible lock+stable reinstall / browser binaries / Node version; no @latest runtime / MCP / SDK1 produced |
+| CLEAN-01 | Fixture product receives no trackable package/lock/scripts/config/media/cache; git status before/after preserves preexisting dirt |
+| LIVE-01 | Real host/TUI: root call, deny, image, file/video, and teardown, not just mock dispatch |
+| PROFILE-01 | Activation and root/policy/lifecycle proven in dsh-tui/headless/web/tui without changing other plugins |
+| SKILL-01 | Final step recoverably removes only old playwright; mobile-media/others preserved; ZERO new/replacement skill |
+| PERF-01 | Prompt + discovery + responses + turns/processes/latency compared in same flow against flat MCP / CLI as benchmark, not backend |
 
-Fixtures sem contas pessoais/pagamento/efeitos externos. Testes de unit/schema não executam módulos desconhecidos só para inspecionar. Capturas têm estado determinístico não-sensível. Ferramentas de teste usam `.dumps` ignored ou temporários autorizados. Testes opt-in browser/live não fazem parte implicitamente de toda suite LTS.
+Fixtures without personal accounts / payment / external effects. Unit/schema tests do not execute unknown modules merely to inspect. Captures have deterministic non-sensitive state. Test tools use ignored `.dumps` or authorized temporaries. Opt-in browser/live tests are not implicitly part of every LTS suite.
 
-## 22. Observabilidade, rollout, cleanup final e rollback
+## 22. Observability, rollout, final cleanup, and rollback
 
-- Root logs já mostram operation/args/callId; acrescentar metadata/fatos de backend/owner/capture sanitizados usando APIs existentes. Não inventar eventos Session arbitrários ou dizer que SDK privado gera `tools/ptc-dispatch`.
-- Erros duráveis mantêm código nativo; status/recovery não expõem secrets. Reportar capability unverified em vez de afirmar suporte com base em README/spike alpha.
-- README, descrições/help/describe e prompt nativo ensinam root, targets, state loss, screenshots/media e limites. **Não criar/instalar skill nova ou substituta**; não editar skills não solicitadas para realizar a migração.
-- Atualizar documentação do checkout que ainda chama task 5 experimental junto da nova entrega real aprovada.
-- Rollout autorizado para **dsh-tui/headless/web/tui**, via manifest/bootstrap existente, com smoke/root/policy/lifecycle em cada perfil e teste TUI onde existe frontend. Uma fase controlada de smoke antes da expansão é permitida; a entrega final deve incluir todos os quatro.
-- **Cleanup final específico:** verificar entrada/path absoluto e identidade da skill antiga `playwright` (base observada `/home/alex/.agents/skills/playwright`); ler/inspecionar antes de remoção conforme política, tratar symlink como link e não deletar alvo externo inadvertidamente. Usar remoção recuperável (`trash`) apenas do path explícito confirmado. Não tocar `playwright-mobile-media`, project-mcp ou outras skills; não adicionar substituta. Fazer isso somente ao final após smoke/ativação verificados, registrar receipt/recuperação e confirmar que o catálogo futuro não promete a skill removida.
-- Rollback: desativar row browser no manifest via bootstrap, unload/quiescence own, preservar artifacts finalizados e não remover browser pessoal/produto. Pins anteriores/cache administrado permitem voltar versão do backend estável; auth/profile opt-in nunca destruído como cleanup automático. Skill removida tem recuperação pelo receipt, não reinstalação substituta automática.
-- Fechamento da task registra versão/revisão, testes realmente executados, quatro perfis ativados, evidências, receipt de skill e limitações/unsupported restantes. Não basta salvar configuração ou expor uma root vazia.
+- Root logs already show operation/args/callId; add sanitized backend/owner/capture metadata/facts using existing APIs. Do not invent arbitrary Session events or claim private SDK generates `tools/ptc-dispatch`.
+- Durable errors preserve native code; status/recovery do not expose secrets. Report unverified capability instead of claiming support based on README / alpha spike.
+- README, descriptions/help/describe, and native prompt teach root, targets, state loss, screenshots/media, and limits. **Do not create/install new or replacement skill**; do not edit unprompted skills to perform migration.
+- Update checkout documentation that still calls task 5 experimental alongside the new approved real delivery.
+- Rollout authorized for **dsh-tui/headless/web/tui**, via existing manifest/bootstrap, with smoke/root/policy/lifecycle in each profile and TUI testing where frontend exists. A controlled smoke phase prior to expansion is permitted; final delivery must include all four.
+- **Specific final cleanup:** verify entry / absolute path and identity of old `playwright` skill (observed base `/home/alex/.agents/skills/playwright`); read/inspect prior to removal according to policy, treat symlink as link, and do not inadvertently delete external target. Use recoverable removal (`trash`) only on the confirmed explicit path. Do not touch `playwright-mobile-media`, project-mcp, or other skills; do not add a replacement. Do this only at the end after verified smoke/activation, record receipt/recovery, and confirm future catalog does not promise removed skill.
+- Rollback: disable browser row in manifest via bootstrap, owned unload/quiescence, preserve finalized artifacts, and do not remove personal browser/product. Prior pins / managed cache allow rolling back stable backend version; opt-in auth/profile never destroyed as automatic cleanup. Removed skill has recovery via receipt, not automatic replacement reinstallation.
+- Task closure records version/revision, genuinely executed tests, four activated profiles, evidence, skill receipt, and remaining limitations/unsupported capabilities. Merely saving configuration or exposing an empty root is insufficient.
 
-## 23. Fora de escopo e decisões ainda condicionais
+## 23. Out of scope and still conditional decisions
 
-Não criar framework genérico de tool tree para todas tools DSH, modificar core/provider para forçar discovery, escrever browser engine/MCP manual/test runner/editor de vídeo, automatizar captcha/2FA ou operar app mobile nativo.
+Do not create a generic tool tree framework for all DSH tools, modify core/provider to force discovery, write browser engine / manual MCP / test runner / video editor, automate captcha/2FA, or operate native mobile apps.
 
-Desligados no baseline: Chrome pessoal/attach, auth persistente/export, eval/RCE livre, remote browser, áudio/webcam/desktop livestream, suporte universal de engines/gestos, daemon persistente entre Agents. Operações extras têm availability explícita e exigem revisão/prova; não precisam ser todas implementadas para baseline.
+Disabled in baseline: personal Chrome/attach, persistent auth/export, unconstrained eval/RCE, remote browser, audio/webcam/desktop livestream, universal support of engines/gestures, persistent daemon across Agents. Extra operations have explicit availability and require review/proof; they do not all need to be implemented for baseline.
 
-Excluídos da produção r4: embed/factory Playwright MCP, SDK1/InMemory pair, currentTab selection, RCE templates, `_snapshotForAI`, `_startRecording` e outros exports privados. Excluída qualquer nova skill/substituta; única remoção autorizada é `playwright` antiga, na etapa final recuperável.
+Excluded from r4 production: Playwright MCP embed/factory, SDK1/InMemory pair, currentTab selection, RCE templates, `_snapshotForAI`, `_startRecording`, and other private exports. Excluded any new/replacement skill; sole authorized removal is old `playwright`, in final recoverable step.
 
-Condicionais a resolver: SDK2outer handshake/stdioruntime/authority, stable Page-bound closure/ref failclosed, autoridade workspace-write pelo host, schema open object nos providers, recorder conflicts/encoder na stable. Resultado “não demonstrado” mantém capability bloqueada ou retorna ao dono; não vira improviso silencioso. A mudança para stable já foi decidida, mas sua prova runtime ainda não foi herdada do spike alpha.
+Conditionals to resolve: outer SDK2 handshake / stdio runtime / authority, stable Page-bound closure/ref failclosed, host workspace-write authority, open object schema in providers, recorder conflicts / encoder in stable. "Not demonstrated" result keeps capability blocked or returns to owner; does not become silent improvisation. The switch to stable has already been decided, but its runtime proof has not yet been inherited from the alpha spike.
 
-## 24. Referências pesquisadas, histórico e limites das provas
+## 24. Researched references, history, and limits of proofs
 
-Evidências locais: `plugins/project-mcp/README.md`, `index.mjs`, `host.mjs`, `config.mjs`; `plugins/activation.json`, `plugins/README.md`, `package.json`; exports/tipos/implementações instaladas de `dsh-tools`, `dsh-llm`, `dsh-llm-pi-ai`, `dsh-llm-deepseek`, `dsh-mcp-client`, `dsh-attachment`, `dsh-tool-fs`. Resolver pelo host em execução, não hardcode do cache pesquisado.
+Local evidence: `plugins/project-mcp/README.md`, `index.mjs`, `host.mjs`, `config.mjs`; `plugins/activation.json`, `plugins/README.md`, `package.json`; installed exports/types/implementations of `dsh-tools`, `dsh-llm`, `dsh-llm-pi-ai`, `dsh-llm-deepseek`, `dsh-mcp-client`, `dsh-attachment`, `dsh-tool-fs`. Resolve via running host, not hardcoded from investigated cache.
 
-Histórico preservado: task5r3 hash `970ef77b9ec1b3708ea72ba4d910fb938d3985e4a328f35d556861bd4beb2017`; `.dumps/tasks/task05-backend-spike/RESULT.md`, `output/selection-race.json`, `selection-race.mjs`, `probe.mjs`, `output/report.json`, `run-history.json`. Não editar a revisão histórica/mirrors diretamente para apagar a hipótese rejeitada.
+Preserved history: task 5 r3 hash `970ef77b9ec1b3708ea72ba4d910fb938d3985e4a328f35d556861bd4beb2017`; `.dumps/tasks/task05-backend-spike/RESULT.md`, `output/selection-race.json`, `selection-race.mjs`, `probe.mjs`, `output/report.json`, `run-history.json`. Do not edit historical revision / mirrors directly to erase rejected hypothesis.
 
-Referências selecionadas e históricas:
+Selected and historical references:
 
-- [Playwright stable1.64.0](https://registry.npmjs.org/playwright/1.64.0), [Locator API/ariaSnapshot](https://playwright.dev/docs/api/class-locator#locator-aria-snapshot), [SDK2 Client](https://registry.npmjs.org/@modelcontextprotocol/client/2.3.1), [SDK2 Server](https://registry.npmjs.org/@modelcontextprotocol/server/2.3.1): pins da arquitetura r4.
-- [MCP versão consultada](https://registry.npmjs.org/@playwright/mcp/latest), [CLI](https://registry.npmjs.org/@playwright/cli/latest), [SDK v1](https://registry.npmjs.org/@modelcontextprotocol/sdk/latest): latest é evidência da consulta histórica, não dependência de produção/pin permanente.
-- [MCP export histórico](https://github.com/microsoft/playwright-mcp/blob/f183dad4a52965583e3cc1d59b88cdc279e2e57d/index.js) e [types](https://github.com/microsoft/playwright-mcp/blob/f183dad4a52965583e3cc1d59b88cdc279e2e57d/index.d.ts): explicam spike, não importar na r4.
-- [MCP backend da core histórica](https://github.com/microsoft/playwright/tree/e8149b8257d32dcf8f72573ecc43e72439da7080/packages/playwright-core/src/tools/backend): context/tabs documentam a causa currentTab/closure; screenshot/video/tracing/response e unsafe/caps são histórico dos riscos.
-- [SDK in-memory público v1 histórico](https://github.com/modelcontextprotocol/typescript-sdk/blob/ff07b001194fe60ee9deb2121cf119057565796d/src/inMemory.ts): não integrar na r4.
-- [Screencast v1.64.0](https://github.com/microsoft/playwright/blob/v1.64.0/docs/src/api/class-screencast.md), [Tracing](https://github.com/microsoft/playwright/blob/v1.64.0/docs/src/api/class-tracing.md), [vídeos](https://playwright.dev/docs/videos).
+- [Playwright stable 1.64.0](https://registry.npmjs.org/playwright/1.64.0), [Locator API/ariaSnapshot](https://playwright.dev/docs/api/class-locator#locator-aria-snapshot), [SDK2 Client](https://registry.npmjs.org/@modelcontextprotocol/client/2.3.1), [SDK2 Server](https://registry.npmjs.org/@modelcontextprotocol/server/2.3.1): pins of r4 architecture.
+- [MCP consulted version](https://registry.npmjs.org/@playwright/mcp/latest), [CLI](https://registry.npmjs.org/@playwright/cli/latest), [SDK v1](https://registry.npmjs.org/@modelcontextprotocol/sdk/latest): latest is evidence of historical query, not production dependency / permanent pin.
+- [Historical MCP export](https://github.com/microsoft/playwright-mcp/blob/f183dad4a52965583e3cc1d59b88cdc279e2e57d/index.js) and [types](https://github.com/microsoft/playwright-mcp/blob/f183dad4a52965583e3cc1d59b88cdc279e2e57d/index.d.ts): explain spike, do not import in r4.
+- [Historical core MCP backend](https://github.com/microsoft/playwright/tree/e8149b8257d32dcf8f72573ecc43e72439da7080/packages/playwright-core/src/tools/backend): context/tabs document currentTab/closure cause; screenshot/video/tracing/response and unsafe/caps are history of risks.
+- [Historical public in-memory SDK v1](https://github.com/modelcontextprotocol/typescript-sdk/blob/ff07b001194fe60ee9deb2121cf119057565796d/src/inMemory.ts): do not integrate into r4.
+- [Screencast v1.64.0](https://github.com/microsoft/playwright/blob/v1.64.0/docs/src/api/class-screencast.md), [Tracing](https://github.com/microsoft/playwright/blob/v1.64.0/docs/src/api/class-tracing.md), [videos](https://playwright.dev/docs/videos).
 - [Touchscreen](https://playwright.dev/docs/api/class-touchscreen), [legacy touch](https://github.com/microsoft/playwright/blob/v1.64.0/docs/src/touch-events.md), [Chromium touch input](https://github.com/microsoft/playwright/blob/v1.64.0/packages/playwright-core/src/server/chromium/crInput.ts).
-- [MCP overview](https://github.com/microsoft/playwright-mcp/blob/main/README.md), [CLI overview](https://github.com/microsoft/playwright-cli/blob/main/README.md): referências de comparação/histórico, não rota runtime.
+- [MCP overview](https://github.com/microsoft/playwright-mcp/blob/main/README.md), [CLI overview](https://github.com/microsoft/playwright-cli/blob/main/README.md): comparison/historical references, not runtime route.
 
-Dois estudos iniciais cobriram contratos/provider/DSH e backend/mobile/mídia; depois o spike real isolado instalou os pins históricos, iniciou Chromium sandbox-enabled em fixture loopback e comprovou blocker G3 e primitives de G2/G5alpha. Nenhuma produção/ativação/skill foi alterada pelo spike ou por esta revisão editorial. Nova implementação stable precisa provas próprias e segue a autorização explícita do dono, com remoção recuperável somente da antiga skill `playwright` ao final.
+Two initial studies covered contracts/provider/DSH and backend/mobile/media; subsequently, the real isolated spike installed historical pins, launched sandbox-enabled Chromium on loopback fixture, and proved blocker G3 and primitives of G2/G5 alpha. No production/activation/skill was modified by the spike or by this editorial revision. New stable implementation requires its own proofs and follows explicit owner authorization, with recoverable removal of only the old `playwright` skill at the end.
 
-## Definição de pronto
+## Definition of Done
 
-Uma root browser herdada e filtrável, árvore lógica útil e compacta, schemas/policies por operação sem bypass conhecido nos testes, **Playwright estável Page-bound e SDK2 privado comprovados**, closure/ref failclosed sem mutação de vizinho, navegação/screenshot/mobile-touch/vídeo funcionando no runtime real, artefatos finais inspecionados e controlados, produto sem poluição, instalação/teardown reproduzíveis, ativação validada em **dsh-tui/headless/web/tui**, somente a antiga skill `playwright` removida recuperavelmente no final e **nenhuma skill nova/substituta**, com limites explícitos. Gate não comprovado, tool exterior registrada ou arquivo de vídeo não inspecionado não contam como integração pronta.
+One inherited and filterable browser root, compact and useful logical tree, per-operation schemas/policies with no known bypass in tests, **proven Page-bound stable Playwright and private SDK2**, closure/ref failclosed without neighbor mutation, navigation/screenshot/mobile-touch/video functioning in real runtime, inspected and controlled final artifacts, product free of pollution, reproducible installation/teardown, validated activation across **dsh-tui/headless/web/tui**, only the old `playwright` skill recoverably removed at the end and **ZERO new/replacement skills**, with explicit limits. Unproven gate, registered external tool, or uninspected video file do not count as ready integration.

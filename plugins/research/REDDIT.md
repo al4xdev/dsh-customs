@@ -1,68 +1,68 @@
-# Reddit oficial: leitura, navegação e concorrência
+# Official Reddit: Reading, Navigation, and Concurrency
 
-## Estado
+## Status
 
-O conector `reddit` agora usa somente a Data API oficial via OAuth. Não faz fallback silencioso ao Google após falta de credenciais,403,429 ou timeout. A fonte `web` continua disponível separadamente para descobrir páginas indexadas.
+The `reddit` connector now exclusively uses the official Data API via OAuth. It performs no silent fallback to Google upon missing credentials, 403, 429, or timeout. The `web` source remains separately available to discover indexed pages.
 
-Implementação/testes não equivalem a acesso aprovado pelo Reddit. No processo de validação local, `credentialStatus` foi `missing`: nenhum teste autenticado real foi realizado. Os testes de API usam fixtures, não posts reais obtidos por OAuth.
+Implementation and tests do not equal approved access by Reddit. During local validation, `credentialStatus` was `missing`: no actual authenticated tests were executed. API test suites use fixtures, not live posts obtained via OAuth.
 
-## Credenciais e autorização
+## Credentials and Authorization
 
-O proprietário precisa obter acesso permitido pelo Reddit e um access token OAuth com escopo de leitura apropriado (`read`). Consulte o processo vigente diretamente no Reddit; não presumir que criar uma aplicação dispensa aprovação ou permite qualquer uso por agentes.
+The owner must obtain permitted access from Reddit and an OAuth access token with appropriate read scope (`read`). Consult current processes directly on Reddit; do not assume creating an application waives approval or permits arbitrary agent usage.
 
-Fornecer ao processo DSH, por configuração de ambiente protegida:
+Provide to the DSH process via protected environment variables:
 
-- `REDDIT_ACCESS_TOKEN`: token OAuth válido, nunca senha da conta.
-- `REDDIT_USER_AGENT`: identificador descritivo da aplicação, sem quebras de linha; por exemplo identificação da plataforma, nome, versão e contato conforme orientação do Reddit.
+- `REDDIT_ACCESS_TOKEN`: Valid OAuth token, never an account password.
+- `REDDIT_USER_AGENT`: Descriptive application identifier without newlines; for example platform ID, name, version, and contact info following Reddit guidelines.
 
-Não colocar tokens em argumentos da tool, `.agents`, Git, `.dumps`, screenshots ou mensagens. Configurar no ambiente do serviço/launcher que realmente executa o perfil, não somente num terminal diferente. Reiniciar/reabrir o processo após alterar o ambiente quando necessário.
+Never place tokens in tool arguments, `.agents`, Git, `.dumps`, screenshots, or chat messages. Configure in the environment of the service/launcher that actually executes the profile, not merely in a different terminal shell. Restart/reopen the process after modifying environment variables when required.
 
-Esta versão é **access-token-only**: o proprietário substitui tokens expirados. Não há login interativo, concessão por senha, refresh automático, uso de cookies pessoais ou contratação de acesso. Não usar tokens emitidos para finalidade sem autorização adequada.
+This version is **access-token-only**: the owner replaces expired tokens. There is no interactive login, password grant, automatic refresh, usage of personal cookies, or purchasing of access. Do not use tokens issued for unauthorized purposes.
 
-API utilizada: GET em `https://oauth.reddit.com`, com redirects recusados e respostas de até2MB. Sem publicar, votar, enviar mensagens ou modificar conta. Autenticação ausente retorna `AUTH_REQUIRED`; bloqueio e quotas preservam resultados das outras fontes.
+API targeted: GET on `https://oauth.reddit.com`, redirects rejected, responses capped at 2MB. No posting, voting, messaging, or account modifications. Missing authentication returns `AUTH_REQUIRED`; blocking and quotas preserve results from other sources.
 
-Documentação oficial:
+Official documentation:
 
 - https://www.reddit.com/dev/api/
 - https://www.reddit.com/dev/api/#GET_api_morechildren
 - https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki
 - https://redditinc.com/policies/data-api-terms
 
-A Wiki esteve bloqueada neste ambiente e os termos não foram lidos integralmente na investigação anterior. Antes de operar, verificar aprovação, termos, uso por agentes e retenção aplicáveis; não tratar este README como autorização do Reddit.
+The Wiki was blocked in this environment and terms were not fully read during prior investigation. Before operating, verify applicable approvals, terms, agent usage, and retention policies; do not treat this README as Reddit authorization.
 
-## Navegação pela mesma tool
+## Navigation with the Same Tool
 
-Criar configuração Reddit-only permite navegação sem disparar buscas sem sentido em outras fontes:
+Creating a Reddit-only configuration enables navigation without triggering meaningless searches across other sources:
 
 ```json
 {"action":"config","config":{"sources":["reddit"],"maxComments":40,"readsPerSource":2}}
 ```
 
-Os identificadores abaixo são placeholders, não tokens ou pesquisas reais.
+The identifiers below are placeholders, not real tokens or queries.
 
-### Buscar em subreddit
+### Search inside a Subreddit
 
 ```json
 {"action":"search","config_id":"<id>","query":"local models","reddit":{"mode":"search","subreddit":"LocalLLaMA","sort":"new","time":"week"}}
 ```
 
-### Listar tópicos recentes
+### List Recent Topics
 
 ```json
 {"action":"search","config_id":"<id>","reddit":{"mode":"subreddit","subreddit":"LocalLLaMA","sort":"new"}}
 ```
 
-`query` pode ser omitida nos modos `subreddit` e `thread`. Esses modos exigem configuração exclusivamente Reddit. Busca normal aceita Reddit junto de outras fontes.
+`query` may be omitted in `subreddit` and `thread` modes. These modes mandate an exclusively Reddit configuration. Standard search accepts Reddit alongside other sources.
 
-### Abrir tópico e comentários
+### Open Topic and Comments
 
 ```json
-{"action":"continue","run_id":"<id>","reddit":{"mode":"thread","postId":"<id-do-post>","sort":"top"}}
+{"action":"continue","run_id":"<id>","reddit":{"mode":"thread","postId":"<post-id>","sort":"top"}}
 ```
 
-`postId` aceita ID base36 ou fullname `t3_...`. `commentId` aceita ID ou `t1_...` para focar uma resposta. A ferramenta verifica origem da thread antes de incorporar comentários retornados por expansão.
+`postId` accepts base36 ID or `t3_...` fullname. `commentId` accepts ID or `t1_...` to focus a reply. The tool verifies thread origin before merging comments returned by expansion.
 
-### Inspecionar e continuar
+### Inspect and Continue
 
 ```json
 {"action":"inspect","run_id":"<id>","ref":"<ref>","section":"comments","limit":6000}
@@ -72,33 +72,33 @@ Os identificadores abaixo são placeholders, não tokens ou pesquisas reais.
 {"action":"inspect","run_id":"<id>","ref":"<ref>","section":"navigation","limit":6000}
 ```
 
-O índice mostra até10 IDs pendentes como preview. **Não são os únicos persistidos**: `section:navigation` permite recuperar todos os IDs guardados, paginando por `offset/limit` se necessário. O acervo guarda até200 IDs de continuação por evidência, com indicação quando ainda há mais.
+The index displays up to 10 pending IDs as a preview. **These are not the only persisted IDs**: `section:navigation` allows retrieving all stored IDs, paginating via `offset/limit` if needed. The archive stores up to 200 continuation IDs per evidence entry, indicating when more remain.
 
-Para listar a próxima página, usar `reddit.after` devolvido pelo listing e repetir modo/subreddit/sort. Para expandir respostas, usar `reddit.mode:thread`, `postId` e `children:[IDs pendentes]`. Não inventar cursores e não tratar índice de array como cursor de API.
+To list the next page, use `reddit.after` returned by the listing and repeat mode/subreddit/sort. To expand replies, use `reddit.mode:thread`, `postId`, and `children:[pending IDs]`. Never invent cursors or treat array indices as API cursors.
 
-A leitura inicial busca comentários e tenta até duas expansões `morechildren`, até100 IDs por chamada e até o orçamento de comentários selecionados. Falha de expansão mantém post e comentários válidos, erros e pendências. Snapshots podem conter comentários removidos/inacessíveis/ausentes; não há garantia de thread completa ou representatividade.
+Initial read retrieves comments and attempts up to two `morechildren` expansions, up to 100 IDs per call, bounded by selected comment budget. Expansion failure preserves post, valid comments, errors, and pending items. Snapshots may contain removed/inaccessible/missing comments; there is no guarantee of complete threads or statistical representativeness.
 
-## Concorrência
+## Concurrency
 
-- `research` aceita chamadas paralelas; pesquisas diferentes não são serializadas globalmente.
-- Mesma pesquisa continua protegida por lock e orçamento cumulativo.
-- Default: **2 workers por backend**, compartilhados entre sessões/instâncias do plugin **no mesmo processo DSH**.
-- Owner pode configurar `providerWorkers: 1` no plugin. Valores diferentes de1ou2 são rejeitados. O agente não pode alterar esse teto pela tool.
-- Backend web é uma fila compartilhada por `web` e fallback do X; não vira uma fila independente por rótulo.
-- Reddit API: até2 operações; `morechildren`: **1**, inclusive após cancelamento enquanto a requisição real ainda não terminou.
-- HTTP: limite por origem; MCPs: limite por provedor.
-- Filas limitadas (64 aguardando por chave); cancelamento retira aguardantes. Operação em andamento só libera slot quando realmente termina.
--429 e rate-limit headers ativam cooldown compartilhado; novas tentativas falham com indicação de espera em vez de bombardear o serviço. Outras fontes continuam.
-- Deadlines incluem espera na fila. Concorrência não garante ausência de429: quotas também podem limitar volume por minuto/dia.
-- A fila é **por processo**, não um semáforo distribuído entre processos/perfis independentes. Duas instâncias DSH distintas podem somar seus limites. Coordenação global entre processos é evolução separada; enquanto isso, preferir um backend/processo central ou ajustar trabalhadores a1.
-- Registro de chaves tem limite512 por processo e preserva o menor limite configurado até reinício. Esgotamento retorna erro, não crescimento de memória sem limite.
+- `research` accepts concurrent calls; distinct runs are not serialized globally.
+- The same research run remains protected by a lock and cumulative budget.
+- Default: **2 workers per backend**, shared across plugin sessions/instances **within the same DSH process**.
+- Owner can set `providerWorkers: 1` in plugin options. Values other than 1 or 2 are rejected. The agent cannot modify this ceiling via tool calls.
+- Web backend is a shared queue for `web` and X fallback; it does not become independent queues per label.
+- Reddit API: up to 2 operations; `morechildren`: **1**, including after cancellation while the actual underlying request has not completed.
+- HTTP: limit per origin; MCPs: limit per provider.
+- Bounded queues (64 waiting per key); cancellation clears waiters. In-flight operations only free slots when they actually terminate.
+- 429 and rate-limit headers trigger shared cooldown; new attempts fail with wait hints rather than bombarding the service. Other sources continue.
+- Deadlines include queue wait time. Concurrency control does not prevent 429 errors: external quotas may also restrict volume per minute/day.
+- The queue is **per-process**, not a distributed sempahore across independent processes/profiles. Two distinct DSH instances may aggregate their limits. Global inter-process coordination is a separate evolution; in the interim, prefer a single backend process or tune workers to 1.
+- Key registry caps at 512 entries per process, retaining the lowest configured limit until restart. Exhaustion returns an error, preventing unbounded memory growth.
 
-## Dados e testes
+## Data and Testing
 
-A política de permissões da sessão vale para o armazenamento; `.dumps` deve ser ignorada pelo Git. Conteúdo externo permanece não confiável. Não manter acervo além do permitido pelos termos/autorização aplicáveis; esta versão não tem limpeza automática.
+Session permission policy applies to storage; `.dumps` must be gitignored. External content remains untrusted. Do not retain data archives beyond permitted terms/authorization; this version features no automatic pruning.
 
 ```sh
 node --test plugins/research/*.test.mjs
 ```
 
-As suítes Reddit/scheduler/concurrency cobrem OAuth em headers, hosts fixos, IDs, paginação, encadeamento, expansão parcial, credencial ausente, token não vazado,429/cooldown, cancelamento, limites deworkers, pesquisas simultâneas e recuperação seletiva do acervo. Não substituem validação autenticada real após configuração autorizada.
+Reddit/scheduler/concurrency suites cover OAuth headers, fixed hosts, IDs, pagination, chaining, partial expansion, missing credentials, non-leaking tokens, 429/cooldown, cancellation, worker limits, concurrent research runs, and selective archive inspection. They do not replace live authenticated testing after authorized configuration.

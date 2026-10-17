@@ -1,13 +1,13 @@
-# Pesquisa Google no fork Antigravity com Flash low
+# Google Search in Antigravity Fork with Flash low
 
-## Pedido
-Adicionar pesquisa ao plugin existente usando seu OAuth e `gemini-3.8-flash-low`.
+## Request
+Add search to the existing plugin using its OAuth and `gemini-3.8-flash-low`.
 
-## Implementação
-1. Verificar estado do fork e executar probe controlado no endpoint Cloud Code Assist com Google Search nativo, sem expor tokens ou alterar perfil.
-2. Adicionar ao fork um provider `ctx.web` opt-in que reutiliza o credential manager, fixa por configuração o modelo pedido, solicita `googleSearch` e normaliza texto e fontes de `groundingMetadata`.
-3. Implementar testes para payload, OAuth, cancelamento, erros, SSE e metadados, recusando texto sem evidência de busca. Documentar opções e build.
-4. Rodar testes/build e probe real pelo provider. Ativar no perfil dsh-tui mantendo web_fetch e desativando apenas pesquisa DeepSeek somente se busca real comprovada. Caso backend não suporte, entregar código opt-in testado, sem ativar, relatando limitação concreta.
+## Implementation
+1. Check fork state and run a controlled probe against the Cloud Code Assist endpoint with native Google Search, without exposing tokens or altering the profile.
+2. Add an opt-in `ctx.web` provider to the fork that reuses the credential manager, configures the requested model, requests `googleSearch`, and normalizes text and sources from `groundingMetadata`.
+3. Implement tests for payload, OAuth, cancellation, errors, SSE, and metadata, rejecting text without search evidence. Document options and build.
+4. Run tests/build and a real probe through the provider. Enable in the dsh-tui profile while keeping web_fetch and disabling only DeepSeek search strictly if real search is proven. If the backend does not support it, deliver tested opt-in code without enabling, reporting the concrete limitation.
 
-## Segurança e validação
-Não trocar silenciosamente de modelo, não considerar resposta de memória uma pesquisa, não registrar credenciais, limitar tempos/volume e não modificar dependências DSH instaladas. Usar goal para acompanhar até conclusão e registrar evidências reais.
+## Security and validation
+Do not silently switch models, do not treat an in-memory response as a search, do not log credentials, limit timeouts/volume, and do not modify installed DSH dependencies. Use a goal to track until completion and record real evidence.

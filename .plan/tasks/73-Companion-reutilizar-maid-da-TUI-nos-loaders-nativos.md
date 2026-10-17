@@ -1,17 +1,17 @@
-# Companion: reutilizar maid da TUI nos loaders nativos
+# Companion: Reuse TUI Maid in Native Loaders
 
-## Pedido e fonte já localizada
-O proprietário pediu reutilizar o personagem maid do companion na sidebarDSH-TUI nas respostas carregando e nos loads do app, via GIF ou equivalente. Fonte readonly encontrada: `frontend/dsh-tui/assets/whaleGirl/img/{thinking,typing}/*.png` e `timings.json`. README identifica como pacote de GIFs fornecido pelo usuário, não oficial; PNGs RGBA301×288 preservam alpha e delays originais. Primeiro frame thinking inspecionado confirma personagem maid de cabelo azul.
+## Request and Identified Source
+The owner requested reusing the maid companion character from the DSH-TUI sidebar in loading responses and app loaders, via GIF or equivalent. Read-only source located: `frontend/dsh-tui/assets/whaleGirl/img/{thinking,typing}/*.png` and `timings.json`. README identifies it as a user-provided GIF package, not official; 301×288 RGBA PNGs preserve alpha and original frame delays. First thinking frame inspected confirms blue-haired maid character.
 
-## Implementação
-- Reutilizar os frames PNG originais e seus timings em assets locais da APK; não inventar animação/baixar assets externos/nem alterar TUI/HA. Documentar origem de uso pessoal, não alegar licença oficial.
-- Criar composable pequeno `MaidLoader` com moodsThinking/Typing, slot estável≈56dp, transparente na paleta azul/plum e renderpixelnative. Loading real = thinking, streaming real = typing; awaiting fila pode mostrar estado estático/idle sem inventar que o modelo executa.
-- Carregar/decodificar fora do main quando necessário, dimensões/preload/cache limitados; PNG bundled separado do pipeline de anexos read_image. Não elevar limites globais/media nem fetching externo.
-- Animar somente enquanto visível/active e lifecycleRESUMED; movimento reduzido/escala0 frame estático; parar clocks ao ocultar/dispose. Sem timer gerando estado falso do turno; ticker só anima arte de estado já confirmado.
-- Integrar no loading de catálogo/login real e linha da respostaTask70; spinner redundante eliminado, stop contextual continua com48dp target; não carregar mascot em cada linha do histórico nem ícones permanentes.
+## Implementation
+- Reuse original PNG frames and timings in APK local assets; do not invent animations, download external assets, or alter TUI/HA. Document personal-use origin, do not claim official licensing.
+- Create small `MaidLoader` composable with Thinking/Typing moods, stable slot ≈ 56dp, transparent over blue/plum palette with native pixel rendering. Real loading = thinking, real streaming = typing; queued/awaiting may show static/idle state without simulating model execution.
+- Load/decode off main thread when needed, bounded dimensions / preloading / cache; bundled PNGs decoupled from `read_image` attachment pipeline. Do not elevate global/media limits or perform external fetching.
+- Animate strictly while visible/active and lifecycle RESUMED; reduced motion / zero scale shows static frame; stop clocks upon hiding/dispose. No timer fabricating turn state; ticker solely animates art for already-confirmed state.
+- Integrate into real catalog/login loading and Task 70 response line; redundant spinner eliminated, contextual stop retains 48dp target; do not load mascot on every history line or permanent icons.
 
-## Validação
-Teste determinístico frameat/durations/sample/dimensions/slot/imagens, ciclo started/stopped e reducedmotion, snapshots sintéticosCompose Android34 do catálogo loading e awaiting/streaming. Fullbuild/lint/protoc/JVM/Compose após integração. Nenhum screenshot privado/turno real/instalação enquanto ownerusaapp.
+## Validation
+Deterministic tests for frame-at / durations / sampling / dimensions / slot / images, started/stopped lifecycle and reduced motion, synthetic Compose Android 34 snapshots of catalog loading and awaiting/streaming. Full build / lint / protoc / JVM / Compose following integration. No private screenshots / real turns / installation while owner uses app.
 
-## Aceite
-A mesma maid aparece nos loaders e resposta nativa com timings originais, alpha e tamanho estável; anima apenas estado real/visível, frame estático no reducedmotion, sem clocks de fundo. Origem e consumo limitados registrados, APK4/evidências integradas. Continua em paralelo comTask70UI eTask72r2sandboxworkspacewrite/Bashaprovado; nenhumcommit/push.
+## Acceptance Criteria
+The same maid appears in loaders and native responses with original timings, alpha, and stable dimensions; animates only real/visible state, static frame under reduced motion, no background clocks. Origin and bounded resource consumption documented, APK 4 / evidence integrated. Continues in parallel with Task 70 UI and Task 72r2 native workspace-write sandbox / approved Bash; no commit/push.
