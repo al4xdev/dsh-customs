@@ -49,11 +49,14 @@ internal object WorkspaceGesturePolicy {
 
 /** Coordinates, not transcript/model data; detached lazy items unregister on disposal. */
 internal class WorkspaceGestureExclusions {
-    private val entries = LinkedHashMap<Any, LayoutCoordinates>()
-    fun put(key: Any, coordinates: LayoutCoordinates) { entries[key] = coordinates }
+    private class Entry(val coordinates: LayoutCoordinates, val active: () -> Boolean)
+    private val entries = LinkedHashMap<Any, Entry>()
+    fun put(key: Any, coordinates: LayoutCoordinates, active: () -> Boolean = { true }) {
+        entries[key] = Entry(coordinates, active)
+    }
     fun remove(key: Any) { entries.remove(key) }
     fun contains(positionInWindow: Offset): Boolean = entries.values.any {
-        it.isAttached && it.boundsInWindow().contains(positionInWindow)
+        it.active() && it.coordinates.isAttached && it.coordinates.boundsInWindow().contains(positionInWindow)
     }
 }
 
@@ -64,11 +67,12 @@ internal val LocalWorkspaceGestureExclusions = staticCompositionLocalOf<Workspac
  * Apply to code/tables, the composer and media hosts; consumption alone cannot describe
  * an unconsumed drag at a child's boundary. Outside a workspace this is inert.
  */
-fun Modifier.workspaceGestureExcluded(): Modifier = composed {
+fun Modifier.workspaceGestureExcluded(active: () -> Boolean = { true }): Modifier = composed {
     val exclusions = LocalWorkspaceGestureExclusions.current
     if (exclusions == null) this else {
         val key = remember(exclusions) { Any() }
+        val current = androidx.compose.runtime.rememberUpdatedState(active)
         DisposableEffect(exclusions, key) { onDispose { exclusions.remove(key) } }
-        this.onGloballyPositioned { exclusions.put(key, it) }
+        this.onGloballyPositioned { exclusions.put(key, it) { current.value() } }
     }
 }

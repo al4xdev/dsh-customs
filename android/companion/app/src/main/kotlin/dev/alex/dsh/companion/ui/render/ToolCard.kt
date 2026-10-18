@@ -1,5 +1,11 @@
 package dev.alex.dsh.companion.ui.render
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,8 +31,7 @@ import dev.alex.dsh.companion.render.RenderBlock
 import dev.alex.dsh.companion.render.ToolDetail
 import dev.alex.dsh.companion.render.ToolPhase
 import dev.alex.dsh.companion.render.ToolPresentation
-import dev.alex.dsh.companion.ui.CompanionGlyph
-import dev.alex.dsh.companion.ui.CompanionIcon
+import dev.alex.dsh.companion.ui.FoldChevron
 
 /** Flat work entries compose their heavy evidence only after an explicit detail fold. */
 @Composable
@@ -44,14 +49,12 @@ internal fun ToolCard(tool: ToolPresentation, imageContent: @Composable (ImageRe
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) { ToolIdentity(tool, operation) }
-                IconButton(onClick = { state.toggle(key) }, modifier = Modifier.size(48.dp).semantics {
-                    stateDescription = if (expanded) "Expandida" else "Recolhida"
-                }) {
-                    CompanionIcon(if (expanded) CompanionGlyph.ChevronUp else CompanionGlyph.ChevronDown,
-                        contentDescription = if (expanded) "Recolher ferramenta" else "Expandir ferramenta")
-                }
             }
-            if (expanded) {
+            AnimatedVisibility(
+                expanded,
+                enter = expandVertically(tween(320)) + fadeIn(tween(220)),
+                exit = shrinkVertically(tween(240)) + fadeOut(tween(160)),
+            ) {
                 val arguments = androidx.compose.runtime.remember(tool.argsRaw, tool.phase) {
                     dev.alex.dsh.companion.render.ToolArgumentsProjection.project(tool)
                 }
@@ -106,6 +109,13 @@ internal fun ToolCard(tool: ToolPresentation, imageContent: @Composable (ImageRe
                     val metaKey = "$key:metadata"
                     TextButton(onClick = { state.toggle(metaKey) }) { Text(if (state.expanded(metaKey)) "Ocultar metadados" else "Ver metadados") }
                     if (state.expanded(metaKey)) LiteralCode(tool.metadataPreview, "Metadados públicos")
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = { state.toggle(key) }, modifier = Modifier.size(48.dp).semantics {
+                    stateDescription = if (expanded) "Expandida" else "Recolhida"
+                }) {
+                    FoldChevron(expanded, if (expanded) "Recolher ferramenta" else "Expandir ferramenta")
                 }
             }
     }

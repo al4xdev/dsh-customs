@@ -69,6 +69,29 @@ class NativeProtocolTest {
         val error = assertThrows(ProtocolException::class.java) { NativeCodec.json("invalid synthetic body marker") }
         assertFalse(error.message.orEmpty().contains("body marker"))
     }
+    @Test fun aWholeReasoningPageStillExceedsTheFrameNodeBudget() {
+        fun wide(primitives: Int): String {
+            val chunk = 9_000
+            val parts = Array((primitives + chunk - 1) / chunk) { index ->
+                val count = minOf(chunk, primitives - index * chunk)
+                "[" + "0,".repeat(count - 1) + "0]"
+            }
+            return parts.joinToString(prefix = "[", postfix = "]", separator = ",")
+        }
+        assertTrue(json(wide(12_000)) is kotlinx.serialization.json.JsonArray)
+        fails("json-limit") { json(wide(ProtocolLimits.MAX_NODES + 1)) }
+    }
+    @Test fun oversizedHistoryShrinksInsteadOfStayingOnOneMessage() {
+        val window = HistoryPageWindow()
+        assertEquals(12, window.messages)
+        assertTrue(window.shrink())
+        assertEquals(6, window.messages)
+        while (window.messages > 1) assertTrue(window.shrink())
+        assertEquals(1, window.messages)
+        assertFalse(window.shrink())
+        window.reset()
+        assertEquals(12, window.messages)
+    }
     @Test fun duplicateEscapedKeysAndDepthAreRejectedBeforeParsing() {
         fails("duplicate-key") { json("""{"type":"item","t\u0079pe":"end"}""") }
         fails("json-depth") { json("[".repeat(ProtocolLimits.MAX_DEPTH + 1) + "0" + "]".repeat(ProtocolLimits.MAX_DEPTH + 1)) }

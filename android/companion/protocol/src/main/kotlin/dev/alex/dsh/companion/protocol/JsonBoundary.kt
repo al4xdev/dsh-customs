@@ -15,6 +15,8 @@ class ProtocolException(val code: String) : IllegalArgumentException(code)
 object ProtocolLimits {
     const val MAX_BYTES = 2 * 1024 * 1024
     const val MAX_DEPTH = 48
+    // One frame, not a whole journal. A 50-message page of compact reasoning
+    // streams exceeds this; the client asks for a short page and loads the rest.
     const val MAX_NODES = 50_000
     const val MAX_ITEMS = 10_000
     const val MAX_STRING = 512 * 1024

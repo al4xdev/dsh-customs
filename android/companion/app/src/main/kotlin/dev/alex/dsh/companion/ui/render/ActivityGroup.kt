@@ -1,5 +1,11 @@
 package dev.alex.dsh.companion.ui.render
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,8 +31,7 @@ import dev.alex.dsh.companion.render.ActivityEntry
 import dev.alex.dsh.companion.render.ActivityGroup
 import dev.alex.dsh.companion.render.ImageReference
 import dev.alex.dsh.companion.render.RenderBlock
-import dev.alex.dsh.companion.ui.CompanionGlyph
-import dev.alex.dsh.companion.ui.CompanionIcon
+import dev.alex.dsh.companion.ui.FoldChevron
 
 /** One quiet fold owns activity visibility; approvals and response controls stay outside this component. */
 @Composable
@@ -60,10 +65,12 @@ fun ActivityGroupCard(
                 if (observations.isNotEmpty()) Text(observations, style = MaterialTheme.typography.labelSmall,
                     color = if (group.errorCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            CompanionIcon(if (expanded) CompanionGlyph.ChevronUp else CompanionGlyph.ChevronDown,
-                modifier = Modifier.size(20.dp), contentDescription = null)
         }
-        if (expanded) {
+        AnimatedVisibility(
+            expanded,
+            enter = expandVertically(tween(320)) + fadeIn(tween(220)),
+            exit = shrinkVertically(tween(240)) + fadeOut(tween(160)),
+        ) {
             Column(Modifier.padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 group.entries.forEach { entry ->
                     key(entry.stableId) {
@@ -73,6 +80,12 @@ fun ActivityGroupCard(
                     }
                 }
             }
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
+            if (!expanded) onInspect()
+            renderState.toggle(group.stableId)
+        }, horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            FoldChevron(expanded, if (expanded) "Recolher atividade" else "Expandir atividade", Modifier.size(20.dp))
         }
     }
 }

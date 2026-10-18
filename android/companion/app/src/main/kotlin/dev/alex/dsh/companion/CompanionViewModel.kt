@@ -115,6 +115,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     private var questionProjectionRequested = false
     private var answererVisibilityJob: Job? = null
     private val answererRetry = AnswererReconnectPolicy()
+    private val historyWindow = HistoryPageWindow()
     private var answererRetryJob: Job? = null
     // A rotation disposes the old composition before the new one claims the workspace.
     private var workspaceRecreating = false
@@ -985,6 +986,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         state.value.selectedId?.let { drafts[it] = state.value.draft }
         val previous = state.value
         val capturedFiles = if (fromDraft != null) firstDraft?.files else null
+        if (fromDraft == null && previous.selectedId != id) historyWindow.reset()
         if (fromDraft == null && (previous.selectedId != id || previous.isNewDraft)) clearFileDraft(id)
         resetConnection(preserveDraft = fromDraft)
         val epoch = generation
@@ -1816,11 +1818,18 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         mutable.update { it.copy(busy = true) }
         viewModelScope.launch {
             try {
-                val rpcId = id()
-                val page = NativeCodec.page(unary("session/page", rpcId, NativeRequests.page(rpcId, proof.admission, snapshot.cursor, before)))
-                if (epoch != generation) return@launch
-                journal?.prepend(page, snapshot.cursor, before, epoch)
-                publish()
+                while (true) {
+                    val rpcId = id()
+                    try {
+                        val page = NativeCodec.page(unary("session/page", rpcId, NativeRequests.page(rpcId, proof.admission, snapshot.cursor, before, historyWindow.messages)))
+                        if (epoch != generation) return@launch
+                        journal?.prepend(page, snapshot.cursor, before, epoch)
+                        publish()
+                        break
+                    } catch (error: ProtocolException) {
+                        if (error.code != "json-limit" || !historyWindow.shrink() || epoch != generation) throw error
+                    }
+                }
                 mutable.update { it.copy(busy = false) }
             } catch (error: Exception) { failure(error, epoch) }
         }
@@ -2097,7 +2106,13 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val followId = followStream
         val reader = SocketIngress(viewModelScope, eventsId, followId,
             onFrame = { frame -> if (epoch == generation && connectionSerial == socketSerial) incoming(frame, epoch) },
-            onFailure = { error -> if (connectionSerial == socketSerial) disconnect(epoch, error) })
+            onFailure = { error ->
+                if (connectionSerial != socketSerial) return@SocketIngress
+                // A page of compact reasoning streams can exceed the node budget without being corrupt.
+                if (error is ProtocolException && error.code == "json-limit" && historyWindow.shrink()) {
+                    disconnect(epoch, null, retryable = true, quiet = true)
+                } else disconnect(epoch, error)
+            })
         ingress?.close()
         ingress = reader
         val listener = object : WebSocketListener() {
@@ -2107,7 +2122,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     opening = false
                     try {
                         check(webSocket.send(NativeRequests.events(eventsId)))
-                        if (proof != null) check(webSocket.send(NativeRequests.follow(followId, proof.admission)))
+                        if (proof != null) check(webSocket.send(NativeRequests.follow(followId, proof.admission, historyWindow.messages)))
                     } catch (error: Exception) { disconnect(epoch, error, retryable = true) }
                 }
             }
@@ -2402,7 +2417,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         interactions.reset(generation, readScopeAuthEpoch)
     }
     /** [retryable] false: a data error or refused upgrade, which only an explicit Reconectar retries. */
-    private fun disconnect(epoch: Long, error: Exception?, retryable: Boolean = error == null) {
+    private fun disconnect(epoch: Long, error: Exception?, retryable: Boolean = error == null, quiet: Boolean = false) {
         if (epoch != generation) return
         retireFileSend()
         newChatDraft.interrupt(epoch)
@@ -2428,7 +2443,12 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             chatAttention = emptyMap(), answererConnected = false, answererUnavailable = true, questionProjectionCurrent = false,
             streamingText = null, presentationPending = false,
             richMessages = it.richMessages.map { message -> if (message.streaming) message.copy(streaming = false, interrupted = true) else message },
-            status = "Desconectado", error = if (error == null) "Conexão encerrada. Reconecte para obter um histórico confirmado." else "Dados não suportados. Reconecte sem reenviar mensagens.") }
+            status = if (quiet) "Abrindo um trecho menor do histórico" else "Desconectado",
+            error = when {
+                quiet -> null
+                error == null -> "Conexão encerrada. Reconecte para obter um histórico confirmado."
+                else -> "Dados não suportados. Reconecte sem reenviar mensagens."
+            }) }
         updateDelivery()
         scheduleAnswererReconnect(retryable)
     }

@@ -1,10 +1,14 @@
 package dev.alex.dsh.companion.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -16,6 +20,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 enum class CompanionGlyph { Back, Add, Logout, Settings, More, ChevronDown, ChevronUp, Stop, Send, Goal, Replying, Pause, Continue, Check }
+
+/** One chevron that turns 180° instead of swapping two icons. */
+@Composable
+fun FoldChevron(expanded: Boolean, contentDescription: String?, modifier: Modifier = Modifier) {
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(320),
+        label = "fold-chevron",
+    )
+    CompanionIcon(CompanionGlyph.ChevronDown, contentDescription, modifier.graphicsLayer { rotationZ = rotation })
+}
 
 /** Small glyphs share one stroke; their enclosing IconButtons keep the 48dp hit targets. */
 @Composable

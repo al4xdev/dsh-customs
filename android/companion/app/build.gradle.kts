@@ -23,8 +23,8 @@ android {
         applicationId = "dev.alex.dsh.companion"
         minSdk = 34
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.16.0-companion"
+        versionCode = 17
+        versionName = "0.17.0-history-page"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "COMPANION_PUSH_CONFIGURED", pushConfigured.toString())
         buildConfigField("String", "COMPANION_PUSH_PROJECT_ID", pushLiteral("projectId"))

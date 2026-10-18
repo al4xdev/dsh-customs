@@ -3,8 +3,8 @@ package dev.alex.dsh.companion.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -209,7 +209,7 @@ class CompanionScreenTest {
             assertEquals(0, actions.sends)
             assertTrue(actions.logins.isEmpty())
         }
-        compose.onNodeWithContentDescription("Voltar").performClick()
+        compose.onNodeWithTag("settings-pane").performSemanticsAction(SemanticsActions.Dismiss) { it() }
         compose.waitForIdle()
         logout.assertDoesNotExist()
     }

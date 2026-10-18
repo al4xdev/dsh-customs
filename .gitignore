@@ -21,3 +21,6 @@ plugins/dsh-antigravity/
 
 # Recovered Pi source is vendored in sources/pi-ai for clean-clone builds.
 # SOURCE-PROVENANCE.json records a verified snapshot, not a nested Git HEAD.
+
+# Image generator artifacts / logs
+z_image_universal.log

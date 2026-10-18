@@ -1,5 +1,6 @@
 package dev.alex.dsh.companion.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
@@ -54,8 +55,10 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -105,9 +108,12 @@ import dev.alex.dsh.companion.delivery.ResponsePhase
 import dev.alex.dsh.companion.render.ImageReference
 import dev.alex.dsh.companion.render.TranscriptCellBody
 import dev.alex.dsh.companion.ui.loading.MaidLoader
+import dev.alex.dsh.companion.ui.loading.MockFrameStage
+import dev.alex.dsh.companion.ui.gestures.CompanionRoute
+import dev.alex.dsh.companion.ui.gestures.CompanionRoutes
+import dev.alex.dsh.companion.ui.gestures.FullscreenEdgeNav
 import dev.alex.dsh.companion.ui.premium.LocalWorkspaceDismiss
 import dev.alex.dsh.companion.ui.premium.PremiumTheme
-import dev.alex.dsh.companion.ui.premium.PremiumWorkspace
 import dev.alex.dsh.companion.ui.premium.workspaceGestureExcluded
 import dev.alex.dsh.companion.ui.render.TranscriptCellContent
 import java.time.Instant
@@ -145,23 +151,99 @@ fun CompanionScreen(state: CompanionUiState, actions: UiActions,
             actions.logout()
         }
     }
-    var originBounds by remember { mutableStateOf<Rect?>(null) }
     var settingsOpen by remember(state.authenticated) { mutableStateOf(false) }
+    var forward by remember(state.authenticated) { mutableStateOf(emptyList<CompanionRoute>()) }
+    var navEpoch by remember(state.authenticated) { mutableIntStateOf(0) }
+    var seenEpoch by remember(state.authenticated) { mutableIntStateOf(0) }
+    var parkedTitles by remember(state.authenticated) { mutableStateOf(emptyMap<String, String>()) }
     val resumed = rememberWorkspaceResumed()
-    val catalogVisible = state.authenticated && !state.hasOpenConversation && !settingsOpen
-    val conversationVisible = state.authenticated && state.hasOpenConversation && !settingsOpen
+    val chatRoute = CompanionRoutes.chat(state.selectedId, state.isNewDraft)
+    val back = when {
+        !state.authenticated -> listOf(CompanionRoute.Catalog)
+        settingsOpen -> listOf(CompanionRoute.Catalog, CompanionRoute.Settings)
+        chatRoute != null -> listOf(CompanionRoute.Catalog, chatRoute)
+        else -> listOf(CompanionRoute.Catalog)
+    }
+    val top = back.last()
+    // Visibility follows the settled top, not the finger. A parked chat is not the open route.
+    val catalogVisible = state.authenticated && top == CompanionRoute.Catalog
+    val conversationVisible = state.authenticated && top is CompanionRoute.Chat
     val workspaceOwner = remember(actions) { Any() }
     // One lease owns both panes, including the retained catalog underneath the workspace.
     // Foreground state is owned separately by lifecycle hooks, not a cached catalog snapshot.
-    DisposableEffect(workspaceOwner, state.authenticated, state.selectedId, state.isNewDraft, settingsOpen) {
-        actions.setWorkspaceVisibility(workspaceOwner, catalogVisible, conversationVisible)
+    DisposableEffect(workspaceOwner, state.authenticated, top, resumed) {
+        actions.setWorkspaceVisibility(workspaceOwner, catalogVisible, conversationVisible && resumed)
         onDispose { actions.clearWorkspaceVisibility(workspaceOwner) }
     }
     val presentations = remember(state.authenticated) { dev.alex.dsh.companion.ui.premium.ConversationPresentationCache() }
     androidx.compose.runtime.DisposableEffect(presentations) { onDispose { presentations.clear() } }
     LaunchedEffect(presentations, state.lastDeletedChatId) { state.lastDeletedChatId?.let(presentations::remove) }
+    LaunchedEffect(chatRoute, state.title) {
+        if (chatRoute != null && state.title.isNotBlank()) parkedTitles = parkedTitles + (chatRoute.key to state.title)
+    }
+    // External selection (notification, fixture) must not leave a stale forward target.
+    LaunchedEffect(back, navEpoch, state.authenticated) {
+        if (!state.authenticated || navEpoch != seenEpoch) {
+            seenEpoch = navEpoch
+            return@LaunchedEffect
+        }
+        forward = when {
+            top != CompanionRoute.Catalog && top == forward.lastOrNull() -> forward.dropLast(1)
+            top != CompanionRoute.Catalog -> emptyList()
+            else -> forward
+        }
+    }
+    val notePush: (CompanionRoute) -> Unit = { route ->
+        navEpoch++
+        forward = if (forward.lastOrNull() == route) forward.dropLast(1) else emptyList()
+    }
     val openSettings: () -> Unit = {
-        if (accountActionsEnabled) { settingsOpen = true; actions.refreshModelCatalog() }
+        if (accountActionsEnabled) {
+            notePush(CompanionRoute.Settings)
+            settingsOpen = true
+            actions.refreshModelCatalog()
+        }
+    }
+    val openChat: (String) -> Unit = { id ->
+        notePush(CompanionRoute.Chat("id:$id"))
+        actions.select(id)
+    }
+    val openDraft: () -> Unit = {
+        notePush(CompanionRoute.Chat("draft"))
+        actions.create()
+    }
+    val commitBack: () -> Boolean = {
+        val leaving = back.last()
+        if (leaving == CompanionRoute.Catalog) false else {
+            navEpoch++
+            forward = forward + leaving
+            when (leaving) {
+                CompanionRoute.Settings -> settingsOpen = false
+                is CompanionRoute.Chat -> actions.back()
+                CompanionRoute.Catalog -> Unit
+            }
+            true
+        }
+    }
+    val commitForward: () -> Boolean = {
+        val next = forward.lastOrNull()
+        val blocked = state.busy || state.delivery == DeliveryStatus.SENDING || state.delivery == DeliveryStatus.UNKNOWN
+        if (next == null || (next is CompanionRoute.Chat && blocked)) false else {
+            navEpoch++
+            forward = forward.dropLast(1)
+            when (next) {
+                CompanionRoute.Settings -> {
+                    settingsOpen = true
+                    actions.refreshModelCatalog()
+                }
+                is CompanionRoute.Chat -> {
+                    val id = CompanionRoutes.sessionId(next)
+                    if (id != null) actions.select(id) else actions.create()
+                }
+                CompanionRoute.Catalog -> Unit
+            }
+            true
+        }
     }
     var catalog by remember(state.authenticated) { mutableStateOf(state) }
     SideEffect {
@@ -169,25 +251,55 @@ fun CompanionScreen(state: CompanionUiState, actions: UiActions,
     }
     if (!state.authenticated) {
         CompanionPane(state, actions, accountActionsEnabled, restoreLogin, logout, false, Modifier.fillMaxSize(), presentations, workspaceOwner)
-    } else PremiumWorkspace(
-        open = state.hasOpenConversation || settingsOpen,
-        headerGestureEnabled = settingsOpen,
-        onDismissRequest = { if (settingsOpen) settingsOpen = false else actions.back() },
-        originBounds = originBounds,
-        background = { modifier ->
-            PremiumTheme { CompanionPane(catalog, actions, accountActionsEnabled, restoreLogin, logout, false, modifier, presentations, workspaceOwner,
-                visible = catalogVisible && state.appStarted && state.appResumed && resumed,
-                openSettings = openSettings) { originBounds = it } }
-        },
-        foreground = { modifier ->
-            PremiumTheme(plum = !settingsOpen) {
-                key(settingsOpen, state.selectedId, state.isNewDraft) { CompanionPane(state, actions, accountActionsEnabled, restoreLogin, logout,
-                    !settingsOpen, modifier, presentations, workspaceOwner, visible = conversationVisible && resumed,
-                    settingsMode = settingsOpen,
-                    pushStatus = pushStatus, onNotificationOptIn = onNotificationOptIn, onNotificationOff = onNotificationOff) }
+    } else {
+        val holder = rememberSaveableStateHolder()
+        val knownKeys = remember { mutableSetOf<String>() }
+        val liveKeys = remember(back, forward) { (back + forward).map { CompanionRoutes.key(it) }.toSet() }
+        LaunchedEffect(liveKeys) {
+            val stale = knownKeys - liveKeys
+            stale.forEach { holder.removeState(it) }
+            knownKeys.removeAll(stale)
+            knownKeys.addAll(liveKeys)
+        }
+        FullscreenEdgeNav(
+            stack = back,
+            nextForward = forward.lastOrNull(),
+            keyOf = CompanionRoutes::key,
+            onBack = commitBack,
+            onForward = commitForward,
+            onRootBack = {
+                if (forward.isNotEmpty()) {
+                    navEpoch++
+                    forward = emptyList()
+                }
+            },
+        ) { route ->
+            holder.SaveableStateProvider(CompanionRoutes.key(route)) {
+                when (route) {
+                    CompanionRoute.Catalog -> PremiumTheme {
+                        CompanionPane(catalog, actions, accountActionsEnabled, restoreLogin, logout, false, Modifier.fillMaxSize(),
+                            presentations, workspaceOwner, visible = catalogVisible && state.appStarted && state.appResumed && resumed,
+                            openSettings = openSettings, onOpenChat = openChat, onCreate = openDraft)
+                    }
+                    CompanionRoute.Settings -> PremiumTheme {
+                        CompanionPane(state, actions, accountActionsEnabled, restoreLogin, logout, false, Modifier.fillMaxSize(),
+                            presentations, workspaceOwner, visible = false, settingsMode = true,
+                            pushStatus = pushStatus, onNotificationOptIn = onNotificationOptIn, onNotificationOff = onNotificationOff)
+                    }
+                    is CompanionRoute.Chat -> PremiumTheme(plum = true) {
+                        if (CompanionRoutes.matches(route, state.selectedId, state.isNewDraft)) {
+                            CompanionPane(state, actions, accountActionsEnabled, restoreLogin, logout, true, Modifier.fillMaxSize(),
+                                presentations, workspaceOwner, visible = conversationVisible && resumed)
+                        } else {
+                            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                                MockFrameStage()
+                            }
+                        }
+                    }
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 /** collectAsStateWithLifecycle can stop before the VM's final PAUSE/STOP state is collected. */
@@ -210,19 +322,26 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
     presentations: dev.alex.dsh.companion.ui.premium.ConversationPresentationCache,
     workspaceOwner: Any,
     visible: Boolean = true, settingsMode: Boolean = false, openSettings: () -> Unit = {},
+    onOpenChat: (String) -> Unit = actions::select, onCreate: () -> Unit = actions::create,
     pushStatus: PushUiStatus? = null, onNotificationOptIn: () -> Unit = {}, onNotificationOff: () -> Unit = {},
     origin: (Rect) -> Unit = {},
 ) {
     val dismiss = LocalWorkspaceDismiss.current
     val keyboard = LocalSoftwareKeyboardController.current
-    Scaffold(
-        modifier = modifier.fillMaxSize().then(if (chat) Modifier.testTag("chat-pane").semantics {
+    val routeSemantics = when {
+        chat -> Modifier.testTag("chat-pane").semantics {
             paneTitle = state.title
-            semanticDismiss(label = "Voltar para conversas") {
-                keyboard?.hide(); dismiss(); true
-            }
-        } else Modifier),
-        containerColor = Color.Transparent,
+            semanticDismiss(label = "Voltar para conversas") { keyboard?.hide(); dismiss(); true }
+        }
+        settingsMode -> Modifier.testTag("settings-pane").semantics {
+            paneTitle = "Configurações"
+            semanticDismiss(label = "Voltar para conversas") { keyboard?.hide(); dismiss(); true }
+        }
+        else -> Modifier
+    }
+    Scaffold(
+        modifier = modifier.fillMaxSize().then(routeSemantics),
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             if (!state.authenticated || settingsMode) {
@@ -232,11 +351,6 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
                         Column {
                             Text(if (settingsMode) "Configurações" else if (chat) state.title else "Companion", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             if (!chat && !settingsMode) Text(state.status, style = MaterialTheme.typography.labelSmall)
-                        }
-                    },
-                    navigationIcon = {
-                        if (chat || settingsMode) {
-                            IconButton(onClick = { keyboard?.hide(); dismiss() }, modifier = Modifier.heightIn(min = 48.dp)) { CompanionIcon(CompanionGlyph.Back, "Voltar") }
                         }
                     },
                 )
@@ -280,7 +394,7 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
                     }, display = {
                         dev.alex.dsh.companion.ui.settings.ModelContextSetting(state.showModelContext, actions::setShowModelContext)
                     })
-                !chat -> ChatsScreen(state, actions, Modifier.weight(1f), origin, openSettings, accountActionsEnabled, visible, workspaceOwner)
+                !chat -> ChatsScreen(state, actions, Modifier.weight(1f), origin, openSettings, onOpenChat, onCreate, accountActionsEnabled, visible, workspaceOwner)
                 else -> ChatScreen(state, actions, presentations, Modifier.weight(1f), visible)
             }
         }
@@ -338,7 +452,7 @@ private fun LoginScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: Modifier = Modifier,
-    origin: (Rect) -> Unit = {}, openSettings: () -> Unit, accountActionsEnabled: Boolean,
+    origin: (Rect) -> Unit = {}, openSettings: () -> Unit, onOpenChat: (String) -> Unit, onCreate: () -> Unit, accountActionsEnabled: Boolean,
     visible: Boolean,
     workspaceOwner: Any,
 ) {
@@ -383,7 +497,7 @@ private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: M
                         Text("Conversas", style = MaterialTheme.typography.displaySmall)
                         Text("i use arch btw", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    IconButton(onClick = { createBounds?.let(origin); actions.create() }, enabled = !state.busy && state.delivery != DeliveryStatus.SENDING,
+                    IconButton(onClick = { createBounds?.let(origin); onCreate() }, enabled = !state.busy && state.delivery != DeliveryStatus.SENDING,
                         modifier = Modifier.size(48.dp).onGloballyPositioned { createBounds = it.boundsInWindow() }) { CompanionIcon(CompanionGlyph.Add, "Nova conversa") }
                     IconButton(onClick = { settingsBounds?.let(origin); openSettings() }, enabled = accountActionsEnabled,
                         modifier = Modifier.size(48.dp).onGloballyPositioned { settingsBounds = it.boundsInWindow() }) { CompanionIcon(CompanionGlyph.Settings, "Configurações") }
@@ -402,7 +516,7 @@ private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: M
                 } }
                 dev.alex.dsh.companion.ui.catalog.ConversationActions(chat,
                     enabled = !state.busy && chat.id !in state.deleteUncertainIds, onDelete = actions::deleteChat,
-                    onOpen = { bounds?.let(origin); actions.select(chat.id) }, openEnabled = !state.busy,
+                    onOpen = { bounds?.let(origin); onOpenChat(chat.id) }, openEnabled = !state.busy,
                     modifier = Modifier.fillMaxWidth().testTag("catalog-row:${chat.id}")
                         .padding(horizontal = 16.dp, vertical = 6.dp).onGloballyPositioned { bounds = it.boundsInWindow() }) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.Top) {
@@ -587,7 +701,7 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                 } else null
                 val anchor = item.first || item.body is TranscriptCellBody.ActivityHeader || item.body is TranscriptCellBody.ToolHeader
                 val admitted = anchor && (item.sourceStableId in presentation.animatedKeys || item.headerSourceIds.any { it in presentation.animatedKeys })
-                val appearance = Modifier.admittedMessageAppearance(item.stableId, admitted, entrances)
+                val appearance = Modifier.animateItem().admittedMessageAppearance(item.stableId, admitted, entrances)
                     .padding(horizontal = 16.dp)
                 TranscriptCellContent(item, imageContent, renderState, modifier = appearance,
                     headerContent = header, onInspect = onInspect)
@@ -606,8 +720,8 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
             if (hasRich && transcript.isEmpty()) item(key = "preparing") {
                 Text("Preparando conversa…", modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
             }
-            if (!hasRich && state.messages.isEmpty() && state.streamingText == null && !showResponse) item(key = "blank") {
-                Text(if (state.busy || state.presentationPending) "Carregando histórico…" else "Envie uma mensagem para começar.", modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
+            if (!hasRich && state.messages.isEmpty() && state.streamingText == null && !showResponse && state.isNewDraft) item(key = "blank") {
+                Text("Envie uma mensagem para começar.", modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
             }
         }
         if (!showResponse && hasTranscript && (state.presentationPending || plan.pending)) {
@@ -615,6 +729,9 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                 Text("Formatando conteúdo", Modifier.align(Alignment.BottomEnd).padding(12.dp),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+        if (!state.isNewDraft && !hasTranscript && (state.busy || state.presentationPending || !state.connected)) {
+            MockFrameStage(Modifier.fillMaxSize(), active = visible)
         }
         }
         }

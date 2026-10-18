@@ -16,8 +16,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -165,7 +167,8 @@ class CatalogActivityTest {
             assertEquals(false to false, leases.last())
             assertTrue(viewports.last().second.isEmpty())
         }
-        compose.onNodeWithContentDescription("Voltar").performClick()
+        compose.onNodeWithTag("settings-pane").performSemanticsAction(SemanticsActions.Dismiss) { it() }
+        compose.waitForIdle()
         response().assertIsDisplayed()
         compose.runOnIdle { state.value = state.value.copy(selectedId = ID, connected = true) }
         response().assertDoesNotExist()

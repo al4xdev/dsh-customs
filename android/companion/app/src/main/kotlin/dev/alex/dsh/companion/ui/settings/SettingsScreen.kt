@@ -23,10 +23,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.alex.dsh.companion.ui.premium.workspaceGestureExcluded
 
 /** Parent owns navigation, privacy fencing, vault logout and all transport operations. */
 @Composable
@@ -123,12 +125,15 @@ fun SettingsScreen(
 @Composable
 private fun ModelPicker(models: List<SettingsModelOption>, onDismiss: () -> Unit, onPick: (SettingsModelOption) -> Unit) {
     var query by remember { mutableStateOf("") }
+    var focused by remember { mutableStateOf(false) }
     val filtered = remember(models, query) { filterSettingsModels(models, query) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Escolher modelo") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(query, { query = it.take(160) }, singleLine = true, label = { Text("Buscar modelo ou provedor") },
-                    modifier = Modifier.fillMaxWidth().testTag("settings-model-search"))
+                    modifier = Modifier.fillMaxWidth().testTag("settings-model-search")
+                        .onFocusChanged { focused = it.isFocused }
+                        .workspaceGestureExcluded { focused })
                 Text("${filtered.size} modelos", style = MaterialTheme.typography.labelMedium)
                 LazyColumn(Modifier.heightIn(max = 360.dp).testTag("settings-model-list")) {
                     if (filtered.isEmpty()) item { Text("Nenhum modelo corresponde à busca.") }

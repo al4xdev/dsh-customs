@@ -31,8 +31,7 @@ import dev.alex.dsh.companion.render.MarkdownTile
 import dev.alex.dsh.companion.render.RenderBlock
 import dev.alex.dsh.companion.render.TranscriptCell
 import dev.alex.dsh.companion.render.TranscriptCellBody
-import dev.alex.dsh.companion.ui.CompanionGlyph
-import dev.alex.dsh.companion.ui.CompanionIcon
+import dev.alex.dsh.companion.ui.FoldChevron
 import dev.alex.dsh.companion.ui.premium.workspaceGestureExcluded
 
 /** One root LazyColumn item. SelectionContainer belongs around that list, not around each tile. */
@@ -102,7 +101,7 @@ private fun CellBody(cell: TranscriptCell, imageContent: @Composable (ImageRefer
                     if (body.observations.isNotEmpty()) Text(body.observations, style = MaterialTheme.typography.labelSmall,
                         color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                CompanionIcon(if (expanded) CompanionGlyph.ChevronUp else CompanionGlyph.ChevronDown, null)
+                FoldChevron(expanded, null)
             }
         }
         is TranscriptCellBody.ToolHeader -> Row(Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -116,8 +115,7 @@ private fun CellBody(cell: TranscriptCell, imageContent: @Composable (ImageRefer
             IconButton(onClick = { onInspect(); state.toggle(body.foldKey) }, modifier = Modifier.size(48.dp).workspaceGestureExcluded().semantics {
                 stateDescription = if (expanded) "Expandida" else "Recolhida"
             }) {
-                CompanionIcon(if (expanded) CompanionGlyph.ChevronUp else CompanionGlyph.ChevronDown,
-                    if (expanded) "Recolher ferramenta" else "Expandir ferramenta")
+                FoldChevron(expanded, if (expanded) "Recolher ferramenta" else "Expandir ferramenta")
             }
         }
         is TranscriptCellBody.FoldHeader -> TextButton(onClick = { onInspect(); state.toggle(body.foldKey) },
