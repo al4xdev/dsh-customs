@@ -10,6 +10,56 @@ A modular monorepo containing extensions, LLM resilience controllers, the native
 
 ---
 
+## Why These Forks and Plugins Exist (Design Rationale)
+
+This repository is deliberately designed to solve concrete architectural and workflow bottlenecks encountered when using standard agentic coding harnesses in long-running, autonomous engineering environments.
+
+### 1. The Core Forks
+
+#### `plugins/dsh-antigravity` (The Antigravity Engine Fork)
+The Antigravity fork is the most advanced component in this workshop, engineered to provide a significantly cleaner, more resilient, and forward-compatible path than upstream:
+- **Next-Gen Model Support:** Delivers first-class, native support for cutting-edge models including Claude 5.5 and Gemini 4 Argon, without requiring hacky adapter layers.
+- **Quota-Aware Backoff (`antigravity-quota-retry`):** DeepSeek and vendor APIs routinely hit token/tier rate limits. Antigravity tracks official quota reset timestamps directly and gracefully sleeps (up to 24 hours if needed) rather than crashing or terminating active tasks.
+- **In-TUI Usage Telemetry:** Direct native integration of quota and consumption telemetry right inside the terminal user interface, allowing real-time monitoring of token budgets and tier capacity.
+
+#### `sources/pi-ai` (The Pi AI Engine Fork)
+Upstream Pi 0.87.1 suffered from provider edge cases that broke autonomous sessions:
+- **Codex Parameter Hygiene:** Upstream automatically forced `reasoning: none` into OpenAI/Codex completions, which corrupted parameters on reasoning-capable models. The fork eliminates this implicit injection.
+- **Persistent Long-Session Resilience:** Long-running coding sessions exceeding 150k tokens previously suffered from fatal WebSocket dropouts. The fork hardens WebSocket lifecycles and enables smooth auto-compaction near 190k tokens without context corruption.
+
+#### `frontend/dsh-tui` (The Terminal User Interface Fork)
+Stock terminal interfaces treat agent edits as walls of raw text:
+- **Interactive Patch Cards:** Integrated natively with the `apply_patch` plugin to present interactive, side-by-side syntax-highlighted diff cards.
+- **Session Navigation & Favorites:** Adds `Ctrl+P` global session quick-switch with persistent favorites, letting you navigate dozens of background tasks without losing terminal state.
+- **Buffer-Level Grammar Correction:** Introduces `Ctrl+G` via `grammar-fix` to seamlessly rephrase, translate, or refine user prompts before transmission using lightweight local or cloud models.
+
+---
+
+### 2. Managed Plan Mode (`.plan/`) vs. Native Plan Mode
+Native autonomous plan modes often suffer from two extremes: they either run completely unreviewed in the background, or they trap the agent in rigid permission states that lock down necessary tooling.
+- **Versioned Project Artifacts:** Instead of an opaque hidden state, plans in `dsh-customs` are version-controlled Markdown artifacts stored in `.plan/` (`tasks/`, `backlog/`, `blocked/`, `closed/`).
+- **Cryptographic CAS & SQLite Registry:** Every plan change is guarded by an internal atomic SQLite database (`.plan/.state/store.sqlite`) with content hashes and revision matching (`expected_revision`), preventing race conditions across multi-agent sessions.
+- **Auditable Human Checkpoints:** Plans clearly separate staged proposals from executed results, maintaining an immutable history of project decisions and evidence.
+
+---
+
+### 3. Safe Filesystem & Resilience Suite
+Autonomous agents given unrestricted shell access tend to make catastrophic mistakes—such as using `rm -rf`, running runaway `grep` across gigabytes of binaries, or rewriting 1,000-line files to change a single comma:
+- **`trash` vs. `rm`:** Replaces destructive file deletion with recoverable, quarantine-safe moves to `/tmp/alex-dsh-trash-*`.
+- **`list` vs. `ls -R`:** Enforces bounded directory listing with hard depth and limit caps to prevent token exhaustion.
+- **`apply-patch` vs. `write`:** Adapts Codex's exact contextual diff parser to apply targeted patches with observed-version guards and recovery receipts.
+- **`llm-resilience` & `agent-self-heal`:** A unified exponential retry controller (ten exponential delays up to 60min) paired with a self-healing engine that recovers from server errors (500/503), rate limits (429), and bad requests without wasting context tokens on empty messages.
+
+---
+
+### 4. Android Companion: Beyond a Terminal — A Private AI Assistant
+The `android/companion` app is designed not merely as a remote viewer, but as a **private, secure daily-driver chatbot** capable of replacing commercial apps like ChatGPT or Google Gemini:
+- **Zero-Trust Private Connection:** Connects over Tailscale or private HTTPS with cryptographic token handshakes, HTTP-only cookies, and local sandbox boundaries. No external cloud servers or third-party relays touch your sessions.
+- **True Multi-Source Deep Research:** When asked complex research questions from mobile (e.g. asking the agent to comprehensively research and catalog obscure retro gaming releases like Yu-Gi-Oh! across Reddit, X, and gaming communities), the companion triggers the `research` plugin.
+- **Local Materialized Evidence:** Rather than reading superficial search engine snippets, the research engine fetches and parses full forum threads, discards noise, and materializes raw evidence in `.dumps/research/`. The model can either query the raw evidence on demand or synthesize complete, fact-grounded dossiers directly to your phone.
+
+---
+
 ## Separation of Responsibilities
 
 | Location | Responsibility |
