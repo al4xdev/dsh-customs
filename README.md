@@ -315,11 +315,27 @@ lab Companion. Handling of failures and who approves `--update` is in [AGENTS.md
 
 ## Environment Configuration
 
-A template file [`.env.example`](.env.example) documents active environment variables:
-- **Paths:** `DSH_HOME` (default: `~/.dsh`), `XDG_DATA_HOME` (default: `~/.local/share`).
-- **Companion / Remote:** `DSH_COMPANION_ORIGIN` (custom HTTPS origin, e.g. Tailscale or proxy), `DSH_COMPANION_HOST`.
-- **Local Models:** `DSH_LOCAL_URL`, `DSH_LOCAL_MODEL`, `DSH_DEFAULT_PROVIDER`, `DSH_DEFAULT_MODEL`, `DSH_DEFAULT_EFFORT`.
-- **Plugins:** `CONTEXT7_API_KEY` (`research`), `SIMP_MCP_PROJECT` (`music`), `LLAMACPP_BASE_URL` (`grammar-fix`).
+A template file [`.env.example`](.env.example) is available with all configurable variables:
+
+| Variable | Default / Fallback | Description | Scope |
+| --- | --- | --- | --- |
+| `DSH_HOME` | `~/.dsh` | Base directory for DSH profiles and runtime configs | Core |
+| `XDG_DATA_HOME` | `~/.local/share` | Data root for DSH CLI install and runtime packages | Core |
+| `XDG_CACHE_HOME` | `~/.cache` | Cache directory (Playwright browsers, models) | Core |
+| `DSH_COMPANION_ORIGIN` | `https://dsh.tail37b3d7.ts.net:8443` | Public HTTPS origin for Companion and mobile pairing | Companion / Network |
+| `DSH_COMPANION_HOST` | `dsh.tail37b3d7.ts.net:8443` | Expected `Host:` header authority for web runtime | Companion / Network |
+| `DSH_COMPANION_CLI` | `$XDG_DATA_HOME/dsh-cli/lib/bin.js` | Custom binary path for DSH Companion service | Companion |
+| `DSH_LOCAL_URL` | `http://127.0.0.1:8080/v1` | Base URL for local OpenAI-compatible inference server | Local LLM |
+| `DSH_LOCAL_MODEL` | *(First advertised model)* | Pinned local model ID if multiple are returned | Local LLM |
+| `DSH_DEFAULT_PROVIDER` | `openai-codex` | Default LLM provider route | Local LLM |
+| `DSH_DEFAULT_MODEL` | `gpt-6-sol` | Default model selected in launcher | Local LLM |
+| `DSH_DEFAULT_EFFORT` | `low` | Default reasoning effort for model | Local LLM |
+| `CONTEXT7_API_KEY` | *(None)* | Bearer token for Context7 library queries in `research` | Plugin: `research` |
+| `SIMP_MCP_PROJECT` | `~/git/my/simp_mcp` | Path to the SimpMCP audio/music server project | Plugin: `music` |
+| `SIMP_MCP_UV` | `uv` | Path to uv executable for music environment | Plugin: `music` |
+| `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | llama.cpp backend endpoint for grammar correction | Plugin: `grammar-fix` |
+| `GRAMMAR_GPT_MODEL` | `openai-codex/gpt-6-sol` | GPT model used for grammar fixes | Plugin: `grammar-fix` |
+| `GRAMMAR_GEMINI_MODEL` | `google-antigravity/gemini-3.8-flash-low` | Gemini model used for grammar fixes | Plugin: `grammar-fix` |
 
 ## Validation
 
