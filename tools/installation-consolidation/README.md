@@ -1,5 +1,7 @@
 # Installation consolidation
 
+> **Note:** This document records historical runtime consolidation and cleanup procedures performed on the developer host. It is kept for operational auditing and is not intended for standard setup.
+
 ## Post-cleanup status — TASK7 revision 10
 
 The owner applied the cut successfully (404 retargets, 205 obsolete links removed). The obsolete npx installation and both scratch runtimes have now been retired to `/tmp`, along with the empty `dsh-tui-cli` directory. The original `finish.mjs`/`cold.mjs` remain historical transaction tools and fixture tests: their old-root provenance checks no longer describe an available machine layout. **Do not rerun their apply/preview commands on this cleaned host.**

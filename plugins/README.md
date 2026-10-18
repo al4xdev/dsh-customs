@@ -1,6 +1,36 @@
-# Alex's DSH machine tools
+# DSH Custom Plugins
 
-## Current delivery
+This directory contains modular extensions for the DeepSeek Harness (DSH) runtime. Plugins are activated into profiles via `activation.json` and `tools/activate.mjs`.
+
+## Plugin Dependency & Coupling Matrix
+
+| Plugin | Category | External Prerequisites | TUI / Companion Required? | Description |
+| --- | --- | --- | --- | --- |
+| **`apply-patch`** | Standalone | None | No (TUI renders diff card if present) | Multi-file patch tool implementing Codex diff format. |
+| **`workspace-context`**| Standalone | Git | No | Injects verified workspace paths and git root to prompt. |
+| **`clipboard`** | Standalone | `wl-copy` / `xclip` / pbcopy | No | Verification and access for desktop system clipboard. |
+| **`trash`** | Standalone | None | No | Safe recoverable file removal to `/tmp/alex-dsh-trash-*`. |
+| **`list`** | Standalone | None | No | Bounded directory listing tool with depth and limit controls. |
+| **`shell-reconsider`** | Standalone | None | No | Steers agent away from raw shell cat/find/ls to native tools. |
+| **`managed-plans`** | Standalone | None | Optional TUI widget (`tui.mjs`) | Multi-step task and decision artifact manager (.plan). |
+| **`codex-transient-close`** | Resilience | None | No | Classifies transient errors across 10 supported Pi APIs. |
+| **`llm-resilience`** | Resilience | None | No | Centralized retry scheduler with exponential backoff. |
+| **`agent-self-heal`** | Resilience | None | No | Durable recovery orchestrator across failure chains. |
+| **`grammar-fix`** | Hybrid | LLM provider endpoint | Yes (`dsh-tui` only) | Draft grammar correction via `Ctrl+G` shortcut. |
+| **`browser`** | External tool | Playwright browsers | No | Isolated Page-bound Chromium automation and screenshots. |
+| **`research`** | External tool | Internet (optional Context7) | No | Multi-source parallel web, HN, code and Reddit search. |
+| **`music`** | External tool | `simp_mcp` repo + `uv` | No | Local media player integration and MCP audio bridge. |
+| **`gen-image`** | External tool | Antigravity CLI (`agy`) | Yes (`dsh-tui` only) | Asynchronous image generation via headless Gemini Flash. |
+| **`session`** | Companion | DSH Session JSONL | Used with Companion bridge | Reader and navigation engine for past session transcripts. |
+| **`session-create`** | Companion | DSH Host | Used with Companion | Native tool to create and bootstrap fresh DSH sessions. |
+| **`companion-transport`**| Companion | HTTP/1 / WebSocket | Yes (Companion backend) | Wire budget guards, origin verification, and framing. |
+| **`companion-download`** | Companion | Protected WebServer | Yes (Companion backend) | Secure signed file delivery between host and mobile app. |
+| **`companion-api`** | Companion | Local inference server | Yes (Companion backend) | Serves model catalogs and active session state to mobile. |
+| **`companion-workspace`**| Companion | Android app | Yes (Companion profile) | Session workspace boundary policy for mobile client. |
+
+---
+
+## Current Delivery Overview
 
 Plans 1–4 are implemented as reversible local plugins; Plan 5 remains experimental and is tracked in the managed `.plan/` browser artifacts. No installed DSH core package is modified. Native `read`, `edit`, and `write` remain enabled. Which plugin is active in which profile is declared in `activation.json` — see Activation below.
 

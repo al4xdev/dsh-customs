@@ -1,5 +1,7 @@
 # Portable Workshop: Sources → Artifacts → Runtime → Profiles
 
+> **Note:** This document and its scripts describe historical and internal maintenance procedures for assembling the DSH runtime from pinned source forks. They are not required for everyday plugin or companion usage.
+
 The workshop describes how to assemble a fresh DSH installation without relying on npx
 or active directories of another machine. It **does not** sync `.dsh`, does not import
 credentials, does not assume dotfiles profiles are already installed, and does not restart services.

@@ -1,5 +1,7 @@
 # Task10 historical isolated-profile recipe (review before running)
 
+> **Note:** This document and its provisioning scripts record historical research and isolation recipes for earlier profile migrations. Current production profiles are managed directly by `tools/activate.mjs`.
+
 For the current portable installation base, see [the workshop guide](../workshop/README.md).
 This document records the earlier Task10 isolated-profile handoff, not the current
 activation inventory. `plugins/activation.json` remains the **only plugin list**;

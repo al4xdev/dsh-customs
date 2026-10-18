@@ -1,5 +1,7 @@
 # Pi AI fork for DSH Codex compaction
 
+> **Note:** This document and its tools describe the vendored fork and build pipeline for the Pi AI engine snapshot (`sources/pi-ai`).
+
 The fork is [al4xdev/pi](https://github.com/al4xdev/pi/tree/fix/codex-implicit-reasoning-none), based on Pi 0.87.1, not the newer 1.x API. Its canonical source location is `sources/pi-ai/` inside this workshop, excluded from the root Git history.
 
 As of the 2026-10-13 consolidation, this location contains a verified **source snapshot, not a Git checkout**. The original worktree's Git parent disappeared and the owned remote was unavailable to both clone and repository metadata queries. `SOURCE-PROVENANCE.json` records the source-tree digest and historical `f5a24c96…` provenance without claiming a current HEAD. No fake Git metadata or fresh-build acceptance is implied. Dependencies/toolchain must be supplied explicitly before preparation; the snapshot does not include the old `node_modules`.

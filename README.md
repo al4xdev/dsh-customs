@@ -1,8 +1,14 @@
-# dsh-customs — reproducible DSH workshop
+# dsh-customs — DSH Workshop, Plugins & Companion
 
-This repository is the foundation for rebuilding Alex's workshop on another machine:
-plugin sources, fork recipes, builds, artifacts, and wiring into profiles.
-It is not a backup of the machine nor a second location to store personal configurations.
+A modular monorepo containing extensions, LLM resilience controllers, the native Android Companion app, and workshop tooling for the DeepSeek Harness (DSH) ecosystem.
+
+> **Welcome to the workshop!**  
+> Whether you're exploring custom DSH plugins, looking for Android integration patterns, or building resilient LLM workflows, here is where to start:
+> - **[DSH Plugins](plugins/README.md):** Modular plugins for file operations (`trash`, `list`, `apply-patch`), deep research (`research`), browser automation (`browser`), audio (`music`), and session resilience.
+> - **[Android Companion](android/companion/README.md):** Native Jetpack Compose mobile client with zero-trust token handshakes, secure local downloads, and live session interaction.
+> - **[Tools & Tooling](tools/task10-profile/README.md):** Offline prompt auditing, profile portability, and clean container builds.
+
+---
 
 ## Separation of Responsibilities
 
@@ -61,6 +67,25 @@ The lab `web`, `headless`, `tui`, and `companion` profiles still contain `/home/
 **Machine-only configuration** (corporate providers, default model) goes into
 `~/.dsh/cordis.patch.yml`: a DSH layer applied after the profile and ignored by
 dotfiles, avoiding committing machine-specific data to Git or breaking another host.
+
+## Documentation Map (README Directory)
+
+| Path | Topic / Scope | Primary Target |
+| --- | --- | --- |
+| **[`README.md`](README.md)** | Root repository overview, installation recipes, environment configuration | All developers & visitors |
+| **[`plugins/README.md`](plugins/README.md)** | Comprehensive plugin catalog, coupling matrix, and activation model | Plugin users & extenders |
+| **[`plugins/browser/README.md`](plugins/browser/README.md)** | Hierarchical browser automation, Playwright integration, screenshots | Tool consumers |
+| **[`plugins/research/README.md`](plugins/research/README.md)** | Orchestrated search tool, evidence dumps, and multi-source connectors | Tool consumers |
+| **[`plugins/research/REDDIT.md`](plugins/research/REDDIT.md)** | Reddit OAuth read-only connector specifications | Integrators |
+| **[`plugins/session/README.md`](plugins/session/README.md)** | Session reader API, pagination, and multi-version JSONL discovery | Host / Companion engine |
+| **[`android/companion/README.md`](android/companion/README.md)** | Native Android Companion application (Architecture, UI, Security) | Mobile developers |
+| **[`android/companion/NOTIFICATIONS.md`](android/companion/NOTIFICATIONS.md)**| Android FCM push delivery and background notifications | Mobile / Cloud infra |
+| **[`frontend/mobile-companion/README.md`](frontend/mobile-companion/README.md)**| Mobile Companion web application and HTTP gateway | Web / Mobile gateway |
+| **[`tools/task10-profile/README.md`](tools/task10-profile/README.md)**| Historical isolated-profile recipe and profile provisioning | Workshop maintainers |
+| **[`tools/workshop/README.md`](tools/workshop/README.md)** | Historical workshop build recipe (Sources → Artifacts → Runtime) | Runtime packagers |
+| **[`tools/pi-ai-fork/README.md`](tools/pi-ai-fork/README.md)** | Vendored Pi AI engine build and packaging pipeline | Core engine maintainers |
+| **[`tools/installation-consolidation/README.md`](tools/installation-consolidation/README.md)**| Historical runtime links consolidation and audit notes | Host maintainers |
+| **[`DOCKER-DSH.md`](DOCKER-DSH.md)** | Clean Docker container build specification and execution boundaries | Container operators |
 
 ## Repository Map
 
