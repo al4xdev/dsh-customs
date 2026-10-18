@@ -313,6 +313,14 @@ AGENTS/CLAUDE files and personal skills enter only as placeholders. Boot uses a 
 of the profile under `/tmp`, never the live profile: rewriting live `cordis.yml` reloads
 lab Companion. Handling of failures and who approves `--update` is in [AGENTS.md](AGENTS.md).
 
+## Environment Configuration
+
+A template file [`.env.example`](.env.example) documents active environment variables:
+- **Paths:** `DSH_HOME` (default: `~/.dsh`), `XDG_DATA_HOME` (default: `~/.local/share`).
+- **Companion / Remote:** `DSH_COMPANION_ORIGIN` (custom HTTPS origin, e.g. Tailscale or proxy), `DSH_COMPANION_HOST`.
+- **Local Models:** `DSH_LOCAL_URL`, `DSH_LOCAL_MODEL`, `DSH_DEFAULT_PROVIDER`, `DSH_DEFAULT_MODEL`, `DSH_DEFAULT_EFFORT`.
+- **Plugins:** `CONTEXT7_API_KEY` (`research`), `SIMP_MCP_PROJECT` (`music`), `LLAMACPP_BASE_URL` (`grammar-fix`).
+
 ## Validation
 
 ```fish

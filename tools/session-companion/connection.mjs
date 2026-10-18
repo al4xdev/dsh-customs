@@ -14,7 +14,8 @@ export async function apply(ctx) {
   const previous = await lstat(target).catch(error => { if (error.code !== 'ENOENT') throw error; });
   if (previous && (!previous.isFile() || previous.isSymbolicLink() || (previous.mode & 0o077) || previous.uid !== process.getuid())) throw new Error('Unsafe private connection file');
   const temporary = join(root, `connection-${randomUUID()}.tmp`);
+  const externalOrigin = process.env.DSH_COMPANION_ORIGIN ?? 'https://dsh.tail37b3d7.ts.net:8443';
   // Credentials remain in a private file, never stdout, journal or the model prompt.
-  await writeFile(temporary, JSON.stringify({ local: ctx.connection.authenticatedUrl(`http://127.0.0.1:${ctx.webServer.port}`), tailscale: ctx.connection.authenticatedUrl('https://dsh.tail37b3d7.ts.net:8443'), createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
+  await writeFile(temporary, JSON.stringify({ local: ctx.connection.authenticatedUrl(`http://127.0.0.1:${ctx.webServer.port}`), tailscale: ctx.connection.authenticatedUrl(externalOrigin), createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
   await rename(temporary, target);
 }

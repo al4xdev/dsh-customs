@@ -17,6 +17,7 @@ export const YAML = loadYaml();
 export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
   if (typeof guardedTransport !== 'boolean') throw new TypeError('guardedTransport must be a boolean');
   const root = resolve(repoRoot);
+  const externalHost = process.env.DSH_COMPANION_HOST ?? 'dsh.tail37b3d7.ts.net:8443';
   const patch = [
     ...['standard', 'minimal', 'ptc', 'cordis'].map(id => ({ id: `preset-${id}`, disabled: true })),
     { id: 'agent-preset-registry', config: { default: 'companion' } },
@@ -39,7 +40,7 @@ export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
     { id: 'tool-fs', disabled: true },
     { id: 'tool-bash', disabled: true },
     { id: 'session-title-llm', disabled: true },
-    { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: ['dsh.tail37b3d7.ts.net:8443'] } },
+    { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [externalHost] } },
     // Prepared migration only: default output and the active profile stay unchanged.
     // Loader replaces config wholesale, so retain the carrier's native gzip keys.
     ...(guardedTransport ? [
@@ -49,7 +50,7 @@ export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
       { id: 'connection', inject: ['webRuntime'], config: {
         // Keep native attachment-envelope compatibility. The guarded HTTP/1
         // carrier enforces the smaller wire budget before invoking native handlers.
-        trustedHosts: ['dsh.tail37b3d7.ts.net:8443']
+        trustedHosts: [externalHost]
       } }
     ] : []),
     { insert: [{ id: 'alex-research', name: join(root, 'plugins/research/index.mjs') }, { id: 'companion-session-controller', name: join(root, 'plugins/companion-workspace/session-controller.mjs') }, { id: 'companion-oauth', name: join(root, 'frontend/dsh-tui/lib/types/dsh-adapter/oauth/index.js'), inject: ['llm', 'commands'], config: { providers: ['openai-codex'] } }, { id: 'companion-private-link', name: join(root, 'tools/session-companion/connection.mjs') }, { id: 'companion-catalog-api', name: join(root, 'plugins/companion-api/index.mjs'), inject: ['typert', 'sessionPersistence'] }, { id: 'preset-companion', name: '@deepseek-ai/dsh-agent-preset', config: {
@@ -83,5 +84,6 @@ export function serviceFile({ cliPath, nodePath = '/usr/bin/node', repoRoot }) {
   for (const value of [cliPath, nodePath, repoRoot]) {
     if (typeof value !== 'string' || /[\n\r%"\\]/.test(value)) throw new Error('Unsafe systemd path');
   }
-  return `[Unit]\nDescription=DSH Mobile session companion\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${repoRoot}\nExecStart="${nodePath}" "${cliPath}" --profile companion --port 3081 --no-open --trusted-host dsh.tail37b3d7.ts.net:8443\nRestart=on-failure\nRestartSec=5s\nTimeoutStopSec=15s\nEnvironment=PATH=/usr/local/bin:/usr/bin:/bin\nUMask=0077\n\n[Install]\nWantedBy=default.target\n`;
+  const externalHost = process.env.DSH_COMPANION_HOST ?? 'dsh.tail37b3d7.ts.net:8443';
+  return `[Unit]\nDescription=DSH Mobile session companion\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${repoRoot}\nExecStart="${nodePath}" "${cliPath}" --profile companion --port 3081 --no-open --trusted-host ${externalHost}\nRestart=on-failure\nRestartSec=5s\nTimeoutStopSec=15s\nEnvironment=PATH=/usr/local/bin:/usr/bin:/bin\nUMask=0077\n\n[Install]\nWantedBy=default.target\n`;
 }

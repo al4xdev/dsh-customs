@@ -14,7 +14,7 @@ function fail(req, res, status) {
 /** Parent-review candidate only. Call AFTER the existing proxy's validate(req).
  * No credentials, arbitrary target, body, redirect, encoded path, query or fallback.
  */
-export async function proxyTicketDownload(req, res, { backend, publicOrigin = 'https://dsh.tail37b3d7.ts.net:8443' }) {
+export async function proxyTicketDownload(req, res, { backend, publicOrigin = process.env.DSH_COMPANION_ORIGIN ?? 'https://dsh.tail37b3d7.ts.net:8443' }) {
   const target = new URL(backend);
   if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.pathname !== '/' || target.search || target.hash || target.username || target.password) throw new Error('invalid-download-upstream');
   const authority = new URL(publicOrigin);

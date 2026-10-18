@@ -1,4 +1,4 @@
-export const PUBLIC_ORIGIN = 'https://dsh.tail37b3d7.ts.net:8443';
+export const PUBLIC_ORIGIN = process.env.DSH_COMPANION_ORIGIN ?? 'https://dsh.tail37b3d7.ts.net:8443';
 
 const MAX_RAW_ENTRIES = 2048;
 const MAX_HEADER_BYTES = 16384;

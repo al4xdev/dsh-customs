@@ -11,7 +11,7 @@ const [{ Service, symbols }, { scopeOf, scopeChainOf }, { standingMountFor, live
   sdk('cordis'), sdk('dsh-scope'), sdk('dsh-agent-preset-registry'),
 ]);
 const identity = value => value?.identity ?? value?.[symbols.original] ?? value;
-export const PUBLIC_ORIGIN = 'https://dsh.tail37b3d7.ts.net:8443';
+export const PUBLIC_ORIGIN = process.env.DSH_COMPANION_ORIGIN ?? 'https://dsh.tail37b3d7.ts.net:8443';
 export const name = 'companion-download-host';
 export const inject = ['profileContext', 'connection', 'agents', 'agentPresets', 'approval', 'webServer', 'tools'];
 const services = ['connection', 'agents', 'agentPresets', 'approval', 'webServer', 'tools'];

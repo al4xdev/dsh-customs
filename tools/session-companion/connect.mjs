@@ -9,7 +9,9 @@ const stat = await lstat(file);
 if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o077)) throw new Error('Connection file must be private and owned by the current user');
 const link = JSON.parse(await readFile(file, 'utf8'));
 const remote = new URL(link.tailscale);
-if (remote.protocol !== 'https:' || remote.hostname !== 'dsh.tail37b3d7.ts.net' || remote.port !== '8443' || !remote.searchParams.has('token')) throw new Error('Unexpected companion connection endpoint');
+const expectedHost = process.env.DSH_COMPANION_HOST ?? 'dsh.tail37b3d7.ts.net:8443';
+const [expectedHostname, expectedPort = '8443'] = expectedHost.split(':');
+if (remote.protocol !== 'https:' || remote.hostname !== expectedHostname || remote.port !== expectedPort || !remote.searchParams.has('token')) throw new Error('Unexpected companion connection endpoint');
 const args = process.argv.slice(2);
 if (args.length && !(args.length === 1 && args[0] === '--copy')) throw new Error('Use --copy or no arguments');
 if (args[0] === '--copy') {

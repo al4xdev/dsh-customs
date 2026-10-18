@@ -22,17 +22,18 @@ const within = (a, b) => a === b || a.startsWith(b + sep);
 const writeNew = (path, bytes) => writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 });
 
 export function defaultPaths(overrides = {}) {
-  const home = overrides.home ?? process.env.HOME ?? '/home/alex';
+  const home = overrides.home ?? process.env.HOME ?? homedir();
   const dshHome = resolve(overrides.dshHome ?? process.env.DSH_HOME ?? join(home, '.dsh'));
   const repo = resolve(overrides.repo ?? REPO);
+  const dataHome = process.env.XDG_DATA_HOME ?? join(home, '.local/share');
   return {
     home, dshHome, repo, profile: join(dshHome, 'profiles/dsh-tui'),
     manifest: join(repo, 'plugins/activation.json'), activate: join(repo, 'tools/activate.mjs'),
     recipe: join(repo, 'tools/task10-frontend/recipe.json'),
-    cli: '/home/alex/.local/share/dsh-cli/node_modules/.bin/dsh',
-    pnpm: '/home/alex/.local/share/dsh-cli/node_modules/.bin/pnpm',
-    cliAnchor: '/home/alex/.local/share/dsh-cli/node_modules/@deepseek-ai/dsh/package.json',
-    launchers: [join(home, '.config/fish/functions/dsh.fish'), join(home, '.local/share/dsh-cli/local-model-launch.mjs')],
+    cli: join(dataHome, 'dsh-cli/node_modules/.bin/dsh'),
+    pnpm: join(dataHome, 'dsh-cli/node_modules/.bin/pnpm'),
+    cliAnchor: join(dataHome, 'dsh-cli/node_modules/@deepseek-ai/dsh/package.json'),
+    launchers: [join(home, '.config/fish/functions/dsh.fish'), join(dataHome, 'dsh-cli/local-model-launch.mjs')],
     preference: join(home, '.dsh-tui/agent-preset.json'),
     ...overrides,
   };

@@ -10,7 +10,7 @@ import { classifyRequestBudget, isUploadRequest } from '../../../plugins/compani
 import { DSH_CUSTOMS_ROOT, DSH_HOME } from '../../../plugins/session/host-paths.mjs';
 
 export const BACKEND = 'http://127.0.0.1:3081';
-export const PUBLIC_ORIGIN = 'https://dsh.tail37b3d7.ts.net:8443';
+export const PUBLIC_ORIGIN = process.env.DSH_COMPANION_ORIGIN ?? 'https://dsh.tail37b3d7.ts.net:8443';
 const MAX_BODY = 1024 * 1024;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 const MIME = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };

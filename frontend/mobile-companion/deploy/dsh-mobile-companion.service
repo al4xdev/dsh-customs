@@ -5,7 +5,8 @@ After=dsh-companion.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/alex/git/my/dsh-customs/frontend/mobile-companion
+# Replace %h with user home, or set absolute path to your checkout
+WorkingDirectory=%h/git/my/dsh-customs/frontend/mobile-companion
 ExecStart=/usr/bin/node server/start.mjs --port 3082
 Restart=on-failure
 RestartSec=3
