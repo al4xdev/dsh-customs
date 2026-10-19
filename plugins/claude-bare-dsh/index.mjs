@@ -26,6 +26,9 @@ export const name = 'alex-claude-bare-dsh';
 export const inject = ['llm', 'credentials'];
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+// Declared window, not the models' real 1M: dsh compacts at 80% of it, so ~200k, which
+// keeps steps fast and leaves 50k of headroom for the reply and tool results.
+const DEFAULT_CONTEXT_WINDOW = 250_000;
 const DEFAULT_MODELS = [
   { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
   { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
@@ -40,6 +43,9 @@ const ENVIRONMENT_NOTE = "The working directory, platform and git facts in Claud
 // auto-memory, verified against the 2.1.303 init frame. The telemetry plugin adds none.
 const SESSION_SETTINGS = {
   autoMemoryEnabled: false,
+  // dsh owns compaction (it rewrites its history and the provider follows); the CLI
+  // compacting on its own would rewrite Claude's transcript at another moment.
+  autoCompactEnabled: false,
   enabledPlugins: { 'cc-plugin-agents-md@builtin': false, 'cc-plugin-plugin-authoring@builtin': false },
 };
 
@@ -52,7 +58,7 @@ export const Config = z.object({
   models: z.array(z.object({
     id: z.string(),
     name: z.string(),
-    contextWindow: z.natural().min(1).default(200000),
+    contextWindow: z.natural().min(1).default(DEFAULT_CONTEXT_WINDOW),
   })).default(DEFAULT_MODELS),
   idleMinutes: z.natural().min(1).default(30).description('Stop a session process after this long without a step; the next step resumes it.'),
   maxProcesses: z.natural().min(1).default(6),
@@ -60,9 +66,14 @@ export const Config = z.object({
 
 const stateRoot = () => join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'claude-bare-dsh');
 
-/** Deterministic Claude session id for a dsh session, formatted as a UUIDv4. */
-export function claudeSessionId(sessionId) {
-  const hex = createHash('sha256').update(`claude-bare-dsh:${sessionId}`).digest('hex');
+/**
+ * Deterministic Claude session id for a dsh session, formatted as a UUIDv4. A new
+ * generation is a new Claude conversation for the same dsh session (after dsh rewrote
+ * its history); generation 0 keeps the original id.
+ */
+export function claudeSessionId(sessionId, generation = 0) {
+  const seed = generation ? `claude-bare-dsh:${sessionId}#${generation}` : `claude-bare-dsh:${sessionId}`;
+  const hex = createHash('sha256').update(seed).digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
@@ -157,6 +168,14 @@ export function newInput(tail, history = tail, images) {
 }
 
 const sha = text => createHash('sha256').update(text).digest('hex');
+
+/** The ids of a request's conversation, in order (system messages excluded). */
+export const historyIds = messages => messages.filter(message => message.role !== 'system')
+  .map((message, index) => message.id ?? `anonymous:${message.role}:${index}`);
+const startsWith = (ids, prefix) => prefix.length <= ids.length && prefix.every((id, index) => ids[index] === id);
+/** A compaction checkpoint dsh wrote in place of the span it condensed. */
+const hasCheckpoint = messages => messages.some(message => message.source?.compactionId !== undefined);
+const COMPACTION_ANCHOR_CHARS = 160;
 const RETRY_FRESH = /no conversation found/i;
 const RETRY_RESUME = /already in use/i;
 
@@ -173,6 +192,7 @@ class ClaudeCliAdapter extends LlmAdapter {
     this.prompts = join(this.root, 'prompts');
     for (const dir of [this.root, this.home, this.work, this.prompts]) mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.startedFile = join(this.root, 'started.json');
+    this.lineageFile = join(this.root, 'lineage.json');
     this.sweeper = setInterval(() => this.sweep(), 60_000);
     this.sweeper.unref();
   }
@@ -186,7 +206,7 @@ class ClaudeCliAdapter extends LlmAdapter {
   async resolveModel(provider, model) {
     const known = this.config.models.find(entry => entry.id === model);
     return { provider, id: model, name: known?.name ?? model, inputModalities: ['text', 'image'],
-      context: { contextWindow: known?.contextWindow ?? 200000 },
+      context: { contextWindow: known?.contextWindow ?? DEFAULT_CONTEXT_WINDOW },
       reasoning: { efforts: EFFORTS.map(id => ({ id, name: id })) } };
   }
 
@@ -200,7 +220,8 @@ class ClaudeCliAdapter extends LlmAdapter {
     // requests carry the session id too but no tools: the TUI's session recap and btw
     // questions. Routed into the live process they joined Claude's transcript (and
     // respawned it without the tool list), so the next real turn believed it had none.
-    if (options.purpose || !options.sessionId || !options.tools?.length) { yield* this.oneShot(options, token); return; }
+    const compaction = options.purpose === 'compaction' && options.sessionId;
+    if (!compaction && (options.purpose || !options.sessionId || !options.tools?.length)) { yield* this.oneShot(options, token); return; }
     // One step at a time per session: a second caller waits instead of spawning a twin.
     const sessionId = String(options.sessionId);
     const previous = this.locks.get(sessionId) ?? Promise.resolve();
@@ -210,7 +231,8 @@ class ClaudeCliAdapter extends LlmAdapter {
     this.locks.set(sessionId, chain);
     await previous;
     try {
-      yield* this.turn(options, token, undefined);
+      if (compaction) yield* this.compact(options, token);
+      else yield* this.turn(options, token, undefined);
     } catch (error) {
       this.drop(sessionId);
       yield* errorFinish('PROVIDER_ERROR', `claude-bare-dsh: ${error?.message ?? error}`);
@@ -228,11 +250,23 @@ class ClaudeCliAdapter extends LlmAdapter {
     // same Claude session.
     const spec = JSON.stringify({ model: options.model, effort: options.reasoningEffort ?? null, prompt: sha(prompt) });
     let session = this.sessions.get(sessionId);
+    // Claude keeps its own transcript; dsh rewrites its history when it compacts (or on
+    // an edit). History that no longer starts with what this Claude conversation was
+    // built from gets a new conversation, else dsh compacts while Claude's context (and
+    // the usage reported back) stays as large as before, and compaction loops.
+    const ids = historyIds(options.messages);
+    let lineage = this.lineage(sessionId);
+    const rewritten = lineage.ids.length ? !startsWith(ids, lineage.ids) : !lineage.known && hasCheckpoint(options.messages);
+    if (rewritten) {
+      this.drop(sessionId);
+      session = undefined;
+      lineage = this.saveLineage(sessionId, { generation: lineage.generation + 1, ids: [] });
+    }
     if (session && (session.spec !== spec || !session.alive || session.dirty)) {
       this.drop(sessionId);
       session = undefined;
     }
-    const claudeId = claudeSessionId(sessionId);
+    const claudeId = claudeSessionId(sessionId, lineage.generation);
     const resume = retry === 'resume' || (retry !== 'fresh' && this.started().has(claudeId));
     const spawned = !session;
     if (!session) session = this.spawn(sessionId, options, token, spec, prompt, resume ? { resume: claudeId } : { fresh: claudeId });
@@ -263,8 +297,47 @@ class ClaudeCliAdapter extends LlmAdapter {
           return;
         }
       }
+      if (chunk.type === 'finish' && chunk.reason.kind !== 'error' && chunk.reason.kind !== 'aborted') this.saveLineage(sessionId, { generation: lineage.generation, ids });
       if (held) { yield held; held = undefined; }
       yield chunk;
+    }
+  }
+
+  /**
+   * dsh's summarization call: the span to condense (a prefix of the history) plus the
+   * compaction instruction. When this session's Claude conversation was built from that
+   * same history, the instruction goes to it, so the whole prefix is a cache read
+   * instead of ~200k fresh input tokens; it names the last message of the span because
+   * dsh keeps the messages after it verbatim. That conversation is then retired: dsh is
+   * about to replace the span with the summary. Otherwise a one-shot call answers, with
+   * the session's own system prompt so at least that prefix is cached.
+   */
+  async *compact(options, token) {
+    const sessionId = String(options.sessionId);
+    const instruction = options.messages.at(-1);
+    const region = options.messages.slice(0, -1);
+    const lineage = this.lineage(sessionId);
+    const claudeId = claudeSessionId(sessionId, lineage.generation);
+    const matches = lineage.ids.length > 0 && startsWith(lineage.ids, historyIds(region)) && instruction?.role === 'user'
+      && (this.sessions.get(sessionId)?.alive || this.started().has(claudeId));
+    if (!matches) { yield* this.oneShot(options, token, { sessionPrompt: true }); return; }
+    const prompt = [systemText(options), toolsPrompt(options.tools), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n');
+    const spec = JSON.stringify({ model: options.model, effort: options.reasoningEffort ?? null, prompt: sha(prompt) });
+    let session = this.sessions.get(sessionId);
+    if (session && (session.spec !== spec || !session.alive || session.dirty)) { this.drop(sessionId); session = undefined; }
+    if (!session) session = this.spawn(sessionId, options, token, spec, prompt, { resume: claudeId });
+    const last = [...region].reverse().find(message => message.role !== 'system');
+    const anchor = (last ? (textOf(last.content) || callsText(last.content?.filter?.(block => block.type === 'tool-call') ?? [])) : '').replace(/\s+/g, ' ').trim().slice(0, COMPACTION_ANCHOR_CHARS);
+    const scope = anchor
+      ? `Condense only the conversation up to and including the ${last.role} message that begins: «${anchor}». Everything after that message stays verbatim and must not be summarized.\n\n`
+      : '';
+    try {
+      session.sendUser(scope + textOf(instruction.content));
+      yield* session.step(options.signal, [], { textOnly: true });
+    } finally {
+      // The summary request now sits in this transcript; the next turn starts a new one.
+      this.drop(sessionId);
+      this.saveLineage(sessionId, { generation: lineage.generation + 1, ids: [] });
     }
   }
 
@@ -316,14 +389,21 @@ class ClaudeCliAdapter extends LlmAdapter {
   }
 
   env(token) {
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: this.home, CLAUDE_CODE_OAUTH_TOKEN: token, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: this.home, CLAUDE_CODE_OAUTH_TOKEN: token, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
+      DISABLE_AUTO_COMPACT: '1' };
     delete env.ANTHROPIC_API_KEY; // the token is the login; an inherited key would win over it
     return env;
   }
 
-  /** Titles and compaction: one answer, no tools, no session, no transcript. */
-  async *oneShot(options, token) {
-    const system = systemText(options);
+  /**
+   * Titles, recaps and compaction: one answer, no session, no transcript. With
+   * `sessionPrompt` the system prompt is the session's own (tools included), so its
+   * prefix is shared with the session's cache entry.
+   */
+  async *oneShot(options, token, { sessionPrompt = false } = {}) {
+    const system = sessionPrompt
+      ? [systemText(options), toolsPrompt(options.tools), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n')
+      : systemText(options);
     const args = [...this.baseArgs(options), '--max-turns', '1', '--no-session-persistence',
       ...(system ? ['--append-system-prompt-file', this.promptFile(system)] : [])];
     const session = new ClaudeSession({ command: this.config.command, args, env: this.env(token), cwd: this.work, spec: 'one-shot' });
@@ -333,7 +413,7 @@ class ClaudeCliAdapter extends LlmAdapter {
     try {
       session.sendUser(newInput(options.messages));
       session.child.stdin.end();
-      yield* session.step(options.signal);
+      yield* session.step(options.signal, [], { textOnly: true });
     } finally {
       options.signal?.removeEventListener('abort', onAbort);
       session.kill();
@@ -343,6 +423,21 @@ class ClaudeCliAdapter extends LlmAdapter {
   async token() {
     try { return (await this.ctx.credentials.resolve(credentialRef(this.config.tokenRef)))?.value?.trim() || undefined; }
     catch { return undefined; }
+  }
+
+  /** What a dsh session's current Claude conversation was built from. */
+  lineage(sessionId) {
+    const entry = this.lineages()[sessionId];
+    return entry ? { known: true, generation: entry.generation ?? 0, ids: entry.ids ?? [] } : { known: false, generation: 0, ids: [] };
+  }
+  saveLineage(sessionId, entry) {
+    const all = this.lineages();
+    all[sessionId] = { generation: entry.generation, ids: entry.ids };
+    writeFileSync(this.lineageFile, JSON.stringify(all), { mode: 0o600 });
+    return { known: true, ...all[sessionId] };
+  }
+  lineages() {
+    try { return JSON.parse(readFileSync(this.lineageFile, 'utf8')); } catch { return {}; }
   }
 
   started() {

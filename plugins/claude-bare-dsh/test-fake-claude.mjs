@@ -19,7 +19,8 @@ const promptFile = flag('--append-system-prompt-file');
 const record = value => appendFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify(value) + '\n');
 record({ argv, systemPrompt: promptFile ? readFileSync(promptFile, 'utf8') : undefined, cwd: process.cwd(), env: {
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'set' : undefined,
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, CLAUDE_CODE_DISABLE_AUTO_MEMORY: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY } });
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, CLAUDE_CODE_DISABLE_AUTO_MEMORY: process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY,
+  DISABLE_AUTO_COMPACT: process.env.DISABLE_AUTO_COMPACT } });
 
 const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 if (flag('--resume') && process.env.FAKE_NO_CONVO) {

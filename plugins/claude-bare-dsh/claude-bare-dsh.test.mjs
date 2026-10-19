@@ -62,7 +62,7 @@ test('the CLI runs stripped down: no built-in tools, own empty config dir, token
   assert.ok(run.argv.includes('--strict-mcp-config'));
   assert.ok(run.argv.includes('--disable-slash-commands'));
   assert.equal(arg('--setting-sources'), 'user');
-  assert.deepEqual(JSON.parse(arg('--settings')), { autoMemoryEnabled: false, enabledPlugins: { 'cc-plugin-agents-md@builtin': false, 'cc-plugin-plugin-authoring@builtin': false } });
+  assert.deepEqual(JSON.parse(arg('--settings')), { autoMemoryEnabled: false, autoCompactEnabled: false, enabledPlugins: { 'cc-plugin-agents-md@builtin': false, 'cc-plugin-plugin-authoring@builtin': false } });
   assert.equal(arg('--session-id'), claudeSessionId('s-flags'));
   assert.ok(!run.argv.includes('--append-system-prompt'), 'the prompt goes by file, not argv');
   assert.match(run.systemPrompt, /^DSH SYSTEM PROMPT\n\n# Tools\n.*built-in tools are disabled.*## echo\nEcho a value\nParameters \(JSON Schema\): \{"type":"object"/s);
@@ -71,6 +71,7 @@ test('the CLI runs stripped down: no built-in tools, own empty config dir, token
   assert.equal(run.env.CLAUDE_CODE_OAUTH_TOKEN, 'set');
   assert.equal(run.env.ANTHROPIC_API_KEY, undefined);
   assert.equal(run.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+  assert.equal(run.env.DISABLE_AUTO_COMPACT, '1');
   assert.equal(run.cwd, join(process.env.XDG_STATE_HOME, 'claude-bare-dsh/work'));
 });
 
@@ -410,4 +411,79 @@ test('side requests without tools never touch the session conversation', async t
   await collect(adapter, { sessionId: 's-side', messages: [...first, assistant, user('next')] });
   assert.equal(spawns(), spawnsBefore + 1, 'the next real turn reuses the same process');
   assert.equal(prompts().at(-1), 'next');
+});
+
+const sessionIdOf = run => run.argv[run.argv.indexOf(run.argv.includes('--resume') ? '--resume' : '--session-id') + 1];
+const lastRun = () => log().filter(entry => entry.argv).at(-1);
+const answer = text => ({ id: id(), role: 'assistant', content: [{ type: 'text', text }], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } });
+const checkpoint = text => ({ id: id(), role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', compactionId: 'c1' } });
+
+test('a rewritten dsh history starts a new Claude conversation with the current history', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const u1 = user('first'), history = [system, u1];
+  await collect(adapter, { sessionId: 's-rewrite', messages: history });
+  assert.equal(sessionIdOf(lastRun()), claudeSessionId('s-rewrite'));
+  // dsh compacted: the first exchange became a checkpoint, the history no longer starts with u1.
+  const compacted = [system, checkpoint('SUMMARY of first'), user('after')];
+  await collect(adapter, { sessionId: 's-rewrite', messages: compacted });
+  const run = lastRun();
+  assert.ok(run.argv.includes('--session-id'), 'a fresh conversation, not a resume');
+  assert.equal(sessionIdOf(run), claudeSessionId('s-rewrite', 1));
+  assert.equal(prompts().at(-1), 'SUMMARY of first\n\nafter', 'the whole compacted history, once');
+  // The next turn continues that new conversation in the same process.
+  const spawnsBefore = spawns();
+  await collect(adapter, { sessionId: 's-rewrite', messages: [...compacted, answer('hello after'), user('more')] });
+  assert.equal(spawns(), spawnsBefore);
+  assert.equal(prompts().at(-1), 'more');
+});
+
+test('a session from before lineage tracking that dsh already compacted starts fresh once', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  adapter.markStarted(claudeSessionId('s-legacy'));
+  const messages = [system, checkpoint('OLD SUMMARY'), answer('ok'), user('continue')];
+  await collect(adapter, { sessionId: 's-legacy', messages });
+  const run = lastRun();
+  assert.ok(run.argv.includes('--session-id'));
+  assert.equal(sessionIdOf(run), claudeSessionId('s-legacy', 1));
+  assert.match(prompts().at(-1), /OLD SUMMARY/);
+});
+
+test('compaction is asked of the live conversation, scoped to the span, and retires it', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const u1 = user('alpha task'), a1 = answer('hello alpha task'), u2 = user('beta task');
+  await collect(adapter, { sessionId: 's-compact', messages: [system, u1] });
+  await collect(adapter, { sessionId: 's-compact', messages: [system, u1, a1, u2] });
+  const spawnsBefore = spawns();
+  const instruction = { role: 'user', content: [{ type: 'text', text: 'SUMMARIZE NOW' }] };
+  const chunks = await collect(adapter, { sessionId: 's-compact', purpose: 'compaction', messages: [system, u1, a1, instruction] });
+  assert.equal(spawns(), spawnsBefore, 'answered by the live process, so its prefix is a cache read');
+  assert.equal(prompts().at(-1), 'Condense only the conversation up to and including the assistant message that begins: «hello alpha task». Everything after that message stays verbatim and must not be summarized.\n\nSUMMARIZE NOW');
+  assert.equal(finishOf(chunks).reason.kind, 'stop');
+  assert.ok(!chunks.some(c => c.type === 'block-end' && c.block.type === 'tool-call'));
+  assert.equal(adapter.sessions.get('s-compact'), undefined, 'the conversation is retired');
+  const after = [system, checkpoint('SUMMARY'), u2, answer('x'), user('next')];
+  await collect(adapter, { sessionId: 's-compact', messages: after });
+  const run = lastRun();
+  assert.ok(run.argv.includes('--session-id'));
+  assert.equal(sessionIdOf(run), claudeSessionId('s-compact', 1));
+});
+
+test('compaction without a matching conversation is a one-shot sharing the session prompt', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const instruction = { role: 'user', content: [{ type: 'text', text: 'SUMMARIZE' }] };
+  await collect(adapter, { sessionId: 's-compact-cold', purpose: 'compaction', messages: [system, user('old'), answer('reply'), instruction] });
+  const run = lastRun();
+  assert.ok(run.argv.includes('--no-session-persistence') && !run.argv.includes('--resume') && !run.argv.includes('--session-id'));
+  assert.match(run.systemPrompt, /^DSH SYSTEM PROMPT\n\n# Tools\n/, 'same prompt as the session, so its prefix is cached');
+});
+
+test('models declare a 250k window so dsh compacts around 200k', async () => {
+  const adapter = adapterFor();
+  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'claude-sonnet-5-5')).context.contextWindow, 250000);
+  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'unknown-model')).context.contextWindow, 250000);
+  adapter.dispose();
 });

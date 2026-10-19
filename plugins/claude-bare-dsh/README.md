@@ -46,6 +46,16 @@ agent, tools and ecosystem, run Claude Code (or a plugin that wraps it) instead.
 
 - One `claude -p` process per dsh session (stream-json in and out), resumed with
   `--resume` after a dsh restart or an idle stop.
+- Compaction is dsh's. The models declare a 250k window, so dsh compacts at ~200k (80%)
+  with headroom for the reply; Claude Code's own auto-compaction is off. The provider
+  remembers which history each Claude conversation was built from: when dsh rewrites it
+  (a compaction checkpoint, an edit), the next step opens a new Claude conversation with
+  the current history instead of resuming the old, larger one, which would keep the
+  reported usage high and make dsh compact again in a loop. dsh's summarization call is
+  asked of the live conversation when it matches, scoped to the condensed span, so the
+  whole prefix is a cache read; that conversation is then retired. The fixed prefix
+  (Claude Code's prompt, dsh's prompt, the tools) is byte-identical across
+  conversations, so a new one still reads it from the cache.
 - Only the agent loop's steps join that conversation. Side requests that carry the
   session id but no tools (the TUI's session recap, btw questions), titles and
   compaction are answered by a one-shot process with no session of its own.
@@ -85,12 +95,12 @@ other's refresh token.
 | `displayName` | `Claude (bare)` | |
 | `command` | `claude` | CLI executable |
 | `tokenRef` | `CLAUDE_CODE_OAUTH_TOKEN` | dsh credential with the token |
-| `models` | Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1 | `{ id, name, contextWindow }`, fixed list |
+| `models` | Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1 | `{ id, name, contextWindow }` (default 250000), fixed list |
 | `idleMinutes` | `30` | stop an idle session process; the next step resumes it |
 | `maxProcesses` | `6` | idle processes are evicted beyond this |
 
 State: `$XDG_STATE_HOME/claude-bare-dsh` (config dir, empty working dir, started-session
-ids).
+ids, and `lineage.json`: the history each dsh session's Claude conversation was built from).
 
 Images: the images of a step's new messages (your attachments, `read_image` results) are
 read through dsh's attachment store, downscaled to Claude's useful bounds (long edge
