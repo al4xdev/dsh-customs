@@ -11,6 +11,7 @@
     "test:browser:live": "node tools/browser-tests.mjs --live",
     "test:lts:contracts": "node --test plugins/apply-patch/apply-patch.test.mjs plugins/list/list.test.mjs plugins/grammar-fix/grammar-fix.test.mjs plugins/grammar-fix/language-alias.test.mjs plugins/trash/trash.test.mjs plugins/clipboard/clipboard.test.mjs plugins/workspace-context/workspace-context.test.mjs && node tools/task10-profile/grammar-config-check.mjs",
     "test:trash": "node --test plugins/trash/trash.test.mjs",
+    "test:wait": "node --test plugins/wait/wait.test.mjs",
     "test:clipboard": "node --test plugins/clipboard/clipboard.test.mjs",
     "test:workspace-context": "node --test plugins/workspace-context/workspace-context.test.mjs",
     "test:list": "node --test plugins/list/list.test.mjs",
