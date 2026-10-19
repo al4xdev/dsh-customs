@@ -3,6 +3,47 @@
 dsh provider backed by the official Claude Code CLI, used as a bare model: dsh keeps
 the agent loop, the tools, the prompt and the approvals; Claude Code only answers.
 
+## Why it exists
+
+Integrations of Claude into another harness usually go one of two ways:
+
+1. **Claude Code as the agent.** The harness wraps the whole CLI, with its own tools,
+   loop, prompt, CLAUDE.md, skills and hooks, and mostly displays what it does. The
+   harness's tools reach it as extras, typically over MCP.
+2. **The API directly.** The harness calls Anthropic's API itself, with an API key or by
+   reusing the token Claude Code stores.
+
+This plugin does neither. It treats the official `claude` binary as nothing but a model
+behind a dsh provider route:
+
+- **dsh stays the agent.** Every tool call is a real dsh `tool-call`, run by dsh's own
+  loop with its approvals, cards, subagents, goals and session log. Claude Code runs no
+  tool of its own and loads nothing of the user's Claude setup.
+- **Only the official binary talks to Anthropic.** The plugin makes no request, reads no
+  stored login and opens no socket or port; the CLI logs in with a token from
+  `claude setup-token`, so the interactive login is never shared.
+- **No MCP required.** Tools travel as text in the markup Claude is trained on, so it
+  works where an organization's MCP allowlist keeps local servers out.
+- **Same prompt surface as any other dsh model.** dsh's system prompt, AGENTS files,
+  skill catalog and tools reach Claude the way they reach every other provider, so one
+  harness setup serves all models, and switching a session between providers keeps it
+  coherent.
+
+Use it when you want Claude as one more model inside dsh. If you want Claude Code's own
+agent, tools and ecosystem, run Claude Code (or a plugin that wraps it) instead.
+
+## Trade-offs
+
+- Claude Code's own system prompt stays (about 2.5k tokens, cached from the first request on): with a
+  subscription login it can only be appended to (`--bare`/`--system-prompt` need an
+  API key).
+- Tool calls are parsed from text, not native `tool_use` blocks: no API-side schema
+  enforcement, and the parser has to accept what the model improvises (see below).
+- One `claude` process per active session; state lives in the CLI's own transcript and
+  is resumed with `--resume`.
+
+## How it works
+
 - One `claude -p` process per dsh session (stream-json in and out), resumed with
   `--resume` after a dsh restart or an idle stop.
 - Claude Code has no tools at all: `--tools ""` and no MCP servers. An organization's MCP
