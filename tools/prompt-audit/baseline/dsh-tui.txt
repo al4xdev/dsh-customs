@@ -8,7 +8,7 @@ bundles: @deepseek-ai/dsh-base, @deepseek-harness-tui/dsh-tui, @deepseek-ai/dsh-
 preset: standard
 presets: cordis, liangshen, ptc, standard
 messages: system/system-prompt, user/user, user/agent-instructions, user/runtime-context, user/skill-catalog
-tool order: apply_patch, apply_patch_undo, ask_user_question, bash, browser, clipboard_copy, create_goal, edit, get_goal, glob, grep, interrupt_agent, job_kill, job_list, job_output, list, list_agents, list_subagent_models, plan_close, plan_list, plan_move, plan_read, plan_reopen, plan_stage, present, read, read_image, research, send_message, shell_reconsider, skill, subagent, subagent_fork, todo_write, trash, update_goal, web_fetch, workflow, write
+tool order: apply_patch, apply_patch_undo, ask_user_question, bash, browser, clipboard_copy, create_goal, edit, get_goal, glob, grep, interrupt_agent, job_kill, job_list, job_output, list, list_agents, list_subagent_models, plan_close, plan_list, plan_move, plan_read, plan_reopen, plan_stage, present, read, read_image, research, send_message, shell_reconsider, skill, subagent, subagent_fork, todo_write, trash, update_goal, wait, web_fetch, workflow, write
 
 ==== message 1: system/system-prompt
 (empty sections: deployment:persona-prefix, mcp-resource-servers, deployment:persona-suffix)
@@ -79,7 +79,7 @@ If the user names a skill, or the task clearly matches a skill's description, ca
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
 </system-reminder>
 
-==== tools (39, sorted by name)
+==== tools (40, sorted by name)
 
 ---- tool apply_patch [sha256 7e31d54d4751]
 Apply Codex-format contextual patches to observed text files. Exact context only. Preflighted but NOT multi-file atomic. Returns a recovery receipt with per-file state (changed/unchanged/partial/uncertain).
@@ -367,6 +367,14 @@ parameters:
   - objective (string): Replacement objective; valid only with action edit.
   - max_goal_rounds (number): Replacement cap; valid only with action edit.
   - blocked_reason (string): Required only with action blocked: the concrete condition that persisted across rounds and blocks progress.
+
+---- tool wait [sha256 a6d9f55d1f2e]
+Wait for a specified duration before continuing. Use this instead of running sleep via bash or busy-polling when waiting for external conditions (e.g. servers starting, build watchers, ports opening, long-running external tasks, or debounce). Supports up to 24 hours (86400s).
+parameters:
+  - seconds (number): Duration to wait in seconds (e.g. 1, 2.5, 10, 300). Minimum 0.01s, maximum 86400s (24h). Defaults to 1s.
+  - minutes (number): Alternative duration in minutes (e.g. 5, 30, 60). Converted to seconds.
+  - hours (number): Alternative duration in hours (e.g. 1, 2, 8). Maximum 24 hours.
+  - reason (string): Optional description of what is being waited for (e.g. "Waiting for Vite dev server on port 5173").
 
 ---- tool web_fetch [sha256 6c8be1773797]
 Fetch the content of a specific HTTP(S) URL and return it decoded to text.
