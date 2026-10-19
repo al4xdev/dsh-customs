@@ -32,6 +32,12 @@
     { "id": "alex-clipboard", "module": "clipboard/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-trash", "module": "trash/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-wait", "module": "wait/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
+    {
+      "id": "alex-peak-gate",
+      "module": "peak-gate/index.mjs",
+      "profiles": ["web", "headless", "tui", "dsh-tui"],
+      "overlay": false
+    },
     { "id": "alex-list", "module": "list/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     {
       "id": "alex-shell-reconsider",

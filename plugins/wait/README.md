@@ -30,13 +30,31 @@ Without a native `wait` tool, LLMs fall into destructive patterns:
   - `seconds` (`number`, optional): Duration to wait in seconds (e.g. `2.5`, `15`, `300`). Defaults to `1`.
   - `minutes` (`number`, optional): Alternative duration in minutes (e.g. `5`, `30`). Converted automatically.
   - `hours` (`number`, optional): Alternative duration in hours (e.g. `1`, `8`). Up to `24` hours.
+  - `until` (`string`, optional): Wait until the next occurrence of a local `HH:MM` clock time (e.g. `"01:10"`). Resolved in the configured time zone, so the model never has to do timezone arithmetic.
+  - `untilOffPeak` (`boolean`, optional): Wait until DeepSeek's off-peak price window opens. Uses the same schedule module as the `alex-peak-gate` middleware, so a manual pause and an enforced one agree to the minute. Returns a note immediately when already off-peak.
   - `reason` (`string`, optional): Human-readable explanation of why the wait is occurring (e.g. `"Waiting for Vite server on port 5173"`).
+  - `until` and `untilOffPeak` are mutually exclusive.
 - **Execution bounds**:
   - Minimum: `0.01s` (10ms)
   - Maximum: `86400s` (24 hours)
 - **Output**: Clean confirmation string:
   - `Waited 5s (Waiting for Vite server on port 5173).`
   - `Waited 300s (~5m) (Waiting for database schema migration).`
+  - `Waited 7800s (~2.2h) (off-peak in 2h10m (01:10 America/Sao_Paulo)).`
+
+### Peak windows (`untilOffPeak`)
+
+`schedule.mjs` is the single source of the schedule, shared with
+`plugins/peak-gate`:
+
+> Peak hours are `01:00-04:00` and `06:00-10:00` UTC, Monday to Friday,
+> excluding Chinese public holidays. Everything else is off-peak, and peak
+> tokens cost double. — [Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing)
+
+`holidays` accepts Beijing-local `YYYY-MM-DD` dates and defaults to empty,
+which over-triggers on a real holiday (wasted idle time, never wasted money).
+In `America/Sao_Paulo` the shipped windows are 22:00-01:00 (Sun-Thu nights) and
+03:00-07:00 (Mon-Fri), plus the configured pre/post margins.
 - **Cancellation**:
   - Directly bound to the turn's `AbortSignal` (`exec.signal`).
   - If the user presses `Esc` or `Ctrl+C`, the timer is immediately cleared and the call is rejected with the abort reason without leaving hanging timers or orphan processes.

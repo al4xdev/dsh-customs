@@ -5,12 +5,20 @@ import {
   waitDuration,
   formatDuration,
   apply,
+  applyWithClock,
+  normalizeWaitConfig,
+  resolveWaitTarget,
   name,
   inject,
   DEFAULT_WAIT_SECONDS,
   MIN_WAIT_SECONDS,
   MAX_WAIT_SECONDS,
 } from './index.mjs';
+
+const UTC = (...parts) => Date.UTC(...parts);
+const SP = 'America/Sao_Paulo';
+const PEAK = UTC(2026, 9, 20, 2, 0); // Tue 02:00 UTC, inside 01:00-04:00
+const OPEN = UTC(2026, 9, 20, 4, 30); // Tue 04:30 UTC, between windows
 
 test('metadata exports match dsh plugin conventions', () => {
   assert.equal(name, 'alex-wait');
@@ -96,12 +104,79 @@ test('apply registers the wait tool in the context', async () => {
   assert.ok(registeredTool, 'Tool should be registered');
   assert.equal(registeredTool.name, 'wait');
   assert.ok(registeredTool.description.includes('Wait for a specified duration'));
+  assert.ok(registeredTool.description.includes('untilOffPeak'));
   assert.ok(registeredTool.parameters.properties.seconds);
   assert.ok(registeredTool.parameters.properties.minutes);
   assert.ok(registeredTool.parameters.properties.hours);
+  assert.ok(registeredTool.parameters.properties.until);
+  assert.ok(registeredTool.parameters.properties.untilOffPeak);
   assert.ok(registeredTool.parameters.properties.reason);
 
   const exec = { signal: new AbortController().signal };
   const result = await registeredTool.execute({ seconds: 0.02, reason: 'test execute' }, exec);
   assert.equal(result, 'Waited 0.02s (test execute).');
+});
+
+function toolFor(config, now) {
+  let registeredTool = null;
+  const ctx = { tools: { register(tool) { registeredTool = tool; } } };
+  applyWithClock(ctx, config, () => now);
+  return registeredTool;
+}
+
+test('normalizeWaitConfig defaults the zone and validates overrides', () => {
+  const settings = normalizeWaitConfig({ timeZone: SP, holidays: ['2026-10-20'] });
+  assert.equal(settings.timeZone, SP);
+  assert.deepEqual([...settings.schedule.holidays], ['2026-10-20']);
+  assert.throws(() => normalizeWaitConfig({ timeZone: 'Mars/Olympus' }), /valid IANA zone/);
+  assert.throws(() => normalizeWaitConfig({ preMarginMs: -1 }), /non-negative/);
+});
+
+test('resolveWaitTarget computes the hold from the shared peak schedule', () => {
+  const settings = normalizeWaitConfig({ timeZone: SP });
+  const peak = resolveWaitTarget({ untilOffPeak: true }, { nowMs: PEAK, settings });
+  assert.equal(peak.seconds, (UTC(2026, 9, 20, 4, 10) - PEAK) / 1000);
+  assert.match(peak.note, /off-peak in 2h10m \(01:10 America\/Sao_Paulo\)/);
+
+  const open = resolveWaitTarget({ untilOffPeak: true }, { nowMs: OPEN, settings });
+  assert.equal(open.seconds, 0);
+  assert.match(open.note, /already off-peak/);
+});
+
+test('resolveWaitTarget resolves an explicit local clock time', () => {
+  const settings = normalizeWaitConfig({ timeZone: SP });
+  const target = resolveWaitTarget({ until: '01:10' }, { nowMs: PEAK, settings });
+  assert.equal(target.seconds, (UTC(2026, 9, 20, 4, 10) - PEAK) / 1000);
+  assert.match(target.note, /until 01:10 America\/Sao_Paulo/);
+  // No clock target means the plain duration form is untouched.
+  assert.equal(resolveWaitTarget({ seconds: 5 }, { nowMs: PEAK, settings }), undefined);
+  assert.throws(() => resolveWaitTarget({ until: '01:10', untilOffPeak: true }, { nowMs: PEAK, settings }), /cannot be combined/);
+  assert.throws(() => resolveWaitTarget({ until: 'later' }, { nowMs: PEAK, settings }), /expected HH:MM/);
+});
+
+test('the tool waits for the reported peak target and says why', async () => {
+  const tool = toolFor({ timeZone: SP }, PEAK);
+  const controller = new AbortController();
+  const exec = { signal: controller.signal };
+  const promise = tool.execute({ untilOffPeak: true }, exec);
+  // Abort instead of really sleeping 2h10m: the tool must honor exec.signal.
+  setTimeout(() => controller.abort(new Error('user interrupted')), 10);
+  await assert.rejects(promise, /user interrupted/);
+});
+
+test('already off-peak returns a note instead of sleeping', async () => {
+  const tool = toolFor({ timeZone: SP }, OPEN);
+  const exec = { signal: new AbortController().signal };
+  const result = await tool.execute({ untilOffPeak: true }, exec);
+  assert.match(result, /Nothing to wait for: DeepSeek is already off-peak \(America\/Sao_Paulo\)\./);
+});
+
+test('an explicit until target near the clock waits and formats the reason', async () => {
+  const now = UTC(2026, 9, 20, 4, 9, 59, 500); // 04:09:59.5 UTC, half a second before 04:10
+  const tool = toolFor({ timeZone: 'UTC' }, now);
+  const exec = { signal: new AbortController().signal };
+  const result = await tool.execute({ until: '04:10', reason: 'peak window' }, exec);
+  assert.match(result, /^Waited 0\.5s/);
+  assert.match(result, /until 04:10 UTC/);
+  assert.match(result, /peak window/);
 });
