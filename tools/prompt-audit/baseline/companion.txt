@@ -8,7 +8,7 @@ bundles: @deepseek-ai/dsh-base, @deepseek-ai/dsh-web-app
 preset: companion
 presets: companion
 messages: system/system-prompt, user/user, user/agent-instructions, user/runtime-context, user/skill-catalog
-tool order: bash, create_goal, download_file, edit, get_goal, list, read, read_image, research, session, session_create, skill, todo_write, update_goal, write
+tool order: bash, create_goal, download_file, edit, get_goal, list, read, read_image, research, session, session_create, skill, todo_write, update_goal, wait, write
 
 ==== message 1: system/system-prompt
 (empty sections: deployment:persona-prefix, mcp-resource-servers, deployment:persona-suffix)
@@ -64,7 +64,7 @@ If the user names a skill, or the task clearly matches a skill's description, ca
 A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.
 </system-reminder>
 
-==== tools (15, sorted by name)
+==== tools (16, sorted by name)
 
 ---- tool bash [sha256 a9711e86aeea]
 Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; pass `workdir` instead of using `cd`. Managed `$DSH_*` variables expose current harness environment facts. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `${VAR:?}`. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way.
@@ -219,6 +219,14 @@ parameters:
   - objective (string): Replacement objective; valid only with action edit.
   - max_goal_rounds (number): Replacement cap; valid only with action edit.
   - blocked_reason (string): Required only with action blocked: the concrete condition that persisted across rounds and blocks progress.
+
+---- tool wait [sha256 a6d9f55d1f2e]
+Wait for a specified duration before continuing. Use this instead of running sleep via bash or busy-polling when waiting for external conditions (e.g. servers starting, build watchers, ports opening, long-running external tasks, or debounce). Supports up to 24 hours (86400s).
+parameters:
+  - seconds (number): Duration to wait in seconds (e.g. 1, 2.5, 10, 300). Minimum 0.01s, maximum 86400s (24h). Defaults to 1s.
+  - minutes (number): Alternative duration in minutes (e.g. 5, 30, 60). Converted to seconds.
+  - hours (number): Alternative duration in hours (e.g. 1, 2, 8). Maximum 24 hours.
+  - reason (string): Optional description of what is being waited for (e.g. "Waiting for Vite dev server on port 5173").
 
 ---- tool write [sha256 4a3e37be1662]
 Create or fully replace a UTF-8 text file.
