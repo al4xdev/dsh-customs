@@ -79,7 +79,7 @@ async function fixture(overrides = {}) {
 
 test('manifest pins current OAuth32 and AGV4 quota-policy forks rather than historical workshop', async () => {
   const manifest = await loadForkManifest();
-  assert.equal(manifest.components[0].commit, '4d0b808f782c03da9a19922936119990c2228081');
+  assert.equal(manifest.components[0].commit, '7df378075f6dc4a175db4bcbabc6932f0bfed30e');
   assert.equal(manifest.components[1].commit, '77c0c0fe39c0ddfa9647400db6d4726720aa7852');
   assert.match(manifest.components[1].qualification, /committed-prebuilt/);
   assert.match(manifest.components[1].qualification, /quota-reset-24h/);

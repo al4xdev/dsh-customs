@@ -8,7 +8,7 @@ The build above is from `98f3882`; **Docker was not rebuilt after these changes*
 
 - `096bd6f` caused `install.mjs` to break on import on a clean machine (`profile.mjs` → `tools/resilience/profile.mjs` loaded `yaml` at import time). Now `profile.mjs` is imported only during the seed step, when the runtime already has `yaml`.
 - `@deepseek-ai/cordis` 4.0.5 was released after the build: `dsh` (`~4.0.4`) nested a second copy and `sharedGraph` rejected it. The runtime now pins `cordis` 4.0.4 via override, the exact version Antigravity requires and identical to the lab setup.
-- TUI pin: `ebea5d7` → `4d0b808` (lab `custom` branch: added global favorites and question ownership), built and with `verify:oauth` approved on host.
+- TUI pin: `ebea5d7` → `4d0b808` (lab `custom` branch: added global favorites and question ownership) → `7df3780` (background update-check notice removed: this fork is not the upstream package), built and with `verify:oauth` approved on host.
 
 ## Compilation
 
