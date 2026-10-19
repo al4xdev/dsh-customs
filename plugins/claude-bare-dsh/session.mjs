@@ -102,7 +102,7 @@ export class ClaudeSession {
     const emit = function* (pieces) {
       for (const piece of pieces) {
         if (piece.text) yield* out.text(piece.text);
-        else if (piece.call) yield* out.toolCall(`claude-cli-${randomUUID()}`, piece.call.name, piece.call.arguments);
+        else if (piece.call) yield* out.toolCall(`claude-bare-dsh-${randomUUID()}`, piece.call.name, piece.call.arguments);
         else if (piece.cut && !cutting) { cutting = true; stopTurn(); }
       }
     };

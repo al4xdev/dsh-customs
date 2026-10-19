@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const fake = join(here, 'test-fake-claude.mjs');
 chmodSync(fake, 0o755);
-const root = mkdtempSync(join(tmpdir(), 'claude-cli-test-'));
+const root = mkdtempSync(join(tmpdir(), 'claude-bare-dsh-test-'));
 process.env.XDG_STATE_HOME = join(root, 'state');
 process.env.FAKE_CLAUDE_LOG = join(root, 'fake.log');
 process.env.ANTHROPIC_API_KEY = 'must-not-reach-the-cli';
@@ -28,7 +28,7 @@ const echoTool = { name: 'echo', description: 'Echo a value', parameters: { type
 
 async function collect(adapter, options) {
   const chunks = [];
-  for await (const chunk of adapter.stream({ provider: 'claude-cli', model: 'claude-sonnet-5-5', tools: [echoTool], ...options })) chunks.push(chunk);
+  for await (const chunk of adapter.stream({ provider: 'claude-bare-dsh', model: 'claude-sonnet-5-5', tools: [echoTool], ...options })) chunks.push(chunk);
   return chunks;
 }
 const textOf = chunks => chunks.filter(c => c.type === 'text-delta').map(c => c.text).join('');
@@ -64,11 +64,11 @@ test('the CLI runs stripped down: no built-in tools, own empty config dir, token
   assert.ok(!run.argv.includes('--append-system-prompt'), 'the prompt goes by file, not argv');
   assert.match(run.systemPrompt, /^DSH SYSTEM PROMPT\n\n# Tools\n.*built-in tools are disabled.*## echo\nEcho a value\nArguments \(JSON Schema\): \{"type":"object"/s);
   assert.ok(!run.argv.includes('--mcp-config') && !run.argv.includes('--allowedTools'), 'no MCP at all');
-  assert.equal(run.env.CLAUDE_CONFIG_DIR, join(process.env.XDG_STATE_HOME, 'dsh-claude-cli/claude-home'));
+  assert.equal(run.env.CLAUDE_CONFIG_DIR, join(process.env.XDG_STATE_HOME, 'claude-bare-dsh/claude-home'));
   assert.equal(run.env.CLAUDE_CODE_OAUTH_TOKEN, 'set');
   assert.equal(run.env.ANTHROPIC_API_KEY, undefined);
   assert.equal(run.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
-  assert.equal(run.cwd, join(process.env.XDG_STATE_HOME, 'dsh-claude-cli/work'));
+  assert.equal(run.cwd, join(process.env.XDG_STATE_HOME, 'claude-bare-dsh/work'));
 });
 
 test('a call block ends the step as a dsh tool call; its result goes back to the same process', async t => {
@@ -81,7 +81,7 @@ test('a call block ends the step as a dsh tool call; its result goes back to the
   const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
   assert.equal(call.name, 'echo');
   assert.deepEqual(JSON.parse(call.arguments), { value: 'x' });
-  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-cli', model: 'claude-sonnet-5-5' } };
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'claude-sonnet-5-5' } };
   const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'RESULT-X' }], source: { kind: 'tool', callId: call.id } };
   const spawnsBefore = log().filter(entry => entry.argv).length;
   const step2 = await collect(adapter, { sessionId: 's-tool', messages: [...first, assistant, result] });
@@ -98,7 +98,7 @@ test('parallel calls in one Claude message become one dsh step', async t => {
   const step1 = await collect(adapter, { sessionId: 's-two', messages: first });
   const calls = step1.filter(c => c.type === 'block-end' && c.block.type === 'tool-call').map(c => c.block);
   assert.equal(calls.length, 2);
-  const assistant = { id: id(), role: 'assistant', content: calls, source: { kind: 'model', provider: 'claude-cli', model: 'm' } };
+  const assistant = { id: id(), role: 'assistant', content: calls, source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
   const results = calls.map(call => ({ id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: JSON.parse(call.arguments).value.toUpperCase() }], source: { kind: 'tool', callId: call.id } }));
   const step2 = await collect(adapter, { sessionId: 's-two', messages: [...first, assistant, ...results] });
   assert.equal(textOf(step2), 'got: A | B');
@@ -111,7 +111,7 @@ test('a restarted dsh resumes the Claude session and sends only the new turn', a
   one.dispose();
   const two = adapterFor();
   t.after(() => two.dispose());
-  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'hello first' }], source: { kind: 'model', provider: 'claude-cli', model: 'm' } };
+  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'hello first' }], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
   const chunks = await collect(two, { sessionId: 's-resume', messages: [...history, assistant, user('second')] });
   assert.equal(textOf(chunks), 'hello second');
   const run = log().filter(entry => entry.argv).at(-1);
@@ -198,7 +198,7 @@ test('tool results survive a process that died while dsh ran the tool', async t 
   const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
   adapter.sessions.get('s-crash').kill();
   await new Promise(resolve => setTimeout(resolve, 300));
-  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-cli', model: 'm' } };
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
   const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'RESULT-AFTER-CRASH' }], source: { kind: 'tool', callId: call.id } };
   const step2 = await collect(adapter, { sessionId: 's-crash', messages: [...first, assistant, result] });
   assert.equal(textOf(step2), 'got: RESULT-AFTER-CRASH');
@@ -231,7 +231,7 @@ test('a changed tool set respawns the process with the new list', async t => {
   await collect(adapter, { sessionId: 's-tools', messages: history });
   const before = spawns();
   const other = { name: 'other', description: 'Other', parameters: { type: 'object' } };
-  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'hello one' }], source: { kind: 'model', provider: 'claude-cli', model: 'm' } };
+  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'hello one' }], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
   await collect(adapter, { sessionId: 's-tools', messages: [...history, assistant, user('two')], tools: [other] });
   assert.equal(spawns(), before + 1);
   assert.match(log().filter(entry => entry.argv).at(-1).systemPrompt, /## other\n/);

@@ -22,7 +22,7 @@ const { default: z } = await import(resolveHost('@deepseek-ai/schemastery'));
 const { LlmAdapter } = await import(resolveHost('@deepseek-ai/dsh-llm'));
 const { credentialRef } = await import(resolveHost('@deepseek-ai/dsh-credentials'));
 
-export const name = 'alex-claude-cli';
+export const name = 'alex-claude-bare-dsh';
 export const inject = ['llm', 'credentials'];
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -44,8 +44,8 @@ const SESSION_SETTINGS = {
 };
 
 export const Config = z.object({
-  provider: z.string().default('claude-cli').description('Provider route id in dsh.'),
-  displayName: z.string().default('Claude (CLI)'),
+  provider: z.string().default('claude-bare-dsh').description('Provider route id in dsh.'),
+  displayName: z.string().default('Claude (bare)'),
   command: z.string().default('claude').description('Claude Code executable.'),
   tokenRef: z.string().role('credential-ref').default('CLAUDE_CODE_OAUTH_TOKEN')
     .description('dsh credential holding the token printed by `claude setup-token`.'),
@@ -58,11 +58,11 @@ export const Config = z.object({
   maxProcesses: z.natural().min(1).default(6),
 });
 
-const stateRoot = () => join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'dsh-claude-cli');
+const stateRoot = () => join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'claude-bare-dsh');
 
 /** Deterministic Claude session id for a dsh session, formatted as a UUIDv4. */
 export function claudeSessionId(sessionId) {
-  const hex = createHash('sha256').update(`dsh-claude-cli:${sessionId}`).digest('hex');
+  const hex = createHash('sha256').update(`claude-bare-dsh:${sessionId}`).digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
@@ -184,7 +184,7 @@ class ClaudeCliAdapter extends LlmAdapter {
       yield* this.turn(options, token, undefined);
     } catch (error) {
       this.drop(sessionId);
-      yield* errorFinish('PROVIDER_ERROR', `claude-cli: ${error?.message ?? error}`);
+      yield* errorFinish('PROVIDER_ERROR', `claude-bare-dsh: ${error?.message ?? error}`);
     } finally {
       release();
       if (this.locks.get(sessionId) === chain) this.locks.delete(sessionId);
@@ -332,7 +332,7 @@ function* errorFinish(code, message) {
 export function apply(ctx, config) {
   const adapter = new ClaudeCliAdapter(ctx, config);
   ctx.llm.registerAdapter([config.provider], adapter);
-  ctx.effect(() => () => adapter.dispose(), 'claude-cli: stop session processes');
+  ctx.effect(() => () => adapter.dispose(), 'claude-bare-dsh: stop session processes');
 }
 
 export { ClaudeCliAdapter };

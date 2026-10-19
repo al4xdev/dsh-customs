@@ -18,8 +18,6 @@ frontend/dsh-tui/
 
 # Nested git repository with its own remote (OpenSaozi/dsh-antigravity).
 plugins/dsh-antigravity/
-# Nested git repository: owner fork of lcestou/dsh-oh-my-claude without direct API calls.
-plugins/dsh-oh-my-claude/
 
 # Recovered Pi source is vendored in sources/pi-ai for clean-clone builds.
 # SOURCE-PROVENANCE.json records a verified snapshot, not a nested Git HEAD.

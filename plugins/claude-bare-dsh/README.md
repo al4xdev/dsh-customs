@@ -1,4 +1,4 @@
-# claude-cli
+# claude-bare-dsh
 
 dsh provider backed by the official Claude Code CLI, used as a bare model: dsh keeps
 the agent loop, the tools, the prompt and the approvals; Claude Code only answers.
@@ -32,18 +32,18 @@ other's refresh token.
 
 | key | default | |
 |---|---|---|
-| `provider` | `claude-cli` | provider route id |
-| `displayName` | `Claude (CLI)` | |
+| `provider` | `claude-bare-dsh` | provider route id |
+| `displayName` | `Claude (bare)` | |
 | `command` | `claude` | CLI executable |
 | `tokenRef` | `CLAUDE_CODE_OAUTH_TOKEN` | dsh credential with the token |
 | `models` | Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1 | `{ id, name, contextWindow }`, fixed list |
 | `idleMinutes` | `30` | stop an idle session process; the next step resumes it |
 | `maxProcesses` | `6` | idle processes are evicted beyond this |
 
-State: `$XDG_STATE_HOME/dsh-claude-cli` (config dir, empty working dir, started-session
+State: `$XDG_STATE_HOME/claude-bare-dsh` (config dir, empty working dir, started-session
 ids). Images in user messages are sent as a text placeholder.
 
 ## Test
 
-`node --test plugins/claude-cli/claude-cli.test.mjs` runs against `test-fake-claude.mjs`,
+`node --test plugins/claude-bare-dsh/claude-bare-dsh.test.mjs` runs against `test-fake-claude.mjs`,
 a stand-in that speaks the CLI's stream-json and the text tool protocol; no model calls.
