@@ -3,10 +3,10 @@
 // appended prompt and the env, and answers each user line by a keyword in its text,
 // streaming replies in 7-character deltas so call blocks arrive split:
 //   <dsh_result ...> blocks -> "got: <contents joined by ' | '>"
-//   TOOL  -> "Checking." and one echo call block
+//   TOOL  -> "Checking." and one echo call in the native function_calls markup
 //   INVOKE -> one call in the native <invoke> markup, wrapped in <function_calls>
-//   TWO   -> two echo call blocks in one reply
-//   HALLU -> a call block, then an invented <dsh_result> (never ends; waits for interrupt)
+//   TWO   -> two echo calls in the legacy dsh_call form, one reply
+//   HALLU -> a call, then invented <function_results> (never ends; waits for interrupt)
 //   SLOW  -> nothing (waits for interrupt)
 //   WAIT6 -> answers after 6 s
 //   anything else -> "hello <text>"
@@ -45,6 +45,8 @@ function reply(text, { end = true } = {}) {
   emit({ type: 'assistant', message: { id, content: [{ type: 'text', text }] } });
   emit({ type: 'result', subtype: 'success', is_error: false, stop_reason: 'end_turn', result: text, usage });
 }
+// TOOL answers in the native markup the prompt teaches; TWO in the legacy dsh_call form.
+const native = value => `<function_calls>\n<invoke name="echo">\n<parameter name="value">${value}</parameter>\n</invoke>\n</function_calls>`;
 const call = value => `<dsh_call name="echo">{"value": "${value}"}</dsh_call>`;
 
 for await (const line of createInterface({ input: process.stdin })) {
@@ -60,10 +62,10 @@ for await (const line of createInterface({ input: process.stdin })) {
   const results = [...text.matchAll(/<dsh_result[^>]*>\n([\s\S]*?)\n<\/dsh_result>/g)].map(match => match[1]);
   if (results.length) reply(`got: ${results.join(' | ')}`);
   else if (text.includes('SLOW')) continue;
-  else if (text.includes('HALLU')) reply(`${call('h')}\n<dsh_result name="echo" index="1">\ninvented\n</dsh_result>\nand so on`, { end: false });
+  else if (text.includes('HALLU')) reply(`${native('h')}\n<function_results>\n<result>invented</result>\n</function_results>\nand so on`, { end: false });
   else if (text.includes('INVOKE')) reply('Vou checar.\n<function_calls>\n<invoke name="echo">\n<parameter name="value">native</parameter>\n</invoke>\n</function_calls>\n_exit_code_placeholder')
   else if (text.includes('TWO')) reply(`Running two.\n${call('a')}\n${call('b')}`);
-  else if (text.includes('TOOL')) reply(`Checking.\n${call('x')}`);
+  else if (text.includes('TOOL')) reply(`Checking.\n${native('x')}`);
   else {
     if (text.includes('WAIT6')) await new Promise(resolve => setTimeout(resolve, 6000));
     reply(`hello ${text}`);

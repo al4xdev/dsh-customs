@@ -65,7 +65,7 @@ test('the CLI runs stripped down: no built-in tools, own empty config dir, token
   assert.deepEqual(JSON.parse(arg('--settings')), { autoMemoryEnabled: false, enabledPlugins: { 'cc-plugin-agents-md@builtin': false, 'cc-plugin-plugin-authoring@builtin': false } });
   assert.equal(arg('--session-id'), claudeSessionId('s-flags'));
   assert.ok(!run.argv.includes('--append-system-prompt'), 'the prompt goes by file, not argv');
-  assert.match(run.systemPrompt, /^DSH SYSTEM PROMPT\n\n# Tools\n.*built-in tools are disabled.*## echo\nEcho a value\nArguments \(JSON Schema\): \{"type":"object"/s);
+  assert.match(run.systemPrompt, /^DSH SYSTEM PROMPT\n\n# Tools\n.*built-in tools are disabled.*## echo\nEcho a value\nParameters \(JSON Schema\): \{"type":"object"/s);
   assert.ok(!run.argv.includes('--mcp-config') && !run.argv.includes('--allowedTools'), 'no MCP at all');
   assert.equal(run.env.CLAUDE_CONFIG_DIR, join(process.env.XDG_STATE_HOME, 'claude-bare-dsh/claude-home'));
   assert.equal(run.env.CLAUDE_CODE_OAUTH_TOKEN, 'set');
@@ -88,7 +88,7 @@ test('a call block ends the step as a dsh tool call; its result goes back to the
   const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'RESULT-X' }], source: { kind: 'tool', callId: call.id } };
   const spawnsBefore = log().filter(entry => entry.argv).length;
   const step2 = await collect(adapter, { sessionId: 's-tool', messages: [...first, assistant, result] });
-  assert.equal(prompts().at(-1), '<dsh_result name="echo" index="1">\nRESULT-X\n</dsh_result>');
+  assert.equal(prompts().at(-1), '<function_results>\n<dsh_result name="echo" index="1">\nRESULT-X\n</dsh_result>\n</function_results>');
   assert.equal(textOf(step2), 'got: RESULT-X');
   assert.deepEqual(finishOf(step2), { type: 'finish', reason: { kind: 'stop' } });
   assert.equal(log().filter(entry => entry.argv).length, spawnsBefore, 'no respawn between the two steps');
@@ -367,4 +367,27 @@ test('parser: <invoke> calls, typed parameters, quoted markup stays text, invent
   const guessing = new CallParser(tools);
   const guessed = [...guessing.feed('Let me look.\n<function_results>\nfake\n</function_results>'), ...guessing.end()];
   assert.deepEqual(guessed, [{ text: 'Let me look.\n' }, { cut: true }]);
+});
+
+test('parser: what training makes the model improvise is still a call', async () => {
+  const { invokeArguments, callsText } = await import('./protocol.mjs');
+  // The tag prefix is assembled at run time so this file never spells the prefixed markup.
+  const P = ['ant', 'ml:'].join('');
+  const tools = [{ name: 'list', parameters: { type: 'object', properties: { path: { type: 'string' }, depth: { type: 'integer' } } } }, { name: 'git_status', parameters: { type: 'object', properties: {} } }];
+  const run = text => { const parser = new CallParser(tools); const out = []; for (let at = 0; at < text.length; at += 5) out.push(...parser.feed(text.slice(at, at + 5))); out.push(...parser.end()); return out; };
+  const calls = out => out.filter(p => p.call).map(p => [p.call.name, JSON.parse(p.call.arguments)]);
+  const prefixed = `<${P}function_calls>\n<${P}invoke name="list">\n<${P}parameter name="path">/tmp</${P}parameter>\n</${P}invoke>\n</${P}function_calls>`;
+  const prefixedOut = run(prefixed);
+  assert.deepEqual(calls(prefixedOut), [['list', { path: '/tmp' }]], 'prefixed tags');
+  assert.equal(prefixedOut.filter(p => p.text).length, 0, 'prefixed wrapper never shown');
+  assert.deepEqual(calls(run('<invoke name="list"><parameter name="depth">3</parameter></invoke>')), [['list', { depth: 3 }]], 'no wrapper');
+  assert.deepEqual(calls(run('<invoke name="git_status"/>')), [['git_status', {}]], 'self-closing');
+  assert.deepEqual(calls(run('<invoke name="list">{"path": "/etc", "depth": 1}</invoke>')), [['list', { path: '/etc', depth: 1 }]], 'JSON body');
+  assert.deepEqual(calls(run('<dsh_call name="list"><parameter name="path">/x</parameter></dsh_call>')), [['list', { path: '/x' }]], 'parameters inside dsh_call');
+  assert.deepEqual(calls(run('<invoke name="list">\n<parameter name="path">\n/var/log\n</parameter>\n</invoke>')), [['list', { path: '/var/log' }]], 'layout newlines are not value');
+  assert.equal(JSON.parse(invokeArguments('<parameter name="content">a\n\nb\n</parameter>', { properties: { content: { type: 'string' } } })).content, 'a\n\nb', 'only one edge newline goes');
+  const guessed = run('<invoke name="list"><parameter name="path">/</parameter></invoke>\n<function_results>\n<result>made up</result>');
+  assert.equal(calls(guessed).length, 1);
+  assert.ok(guessed.some(p => p.cut), 'invented results cut the turn');
+  assert.equal(callsText([{ name: 'list', arguments: '{"path":"/tmp","depth":2}' }]), '<function_calls>\n<invoke name="list">\n<parameter name="path">/tmp</parameter>\n<parameter name="depth">2</parameter>\n</invoke>\n</function_calls>', 'history in the taught markup');
 });

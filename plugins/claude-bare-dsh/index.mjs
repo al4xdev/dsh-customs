@@ -15,7 +15,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveHost } from '../common.mjs';
-import { callText, resultsText, toolsPrompt } from './protocol.mjs';
+import { callsText, resultsText, toolsPrompt } from './protocol.mjs';
 import { ClaudeSession } from './session.mjs';
 
 const { default: z } = await import(resolveHost('@deepseek-ai/schemastery'));
@@ -133,8 +133,8 @@ export function transcript(messages, images, attachFrom = messages.length) {
       continue;
     }
     if (message.role === 'assistant') {
-      const calls = message.content.filter(block => block.type === 'tool-call').map(block => callText(block.name, block.arguments));
-      out.push(`[assistant]\n${[textOf(message.content, collect), ...calls].filter(Boolean).join('\n')}`);
+      const calls = callsText(message.content.filter(block => block.type === 'tool-call'));
+      out.push(`[assistant]\n${[textOf(message.content, collect), calls].filter(Boolean).join('\n')}`);
       continue;
     }
     out.push(`[${message.role === 'developer' ? 'developer' : 'user'}]\n${textOf(message.content, collect)}`);

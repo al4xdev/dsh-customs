@@ -2,30 +2,39 @@
 // (built-in tools off, and MCP servers are not an option: an organization allowlist can
 // keep a local MCP server's tools out of the request).
 //
-// dsh's tools are described in the appended system prompt. Claude asks for one by
-// writing `<dsh_call name="tool">{json arguments}</dsh_call>` and ending its reply; the
-// provider turns every block into a real dsh `tool-call`, dsh runs it in its own loop,
-// and the results come back as the next user message in `<dsh_result>` blocks.
+// The model writes calls in the function-call markup Claude models are trained on, and
+// the provider turns each one into a real dsh `tool-call`; dsh runs it in its own loop
+// and the results come back as the next user message:
 //
-// Claude models also fall back to the function-call markup they are trained on
-// (`<invoke name="tool"><parameter name="p">v</parameter></invoke>`, optionally inside
-// `<function_calls>`), most often deep into a long session. Those blocks are calls too:
-// treating them as text left a session whose every "call" silently never ran.
+//   <function_calls>
+//   <invoke name="bash">
+//   <parameter name="command">ls</parameter>
+//   </invoke>
+//   </function_calls>
+//
+// Teaching that markup instead of an invented one keeps the model on familiar ground:
+// deep into a long session it drifted back to it anyway. What it improvises around it
+// is accepted too: the `antml:` tag prefix, a missing `<function_calls>` wrapper, a
+// self-closing `<invoke/>`, a JSON body instead of parameters, and the older
+// `<dsh_call name="x">{json}</dsh_call>` form.
 
+const MARKUP_PREFIX = /<(\/?)antml:/g;
 const DSH_OPEN = '<dsh_call', DSH_CLOSE = '</dsh_call>';
 const INVOKE_OPEN = '<invoke', INVOKE_CLOSE = '</invoke>';
 const WRAPPERS = ['<function_calls>', '</function_calls>'];
 // Text a model writes when it imagines a tool's answer instead of waiting for it.
-const INVENTED = ['<dsh_result', '<function_results', '<function_result'];
-const MARKERS = [DSH_OPEN, INVOKE_OPEN, ...WRAPPERS, ...INVENTED];
+const INVENTED = ['<function_results', '<function_result', '<dsh_result'];
+const BASE_MARKERS = [DSH_OPEN, INVOKE_OPEN, ...WRAPPERS, ...INVENTED];
+// The prefixed spellings only need to be held until the prefix is normalized away.
+const MARKERS = [...BASE_MARKERS, ...BASE_MARKERS.map(marker => marker.replace(/^<(\/?)/, '<$1antml:'))];
 // Text after the last call is normally empty; past this much it is the model narrating
 // or guessing, and the turn is cut.
 const MAX_TRAILING = 400;
 // A tag header longer than this without its `>` is not a call header.
 const MAX_HEADER = 200;
 
-const DSH_HEADER = /^<dsh_call\s+name\s*=\s*["']([^"']+)["']\s*>/;
-const INVOKE_HEADER = /^<invoke\s+name\s*=\s*["']([^"']+)["']\s*>/;
+const DSH_HEADER = /^<dsh_call\s+name\s*=\s*["']([^"']+)["']\s*(\/?)>/;
+const INVOKE_HEADER = /^<invoke\s+name\s*=\s*["']([^"']+)["']\s*(\/?)>/;
 const PARAMETER = /<parameter\s+name\s*=\s*["']([^"']+)["']\s*>([\s\S]*?)<\/parameter>/g;
 
 export function toolsPrompt(tools) {
@@ -33,16 +42,20 @@ export function toolsPrompt(tools) {
   const entries = tools.map(tool => [
     `## ${tool.name}`,
     tool.description?.trim() || '(no description)',
-    `Arguments (JSON Schema): ${JSON.stringify(tool.parameters ?? { type: 'object' })}`,
+    `Parameters (JSON Schema): ${JSON.stringify(tool.parameters ?? { type: 'object' })}`,
   ].join('\n'));
   return [
     '# Tools',
     "Claude Code's built-in tools are disabled in this session. The only tools are the dsh tools listed below; use them for all reading, editing, searching and commands.",
-    'To run a tool, write a call block in your reply, exactly in this form:',
-    `${DSH_OPEN} name="TOOL_NAME">{"argument": "value"}${DSH_CLOSE}`,
-    'The body is one JSON object with the arguments, following the tool\'s schema. Write several call blocks in one reply to run them in parallel.',
-    'After your last call block, stop and end your reply. The results arrive in the next message, in call order, as <dsh_result name="TOOL_NAME" index="1">…</dsh_result> blocks. Inside a result, `&lt;dsh_` stands for a literal `<dsh_`.',
-    'Never write a <dsh_result> block yourself and never guess a result. Write a call block only to run it, never in an example or a code block.',
+    'To run tools, write a function_calls block in your reply:',
+    '<function_calls>',
+    '<invoke name="TOOL_NAME">',
+    '<parameter name="PARAMETER_NAME">value</parameter>',
+    '</invoke>',
+    '</function_calls>',
+    'Write string values as plain text; write numbers, booleans, arrays and objects as JSON. Several invoke blocks in one function_calls block run in parallel.',
+    'After the function_calls block, stop and end your reply. The results arrive in the next message, in call order, inside a <function_results> block. Inside a result, `&lt;` before a tool-protocol tag name (function_calls, function_results, invoke, dsh_call, dsh_result) stands for `<`.',
+    'Never write function_results yourself and never guess a result. Write a function_calls block only to run tools, never in an example or a code block.',
     '',
     'Available tools:',
     '',
@@ -50,36 +63,59 @@ export function toolsPrompt(tools) {
   ].join('\n');
 }
 
-// Only the protocol's own tags are escaped: a result quoting them must not close or
-// open a block. Everything else reaches the model byte for byte (an `&lt;` in file
-// content would be copied back into edits).
-const escapeTags = text => String(text).replace(/<(\/?dsh_(?:call|result)\b)/g, '&lt;$1');
+// Only tool-protocol tags are escaped: a result quoting them must not look like a call
+// or close the results block. Everything else reaches the model byte for byte (an
+// `&lt;` in file content would be copied back into edits).
+const escapeTags = text => String(text).replace(/<(\/?(?:antml:)?(?:dsh_call|dsh_result|function_calls|function_results|invoke)\b)/g, '&lt;$1');
 
-/** The next user message for tool results (in call order), plus any other new text. */
+/** The next user message for tool results (in call order). */
 export function resultsText(results) {
-  return results.map((result, index) =>
-    `<dsh_result name="${result.name}" index="${index + 1}"${result.isError ? ' error="true"' : ''}>\n${escapeTags(result.text)}\n</dsh_result>`).join('\n');
+  if (!results.length) return '';
+  const blocks = results.map((result, index) =>
+    `<dsh_result name="${result.name}" index="${index + 1}"${result.isError ? ' error="true"' : ''}>\n${escapeTags(result.text)}\n</dsh_result>`);
+  return ['<function_results>', ...blocks, '</function_results>'].join('\n');
 }
 
-/** A past call rendered the way Claude is asked to write it, for transcripts. */
-export const callText = (name, args) => `${DSH_OPEN} name="${name}">${args || '{}'}${DSH_CLOSE}`;
+/** Past calls in the markup the model is asked to write, for transcripts. */
+export function callsText(calls) {
+  if (!calls.length) return '';
+  const invokes = calls.map(({ name, arguments: raw }) => {
+    let args;
+    try { args = JSON.parse(raw || '{}'); } catch { args = undefined; }
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return `<invoke name="${name}">${raw || ''}</invoke>`;
+    const parameters = Object.entries(args).map(([key, value]) =>
+      `<parameter name="${key}">${typeof value === 'string' ? value : JSON.stringify(value)}</parameter>`);
+    return [`<invoke name="${name}">`, ...parameters, '</invoke>'].join('\n');
+  });
+  return ['<function_calls>', ...invokes, '</function_calls>'].join('\n');
+}
+
+/** One newline of tag layout on each side is markup, not value (`/var/log\n` is not a path). */
+const unpad = value => value.replace(/^\r?\n/, '').replace(/\r?\n$/, '');
 
 /**
- * `<invoke>` parameters as a JSON arguments string. Values are text in that markup; a
+ * `<parameter>` values as a JSON arguments string. Values are text in that markup; a
  * parameter the tool's schema types as anything but a string is read as JSON when it
- * parses, so `depth` "2" becomes 2 and an array stays an array.
+ * parses, so `depth` "2" becomes 2 and an array stays an array. A body with no
+ * parameters that is itself a JSON object is taken as the arguments.
  */
 export function invokeArguments(body, schema) {
   const properties = schema?.properties ?? {};
   const args = {};
+  let found = false;
   for (const [, name, raw] of body.matchAll(PARAMETER)) {
+    found = true;
     const type = properties[name]?.type;
-    const wantsString = type === 'string' || (Array.isArray(type) && type.includes('string') && type.length === 1);
-    let value = raw;
-    if (!wantsString && type !== undefined) {
-      try { value = JSON.parse(raw.trim()); } catch { value = raw; }
+    const types = Array.isArray(type) ? type : type === undefined ? [] : [type];
+    const value = unpad(raw);
+    if (types.length === 0 || (types.length === 1 && types[0] === 'string')) { args[name] = value; continue; }
+    try { args[name] = JSON.parse(value.trim()); } catch { args[name] = value; }
+  }
+  if (!found) {
+    const trimmed = body.trim();
+    if (trimmed.startsWith('{')) {
+      try { const parsed = JSON.parse(trimmed); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return JSON.stringify(parsed); } catch {}
     }
-    args[name] = value;
   }
   return JSON.stringify(args);
 }
@@ -89,13 +125,13 @@ export function invokeArguments(body, schema) {
  * complete call. Text that might be the start of a block is held until it is decided.
  * After the first call, only further calls count; an invented result or a long tail
  * means the model is guessing, reported as `{ cut: true }` once.
- * @param tools - the request's tool schemas, to type `<invoke>` parameters.
+ * @param tools - the request's tool schemas, to type `<parameter>` values.
  */
 export class CallParser {
   #pending = '';
   #trailing = 0;
   #schemas;
-  #afterWrapper = false; // whitespace right after `<function_calls>` is markup too
+  #afterMarkup = false; // whitespace right after a wrapper or a call is layout too
   calls = 0;
   cut = false;
 
@@ -116,6 +152,7 @@ export class CallParser {
   #drain(final) {
     const out = [];
     while (this.#pending && !this.cut) {
+      this.#pending = this.#pending.replace(MARKUP_PREFIX, '<$1');
       const at = firstMarker(this.#pending);
       if (at < 0) {
         const keep = final ? 0 : heldPrefix(this.#pending, MARKERS);
@@ -127,7 +164,7 @@ export class CallParser {
       if (this.cut) break;
       this.#pending = this.#pending.slice(at);
       const wrapper = WRAPPERS.find(tag => this.#pending.startsWith(tag));
-      if (wrapper) { this.#pending = this.#pending.slice(wrapper.length); this.#afterWrapper = true; continue; } // markup only, never shown
+      if (wrapper) { this.#pending = this.#pending.slice(wrapper.length); this.#afterMarkup = true; continue; } // never shown
       const invented = INVENTED.find(tag => this.#pending.startsWith(tag));
       if (invented) { this.#text(out, this.#pending); this.#pending = ''; break; }
       const dsh = this.#pending.startsWith(DSH_OPEN);
@@ -135,36 +172,50 @@ export class CallParser {
       if (!header) {
         // Not a call header (yet): wait for the `>` while it can still become one, else
         // the `<` is ordinary text, such as a quoted `<invoke name="bash"...`.
-        const close = this.#pending.indexOf('>');
-        if (!final && close < 0 && this.#pending.length < MAX_HEADER) break;
+        if (!final && this.#pending.indexOf('>') < 0 && this.#pending.length < MAX_HEADER) break;
         this.#text(out, '<');
         this.#pending = this.#pending.slice(1);
         continue;
       }
-      const closeTag = dsh ? DSH_CLOSE : INVOKE_CLOSE;
-      const close = this.#pending.indexOf(closeTag);
-      if (close < 0) {
-        if (final) this.#pending = ''; // an unfinished block never runs
-        break;
-      }
-      const body = this.#pending.slice(header[0].length, close);
-      this.#pending = this.#pending.slice(close + closeTag.length);
       const name = header[1];
-      const args = dsh ? (body.trim() || '{}') : invokeArguments(body, this.#schemas.get(name));
-      this.calls++;
-      this.#trailing = 0;
-      this.#afterWrapper = true; // the newline after a block is layout as well
-      out.push({ call: { name, arguments: args } });
+      let body = '';
+      if (header[2] === '/') {
+        this.#pending = this.#pending.slice(header[0].length); // self-closing: no arguments
+      } else {
+        const closeTag = dsh ? DSH_CLOSE : INVOKE_CLOSE;
+        const close = this.#pending.indexOf(closeTag);
+        if (close < 0) {
+          if (final) this.#pending = ''; // an unfinished block never runs
+          break;
+        }
+        body = this.#pending.slice(header[0].length, close);
+        this.#pending = this.#pending.slice(close + closeTag.length);
+      }
+      this.#call(out, name, dsh, body);
     }
     return out;
   }
 
+  #call(out, name, dsh, body) {
+    let args;
+    if (dsh && !/<parameter\b/.test(body)) {
+      const trimmed = body.trim();
+      args = trimmed || '{}';
+    } else {
+      args = invokeArguments(body, this.#schemas.get(name));
+    }
+    this.calls++;
+    this.#trailing = 0;
+    this.#afterMarkup = true;
+    out.push({ call: { name, arguments: args } });
+  }
+
   #text(out, text) {
-    if (this.#afterWrapper) {
-      // Drop the layout whitespace a wrapper leaves, even when it arrives in later chunks.
+    if (this.#afterMarkup) {
+      // Drop the layout whitespace markup leaves, even when it arrives in later chunks.
       const rest = text.replace(/^\s+/, '');
       if (!rest) return;
-      this.#afterWrapper = false;
+      this.#afterMarkup = false;
       text = rest;
     }
     if (!text) return;
@@ -191,7 +242,7 @@ export class CallParser {
 /** Index of the earliest marker in `text`, or -1. */
 function firstMarker(text) {
   let first = -1;
-  for (const marker of MARKERS) {
+  for (const marker of BASE_MARKERS) {
     const at = text.indexOf(marker);
     if (at >= 0 && (first < 0 || at < first)) first = at;
   }

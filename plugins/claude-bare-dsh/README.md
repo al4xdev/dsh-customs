@@ -7,10 +7,15 @@ the agent loop, the tools, the prompt and the approvals; Claude Code only answer
   `--resume` after a dsh restart or an idle stop.
 - Claude Code has no tools at all: `--tools ""` and no MCP servers. An organization's MCP
   allowlist keeps a local MCP server's tools out of the request, so dsh's tools travel as
-  text (`protocol.mjs`): they are described in the appended prompt, Claude writes
-  `<dsh_call name="tool">{json}</dsh_call>` blocks and ends its reply, each block becomes
-  a real dsh `tool-call`, dsh runs it in its own loop, and the results return as the next
-  user message in `<dsh_result>` blocks. A reply that starts inventing results is cut.
+  text (`protocol.mjs`). They are described in the appended prompt, and Claude calls them
+  in the function-call markup it is trained on (`<function_calls>` / `<invoke>` /
+  `<parameter>`); each call becomes a real dsh `tool-call`, dsh runs it in its own loop,
+  and the results return as the next user message in a `<function_results>` block.
+  What the model improvises around that markup still runs: the prefixed tag spelling, a
+  missing wrapper, a self-closing `<invoke/>`, a JSON body, and the older
+  `<dsh_call name="x">{json}</dsh_call>` form. Parameter values are typed from the tool's
+  schema. A reply that starts inventing results is cut, and only the protocol's own tags
+  are escaped inside results.
 - Nothing else of Claude Code's own: no skills or slash commands, only the `user` setting
   source, the built-in AGENTS.md and plugin-authoring plugins off, no auto-memory. The
   CLI runs in an empty config dir of its own (no user CLAUDE.md, settings, hooks, agents
