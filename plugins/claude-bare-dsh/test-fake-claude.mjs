@@ -4,6 +4,7 @@
 // streaming replies in 7-character deltas so call blocks arrive split:
 //   <dsh_result ...> blocks -> "got: <contents joined by ' | '>"
 //   TOOL  -> "Checking." and one echo call block
+//   INVOKE -> one call in the native <invoke> markup, wrapped in <function_calls>
 //   TWO   -> two echo call blocks in one reply
 //   HALLU -> a call block, then an invented <dsh_result> (never ends; waits for interrupt)
 //   SLOW  -> nothing (waits for interrupt)
@@ -60,6 +61,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (results.length) reply(`got: ${results.join(' | ')}`);
   else if (text.includes('SLOW')) continue;
   else if (text.includes('HALLU')) reply(`${call('h')}\n<dsh_result name="echo" index="1">\ninvented\n</dsh_result>\nand so on`, { end: false });
+  else if (text.includes('INVOKE')) reply('Vou checar.\n<function_calls>\n<invoke name="echo">\n<parameter name="value">native</parameter>\n</invoke>\n</function_calls>\n_exit_code_placeholder')
   else if (text.includes('TWO')) reply(`Running two.\n${call('a')}\n${call('b')}`);
   else if (text.includes('TOOL')) reply(`Checking.\n${call('x')}`);
   else {

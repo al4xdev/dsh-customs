@@ -86,11 +86,11 @@ export class ClaudeSession {
    * stream, call blocks as tool calls, and the turn's `result` as the finish (or
    * `tool-calls` when the reply asked for tools). Abort and exit end it too.
    */
-  async *step(signal) {
+  async *step(signal, tools) {
     this.busy = true;
     this.lastUsed = Date.now();
     const out = new StepWriter();
-    const parser = new CallParser();
+    const parser = new CallParser(tools);
     let aborting = false, cutting = false, ended = false, killTimer;
     const stopTurn = () => {
       if (!this.interrupt()) this.kill();

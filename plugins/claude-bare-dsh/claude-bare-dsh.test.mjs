@@ -258,7 +258,9 @@ test('parser: blocks split at any point, held prefixes, malformed headers', () =
   unfinished.feed('x <dsh_call name="a">{"never": ');
   assert.deepEqual(unfinished.end(), [], 'an unfinished block never runs');
   const bad = new CallParser();
-  assert.deepEqual([...bad.feed('<dsh_call oops>{}</dsh_call>ok'), ...bad.end()], [{ text: 'ok' }]);
+  const badOut = [...bad.feed('<dsh_call oops>{}</dsh_call>ok'), ...bad.end()];
+  assert.equal(badOut.filter(p => p.text).map(p => p.text).join(''), '<dsh_call oops>{}</dsh_call>ok', 'a malformed header is shown, never run or dropped');
+  assert.equal(bad.calls, 0);
   assert.equal(toolsPrompt([]), '');
 });
 
@@ -311,4 +313,58 @@ test('models declare image input', async () => {
   assert.deepEqual((await adapter.listModels('claude-bare-dsh'))[0].inputModalities, ['text', 'image']);
   assert.deepEqual((await adapter.resolveModel('claude-bare-dsh', 'claude-opus-5-5')).inputModalities, ['text', 'image']);
   adapter.dispose();
+});
+
+test('a call in the native <invoke> markup runs like a dsh_call block', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const first = [system, user('INVOKE please')];
+  const step1 = await collect(adapter, { sessionId: 's-invoke', messages: first });
+  assert.deepEqual(finishOf(step1), { type: 'finish', reason: { kind: 'tool-calls' } });
+  assert.equal(textOf(step1), 'Vou checar.\n', 'the wrapper and the invented tail never reach dsh');
+  const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
+  assert.equal(call.name, 'echo');
+  assert.deepEqual(JSON.parse(call.arguments), { value: 'native' });
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
+  const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'NATIVE-OK' }], source: { kind: 'tool', callId: call.id } };
+  assert.equal(textOf(await collect(adapter, { sessionId: 's-invoke', messages: [...first, assistant, result] })), 'got: NATIVE-OK');
+});
+
+test('results keep their content byte for byte; only protocol tags are escaped', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const first = [system, user('TOOL read')];
+  const step1 = await collect(adapter, { sessionId: 's-escape', messages: first });
+  const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
+  const content = '<path>/x/a.html</path>\n<content>\nif (a < b && c > d) <b>bold</b>\nquoted </dsh_result> and <dsh_call name="x">\n</content>';
+  const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: content }], source: { kind: 'tool', callId: call.id } };
+  await collect(adapter, { sessionId: 's-escape', messages: [...first, assistant, result] });
+  const sent = prompts().at(-1);
+  assert.ok(sent.includes('<path>/x/a.html</path>') && sent.includes('if (a < b && c > d) <b>bold</b>'), 'ordinary markup untouched');
+  assert.ok(sent.includes('quoted &lt;/dsh_result> and &lt;dsh_call name="x">'), 'protocol tags escaped');
+  assert.equal(sent.match(/<\/dsh_result>/g).length, 1, 'only the real closing tag remains');
+});
+
+test('parser: <invoke> calls, typed parameters, quoted markup stays text, invented results cut', async () => {
+  const { invokeArguments } = await import('./protocol.mjs');
+  const tools = [{ name: 'list', parameters: { type: 'object', properties: { path: { type: 'string' }, depth: { type: 'integer' }, hidden: { type: 'boolean' }, ids: { type: 'array' } } } }];
+  const text = 'Ok.\n<function_calls>\n<invoke name="list">\n<parameter name="path">/var/log</parameter>\n<parameter name="depth">2</parameter>\n<parameter name="hidden">false</parameter>\n<parameter name="ids">[1, 2]</parameter>\n</invoke>\n</function_calls>';
+  for (const size of [1, 4, 9, text.length]) {
+    const parser = new CallParser(tools);
+    const pieces = [];
+    for (let at = 0; at < text.length; at += size) pieces.push(...parser.feed(text.slice(at, at + size)));
+    pieces.push(...parser.end());
+    assert.equal(pieces.filter(p => p.text).map(p => p.text).join(''), 'Ok.\n', `chunk ${size}`);
+    assert.deepEqual(pieces.filter(p => p.call).map(p => [p.call.name, JSON.parse(p.call.arguments)]), [['list', { path: '/var/log', depth: 2, hidden: false, ids: [1, 2] }]]);
+  }
+  assert.deepEqual(JSON.parse(invokeArguments('<parameter name="n">7</parameter>', undefined)), { n: '7' }, 'unknown schema keeps text');
+  const quoted = new CallParser(tools);
+  const mention = 'the reply had `<invoke name="bash"...` as plain text, see <b>here</b>.';
+  const out = [...quoted.feed(mention), ...quoted.end()];
+  assert.equal(out.filter(p => p.text).map(p => p.text).join(''), mention);
+  assert.equal(quoted.calls, 0);
+  const guessing = new CallParser(tools);
+  const guessed = [...guessing.feed('Let me look.\n<function_results>\nfake\n</function_results>'), ...guessing.end()];
+  assert.deepEqual(guessed, [{ text: 'Let me look.\n' }, { cut: true }]);
 });

@@ -247,7 +247,7 @@ class ClaudeCliAdapter extends LlmAdapter {
     // The finish decides whether a refused session id is retried, so the usage chunk
     // before it is held back: a retried attempt must not leave a usage chunk behind.
     let held;
-    for await (const chunk of session.step(options.signal)) {
+    for await (const chunk of session.step(options.signal, options.tools)) {
       if (chunk.type === 'usage') { held = chunk; continue; }
       if (chunk.type === 'finish' && chunk.reason.kind === 'error' && !retry) {
         const message = chunk.reason.failure.message;
