@@ -73,7 +73,7 @@ test('existing general machine plugins cannot leak into companion via activation
   // new all-profile research tool do not enable implicit future plugin leakage.
   const companionPlugins = manifest.plugins.filter(row => !row.profiles || row.profiles.includes('companion'));
   assert.deepEqual(companionPlugins.map(row => row.id).sort(), [
-    'alex-agent-self-heal', 'alex-codex-transient-close', 'alex-llm-resilience', 'alex-music', 'alex-research',
+    'alex-agent-self-heal', 'alex-codex-transient-close', 'alex-llm-resilience', 'alex-music', 'alex-research', 'alex-wait',
   ]);
   assert.ok(companionPlugins.every(row => row.overlay === false));
   const generated = YAML.parse(profileFiles('/tmp/repo')['cordis.patch.yml']);

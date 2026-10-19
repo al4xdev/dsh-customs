@@ -40,6 +40,8 @@ export function profileFiles(repoRoot, { guardedTransport = false } = {}) {
     { id: 'tool-fs', disabled: true },
     { id: 'tool-bash', disabled: true },
     { id: 'session-title-llm', disabled: true },
+    // No telemetry to DeepSeek (owner decision 2026-10-19): the dsh-base OTel row stays off.
+    { id: 'session-telemetry-otel', disabled: true },
     { id: 'web-runtime', config: { openBrowser: false, printUrl: false, surfaceContext: false, trustedHosts: [externalHost] } },
     // Prepared migration only: default output and the active profile stay unchanged.
     // Loader replaces config wholesale, so retain the carrier's native gzip keys.
