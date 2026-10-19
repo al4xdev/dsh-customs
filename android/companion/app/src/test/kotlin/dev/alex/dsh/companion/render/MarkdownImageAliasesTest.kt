@@ -137,7 +137,7 @@ class MarkdownImageAliasesTest {
     }
 
     @Test fun genericNativeImageReceiptSupportsExactAttachmentButNeverAPathAlias() {
-        val messages = source(call = RichFixtures.call(1, "gen_image", "{}"))
+        val messages = source(call = RichFixtures.call(1, "fixture_image_tool", "{}"))
         assertNotNull(MarkdownImageAliases(messages).resolve(answer(messages), explicit))
         assertNull(MarkdownImageAliases(messages).resolve(answer(messages), path))
     }

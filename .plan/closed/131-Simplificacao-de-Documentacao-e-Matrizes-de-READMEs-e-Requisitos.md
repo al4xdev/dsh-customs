@@ -27,7 +27,7 @@ Improve the repository documentation for public open-source release by adding a 
 ## 3. Plugin Requirement and Coupling Matrix (`plugins/README.md`)
 Create a comprehensive matrix categorizing:
 - **Standalone:** Independent plugins running on any standard DSH install (`trash`, `list`, `apply-patch`, `grammar-fix`, `codex-transient-close`, `workspace-context`, `managed-plans`, `llm-resilience`, `agent-self-heal`).
-- **External Dependencies:** Plugins requiring external binaries or services (`browser`, `music`, `gen-image`, `research`).
+- **External Dependencies:** Plugins requiring external binaries or services (`browser`, `music`, `research`).
 - **Companion Ecosystem:** Plugins bound to the Android app and mobile transport (`companion-api`, `companion-transport`, `companion-download`, `companion-workspace`, `session`, `session-create`).
 
 ---

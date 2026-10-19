@@ -18,7 +18,7 @@ internal object ToolDetailsProjection {
             name in setOf("glob", "grep", "list") && metadata != null && completed -> search(metadata)
             name in setOf("bash", "pwsh") && args != null -> terminal(args, text, completed)
             name in setOf("web_search", "web_fetch") && metadata != null && completed -> web(metadata)
-            name in setOf("session", "job_list", "job_output", "job_kill", "gen_image", "gen_image_list", "gen_image_tail", "todo_write", "get_goal", "create_goal", "update_goal", "workflow", "browser", "ask_user_question", "plan_stage", "plan_read", "plan_list", "plan_close", "plan_move", "plan_reopen", "subagent", "subagent_fork", "list_agents", "send_message", "interrupt_agent") && completed -> {
+            name in setOf("session", "job_list", "job_output", "job_kill", "todo_write", "get_goal", "create_goal", "update_goal", "workflow", "browser", "ask_user_question", "plan_stage", "plan_read", "plan_list", "plan_close", "plan_move", "plan_reopen", "subagent", "subagent_fork", "list_agents", "send_message", "interrupt_agent") && completed -> {
                 val json = RichJson.parse(text)
                 if (json != null) ToolDetail.Json(name ?: "Resultado", RichJson.preview(json)) else null
             }

@@ -27,7 +27,6 @@
     { "id": "alex-workspace-context", "module": "workspace-context/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-project-mcp", "module": "project-mcp/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-browser", "module": "browser/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-gen-image", "module": "gen-image/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
     { "id": "alex-music", "module": "music/index.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false },
     { "id": "alex-clipboard", "module": "clipboard/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
     { "id": "alex-trash", "module": "trash/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },

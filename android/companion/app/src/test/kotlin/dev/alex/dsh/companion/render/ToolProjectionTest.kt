@@ -110,7 +110,7 @@ class ToolProjectionTest {
     }
 
     @Test fun everyAuditedPublicFamilyRetainsGenericInertEvidenceWithoutMountingIt() {
-        val names = listOf("bash", "pwsh", "read", "read_image", "write", "edit", "list", "glob", "grep", "apply_patch", "apply_patch_undo", "web_search", "web_fetch", "browser", "gen_image", "gen_image_list", "gen_image_tail", "clipboard_copy", "trash", "shell_reconsider", "ask_user_question", "todo_write", "subagent", "subagent_fork", "list_agents", "send_message", "interrupt_agent", "job_list", "job_output", "job_kill", "create_goal", "get_goal", "update_goal", "plan_stage", "plan_list", "plan_read", "plan_close", "plan_move", "plan_reopen", "workflow", "session", "skill", "present", "list_subagent_models")
+        val names = listOf("bash", "pwsh", "read", "read_image", "write", "edit", "list", "glob", "grep", "apply_patch", "apply_patch_undo", "web_search", "web_fetch", "browser", "clipboard_copy", "trash", "shell_reconsider", "ask_user_question", "todo_write", "subagent", "subagent_fork", "list_agents", "send_message", "interrupt_agent", "job_list", "job_output", "job_kill", "create_goal", "get_goal", "update_goal", "plan_stage", "plan_list", "plan_read", "plan_close", "plan_move", "plan_reopen", "workflow", "session", "skill", "present", "list_subagent_models")
         names.forEach { name ->
             val tool = RichTranscriptProjection.render(listOf(RichFixtures.call(0, name, "{}"), RichFixtures.result(1, RichFixtures.content("{\"fixture\":true}"))), null).single().tool!!
             assertEquals(name, tool.name)

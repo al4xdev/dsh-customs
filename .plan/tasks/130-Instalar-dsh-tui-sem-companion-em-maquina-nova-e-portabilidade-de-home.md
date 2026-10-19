@@ -37,7 +37,7 @@ Machine-specific providers/models reside in `~/.dsh/cordis.patch.yml` (DSH layer
 
 ## Out of Scope for This Machine
 Companion (`alex-session-bridge` is Companion-only; `companion: skin: whaleGirl` in `dsh-tui` is the TUI sidebar mascot and stays), web/headless/tui, systemd.
-Usage-dependent, not load-dependent: `alex-browser` (`npm run browser:install`, ~680 MiB), `alex-gen-image` (`agy` CLI), `alex-music` (`~/git/my/simp_mcp` + `uv`), research Reddit/context7 (keys). OAuth login (Codex/Antigravity) is manual in the TUI.
+Usage-dependent, not load-dependent: `alex-browser` (`npm run browser:install`, ~680 MiB), `alex-music` (`~/git/my/simp_mcp` + `uv`), research Reddit/context7 (keys). OAuth login (Codex/Antigravity) is manual in the TUI.
 
 ## Steps
 - [x] Pull dotfiles; inspect lab via read-only SSH.

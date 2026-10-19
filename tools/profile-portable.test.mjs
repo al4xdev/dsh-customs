@@ -24,8 +24,8 @@ function fixture() {
 - insert:
     - id: alex-apply-patch
       name: ${fromHome}/git/my/dsh-customs/plugins/apply-patch/index.mjs
-    - id: alex-gen-image
-      name: ${fromHome}/git/my/dsh-customs/plugins/gen-image/index.mjs
+    - id: alex-music
+      name: ${fromHome}/git/my/dsh-customs/plugins/music/index.mjs
       config:
         path: ${fromHome}/Pictures/generated
     - id: preset-liangshen
