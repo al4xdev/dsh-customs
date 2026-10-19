@@ -46,6 +46,9 @@ agent, tools and ecosystem, run Claude Code (or a plugin that wraps it) instead.
 
 - One `claude -p` process per dsh session (stream-json in and out), resumed with
   `--resume` after a dsh restart or an idle stop.
+- Only the agent loop's steps join that conversation. Side requests that carry the
+  session id but no tools (the TUI's session recap, btw questions), titles and
+  compaction are answered by a one-shot process with no session of its own.
 - Claude Code has no tools at all: `--tools ""` and no MCP servers. An organization's MCP
   allowlist keeps a local MCP server's tools out of the request, so dsh's tools travel as
   text (`protocol.mjs`). They are described in the appended prompt, and Claude calls them

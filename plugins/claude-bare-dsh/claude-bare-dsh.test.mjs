@@ -391,3 +391,23 @@ test('parser: what training makes the model improvise is still a call', async ()
   assert.ok(guessed.some(p => p.cut), 'invented results cut the turn');
   assert.equal(callsText([{ name: 'list', arguments: '{"path":"/tmp","depth":2}' }]), '<function_calls>\n<invoke name="list">\n<parameter name="path">/tmp</parameter>\n<parameter name="depth">2</parameter>\n</invoke>\n</function_calls>', 'history in the taught markup');
 });
+
+test('side requests without tools never touch the session conversation', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const first = [system, user('real turn')];
+  await collect(adapter, { sessionId: 's-side', messages: first });
+  const live = adapter.sessions.get('s-side');
+  const spawnsBefore = spawns();
+  // The TUI's recap: same session id, no tools, a hand-built user message.
+  const recap = await collect(adapter, { sessionId: 's-side', tools: undefined, messages: [user('Create a compact session recap')] });
+  assert.equal(textOf(recap), 'hello Create a compact session recap');
+  const run = log().filter(entry => entry.argv).at(-1);
+  assert.ok(run.argv.includes('--no-session-persistence') && !run.argv.includes('--resume') && !run.argv.includes('--session-id'), 'answered by a one-shot process');
+  assert.equal(spawns(), spawnsBefore + 1);
+  assert.equal(adapter.sessions.get('s-side'), live, 'the conversation process is untouched');
+  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'hello real turn' }], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
+  await collect(adapter, { sessionId: 's-side', messages: [...first, assistant, user('next')] });
+  assert.equal(spawns(), spawnsBefore + 1, 'the next real turn reuses the same process');
+  assert.equal(prompts().at(-1), 'next');
+});

@@ -196,7 +196,11 @@ class ClaudeCliAdapter extends LlmAdapter {
       yield* errorFinish('MISSING_CREDENTIAL', `No Claude token: run \`claude setup-token\` and store it as the dsh credential ${this.config.tokenRef}.`);
       return;
     }
-    if (options.purpose || !options.sessionId) { yield* this.oneShot(options, token); return; }
+    // Only the agent loop's own steps belong to the session's Claude conversation. Side
+    // requests carry the session id too but no tools: the TUI's session recap and btw
+    // questions. Routed into the live process they joined Claude's transcript (and
+    // respawned it without the tool list), so the next real turn believed it had none.
+    if (options.purpose || !options.sessionId || !options.tools?.length) { yield* this.oneShot(options, token); return; }
     // One step at a time per session: a second caller waits instead of spawning a twin.
     const sessionId = String(options.sessionId);
     const previous = this.locks.get(sessionId) ?? Promise.resolve();
