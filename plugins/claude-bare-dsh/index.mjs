@@ -66,11 +66,35 @@ export function claudeSessionId(sessionId) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16], 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-const textOf = content => (content ?? []).map(block => {
+// Claude's own downscaling bounds (long edge 1568 px, ~1.15 MP): anything larger costs
+// tokens for no gain. Bytes stay under the API's per-image cap after base64.
+const IMAGE_LONG_EDGE = 1568;
+const IMAGE_PIXELS = 1_150_000;
+const IMAGE_BYTES = 3_500_000;
+const MAX_IMAGES = 20;
+
+/**
+ * Text of content blocks. With `images`, each image is collected to be attached after the
+ * text and marked where it was; without (older history, one-shot calls) a placeholder
+ * names it, so a long conversation never re-sends every image it ever held.
+ */
+const textOf = (content, images) => (content ?? []).map(block => {
   if (block.type === 'text') return block.text;
-  if (block.type === 'image') return `[image${block.attachment?.name ? ` ${block.attachment.name}` : ''} omitted: this provider sends text only]`;
+  if (block.type === 'image') {
+    const label = block.attachment?.name ? ` ${block.attachment.name}` : '';
+    if (!images || block.offloaded || images.length >= MAX_IMAGES) return `[image${label}: not attached here]`;
+    images.push(block);
+    return `[image ${images.length}${label}: attached below]`;
+  }
   return '';
 }).filter(Boolean).join('\n');
+
+/** Request size for one image: within Claude's useful bounds, never upscaled. */
+export function imageTarget(ref) {
+  const width = Number(ref?.width) || IMAGE_LONG_EDGE, height = Number(ref?.height) || IMAGE_LONG_EDGE;
+  const scale = Math.min(1, IMAGE_LONG_EDGE / Math.max(width, height), Math.sqrt(IMAGE_PIXELS / (width * height)));
+  return { width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale)), maxBytes: IMAGE_BYTES };
+}
 
 /** The messages after the last assistant message: what this step adds. */
 export function afterLastAssistant(messages) {
@@ -86,33 +110,34 @@ export function systemText(options) {
 }
 
 /** Tool results of `messages`, named after the assistant calls in `history` they answer. */
-function toolResults(messages, history) {
+function toolResults(messages, history, images) {
   const names = new Map(history.flatMap(message => message.role === 'assistant'
     ? message.content.filter(block => block.type === 'tool-call').map(block => [block.id, block.name]) : []));
   return messages.filter(message => message.role === 'tool').map(message => ({
-    name: names.get(message.toolCallId) ?? 'tool', text: textOf(message.content) || '(no output)', isError: message.isError === true }));
+    name: names.get(message.toolCallId) ?? 'tool', text: textOf(message.content, images) || '(no output)', isError: message.isError === true }));
 }
 
 /** A whole conversation as one prompt, for a fresh process. */
-export function transcript(messages) {
+export function transcript(messages, images, attachFrom = messages.length) {
   const out = [];
   for (let at = 0; at < messages.length; at++) {
     const message = messages[at];
+    const collect = at >= attachFrom ? images : undefined;
     if (message.role === 'system') continue;
     if (message.role === 'tool') {
       // Consecutive results go together, as the next user message would carry them.
       const run = [];
       while (messages[at]?.role === 'tool') run.push(messages[at++]);
       at--;
-      out.push(`[tool results]\n${resultsText(toolResults(run, messages))}`);
+      out.push(`[tool results]\n${resultsText(toolResults(run, messages, collect))}`);
       continue;
     }
     if (message.role === 'assistant') {
       const calls = message.content.filter(block => block.type === 'tool-call').map(block => callText(block.name, block.arguments));
-      out.push(`[assistant]\n${[textOf(message.content), ...calls].filter(Boolean).join('\n')}`);
+      out.push(`[assistant]\n${[textOf(message.content, collect), ...calls].filter(Boolean).join('\n')}`);
       continue;
     }
-    out.push(`[${message.role === 'developer' ? 'developer' : 'user'}]\n${textOf(message.content)}`);
+    out.push(`[${message.role === 'developer' ? 'developer' : 'user'}]\n${textOf(message.content, collect)}`);
   }
   return out.join('\n\n');
 }
@@ -121,13 +146,13 @@ export function transcript(messages) {
  * The next user line for a step: the results of the calls the last reply made, then any
  * new text. Plain text when there is nothing but user messages.
  */
-export function newInput(tail, history = tail) {
+export function newInput(tail, history = tail, images) {
   const relevant = tail.filter(message => message.role !== 'system');
-  const results = toolResults(relevant, history);
+  const results = toolResults(relevant, history, images);
   const others = relevant.filter(message => message.role !== 'tool');
   const text = others.every(message => message.role === 'user')
-    ? others.map(message => textOf(message.content)).filter(Boolean).join('\n\n')
-    : transcript(others);
+    ? others.map(message => textOf(message.content, images)).filter(Boolean).join('\n\n')
+    : transcript(others, images, 0);
   return [results.length ? resultsText(results) : '', text].filter(Boolean).join('\n\n');
 }
 
@@ -155,12 +180,12 @@ class ClaudeCliAdapter extends LlmAdapter {
   providerInfo(provider) { return { id: provider, name: this.config.displayName }; }
 
   async listModels(provider) {
-    return this.config.models.map(model => ({ provider, id: model.id, name: model.name, inputModalities: ['text'] }));
+    return this.config.models.map(model => ({ provider, id: model.id, name: model.name, inputModalities: ['text', 'image'] }));
   }
 
   async resolveModel(provider, model) {
     const known = this.config.models.find(entry => entry.id === model);
-    return { provider, id: model, name: known?.name ?? model, inputModalities: ['text'],
+    return { provider, id: model, name: known?.name ?? model, inputModalities: ['text', 'image'],
       context: { contextWindow: known?.contextWindow ?? 200000 },
       reasoning: { efforts: EFFORTS.map(id => ({ id, name: id })) } };
   }
@@ -212,7 +237,12 @@ class ClaudeCliAdapter extends LlmAdapter {
     // message; a fresh one for an existing conversation gets all of it once.
     const priorAssistant = options.messages.some(message => message.role === 'assistant');
     const tail = afterLastAssistant(options.messages);
-    session.sendUser(spawned && !resume && priorAssistant ? transcript(options.messages) : newInput(tail, options.messages));
+    // Images of this step's new messages are attached; older ones stay placeholders.
+    const images = [];
+    const text = spawned && !resume && priorAssistant
+      ? transcript(options.messages, images, options.messages.length - tail.length)
+      : newInput(tail, options.messages, images);
+    session.sendUser(await this.userContent(text, images, options.signal));
 
     // The finish decides whether a refused session id is retried, so the usage chunk
     // before it is held back: a retried attempt must not leave a usage chunk behind.
@@ -255,6 +285,23 @@ class ClaudeCliAdapter extends LlmAdapter {
       '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', 'user', '--settings', JSON.stringify(SESSION_SETTINGS),
       ...(options.model ? ['--model', options.model] : []),
       ...(options.reasoningEffort ? ['--effort', String(options.reasoningEffort)] : [])];
+  }
+
+  /** The user line: text, then each collected image read through dsh's attachment store. */
+  async userContent(text, images, signal) {
+    if (!images.length) return text;
+    const attachments = this.ctx.get?.('attachments');
+    const parts = [{ type: 'text', text: text || '(see attached)' }];
+    for (const [index, block] of images.entries()) {
+      try {
+        if (!attachments) throw new Error('no attachment service in this dsh');
+        const image = await attachments.readImageRequest(block.attachment, imageTarget(block.attachment), signal);
+        parts.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: Buffer.from(image.data).toString('base64') } });
+      } catch (error) {
+        parts.push({ type: 'text', text: `[image ${index + 1} could not be loaded: ${error?.message ?? error}]` });
+      }
+    }
+    return parts;
   }
 
   /** dsh's prompt goes by file: one argv element is capped at 128 KiB and shows in `ps`. */

@@ -41,7 +41,13 @@ other's refresh token.
 | `maxProcesses` | `6` | idle processes are evicted beyond this |
 
 State: `$XDG_STATE_HOME/claude-bare-dsh` (config dir, empty working dir, started-session
-ids). Images in user messages are sent as a text placeholder.
+ids).
+
+Images: the images of a step's new messages (your attachments, `read_image` results) are
+read through dsh's attachment store, downscaled to Claude's useful bounds (long edge
+1568 px, ~1.15 MP, at most 3.5 MB) and attached to that user line, with a marker in the
+text where each one was. Images from older history stay text placeholders, so a replayed
+conversation never re-sends every image it held.
 
 ## Test
 

@@ -64,9 +64,11 @@ export class ClaudeSession {
     return true;
   }
 
-  sendUser(text) {
+  /** One user line: plain text, or text and image blocks (Anthropic content shape). */
+  sendUser(content) {
     // The CLI refuses an empty text block.
-    this.write({ type: 'user', session_id: '', message: { role: 'user', content: [{ type: 'text', text: text || '(continue)' }] }, parent_tool_use_id: null });
+    const blocks = typeof content === 'string' ? [{ type: 'text', text: content || '(continue)' }] : content;
+    this.write({ type: 'user', session_id: '', message: { role: 'user', content: blocks }, parent_tool_use_id: null });
   }
 
   interrupt() {

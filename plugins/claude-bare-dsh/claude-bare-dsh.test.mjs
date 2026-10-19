@@ -12,12 +12,15 @@ const root = mkdtempSync(join(tmpdir(), 'claude-bare-dsh-test-'));
 process.env.XDG_STATE_HOME = join(root, 'state');
 process.env.FAKE_CLAUDE_LOG = join(root, 'fake.log');
 process.env.ANTHROPIC_API_KEY = 'must-not-reach-the-cli';
-const { ClaudeCliAdapter, Config, afterLastAssistant, claudeSessionId } = await import('./index.mjs');
+const { ClaudeCliAdapter, Config, afterLastAssistant, claudeSessionId, imageTarget } = await import('./index.mjs');
 const { resultReason } = await import('./session.mjs');
 const { CallParser, toolsPrompt } = await import('./protocol.mjs');
 test.after(() => rmSync(root, { recursive: true, force: true }));
 
-const ctx = (token = 'test-token') => ({ credentials: { resolve: async () => (token ? { value: token, source: 'test' } : undefined) } });
+const targets = [];
+const attachments = { readImageRequest: async (ref, target) => { targets.push({ id: ref.attachmentId, ...target }); return { data: new TextEncoder().encode(`png:${ref.attachmentId}`), mediaType: 'image/png' }; } };
+const ctx = (token = 'test-token') => ({ credentials: { resolve: async () => (token ? { value: token, source: 'test' } : undefined) },
+  get: name => (name === 'attachments' ? attachments : undefined) });
 const adapterFor = (token) => new ClaudeCliAdapter(ctx(token), Config({ command: fake }));
 const log = () => readFileSync(process.env.FAKE_CLAUDE_LOG, 'utf8').trim().split('\n').map(line => JSON.parse(line));
 let counter = 0;
@@ -257,4 +260,55 @@ test('parser: blocks split at any point, held prefixes, malformed headers', () =
   const bad = new CallParser();
   assert.deepEqual([...bad.feed('<dsh_call oops>{}</dsh_call>ok'), ...bad.end()], [{ text: 'ok' }]);
   assert.equal(toolsPrompt([]), '');
+});
+
+const image = (attachmentId, width = 3000, height = 2000) => ({ type: 'image', attachment: { attachmentId, name: `${attachmentId}.png`, width, height } });
+const b64 = text => Buffer.from(text).toString('base64');
+
+test('a user image is attached, downscaled to Claude bounds and marked in the text', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const message = { id: id(), role: 'user', content: [{ type: 'text', text: 'what is this?' }, image('pic1')], source: { kind: 'user' } };
+  await collect(adapter, { sessionId: 's-image', messages: [system, message] });
+  const entry = log().filter(e => e.prompt !== undefined).at(-1);
+  assert.equal(entry.prompt, 'what is this?\n[image 1 pic1.png: attached below]');
+  assert.deepEqual(entry.images, [{ type: 'image/png', data: b64('png:pic1') }]);
+  assert.deepEqual(targets.at(-1), { id: 'pic1', ...imageTarget({ width: 3000, height: 2000 }) });
+  const target = targets.at(-1);
+  assert.ok(Math.max(target.width, target.height) <= 1568 && target.width * target.height <= 1_150_000);
+  assert.deepEqual(imageTarget({ width: 400, height: 300 }), { width: 400, height: 300, maxBytes: 3_500_000 }, 'never upscaled');
+});
+
+test('an image in a tool result (read_image) reaches Claude with that result', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const first = [system, user('TOOL look')];
+  const step1 = await collect(adapter, { sessionId: 's-read-image', messages: first });
+  const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'm' } };
+  const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'read ok' }, image('shot', 800, 600)], source: { kind: 'tool', callId: call.id } };
+  await collect(adapter, { sessionId: 's-read-image', messages: [...first, assistant, result] });
+  const entry = log().filter(e => e.prompt !== undefined).at(-1);
+  assert.match(entry.prompt, /<dsh_result name="echo" index="1">\nread ok\n\[image 1 shot\.png: attached below\]\n<\/dsh_result>/);
+  assert.deepEqual(entry.images, [{ type: 'image/png', data: b64('png:shot') }]);
+});
+
+test('older images stay placeholders when a fresh process replays the history', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const old = { id: id(), role: 'user', content: [{ type: 'text', text: 'earlier' }, image('old')], source: { kind: 'user' } };
+  const assistant = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'seen' }], source: { kind: 'model', provider: 'other', model: 'm' } };
+  const now = { id: id(), role: 'user', content: [{ type: 'text', text: 'and this' }, image('new')], source: { kind: 'user' } };
+  await collect(adapter, { sessionId: 's-replay', messages: [system, old, assistant, now] });
+  const entry = log().filter(e => e.prompt !== undefined).at(-1);
+  assert.match(entry.prompt, /earlier\n\[image old\.png: not attached here\]/);
+  assert.match(entry.prompt, /and this\n\[image 1 new\.png: attached below\]/);
+  assert.deepEqual(entry.images.map(i => i.data), [b64('png:new')]);
+});
+
+test('models declare image input', async () => {
+  const adapter = adapterFor();
+  assert.deepEqual((await adapter.listModels('claude-bare-dsh'))[0].inputModalities, ['text', 'image']);
+  assert.deepEqual((await adapter.resolveModel('claude-bare-dsh', 'claude-opus-5-5')).inputModalities, ['text', 'image']);
+  adapter.dispose();
 });

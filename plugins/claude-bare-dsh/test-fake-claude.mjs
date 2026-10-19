@@ -53,8 +53,9 @@ for await (const line of createInterface({ input: process.stdin })) {
     emit({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'interrupted', usage });
     continue;
   }
-  const text = input.message.content.map(block => block.text).join('');
-  record({ prompt: text });
+  const text = input.message.content.filter(block => block.type === 'text').map(block => block.text).join('');
+  const images = input.message.content.filter(block => block.type === 'image').map(block => ({ type: block.source.media_type, data: block.source.data }));
+  record({ prompt: text, ...(images.length ? { images } : {}) });
   const results = [...text.matchAll(/<dsh_result[^>]*>\n([\s\S]*?)\n<\/dsh_result>/g)].map(match => match[1]);
   if (results.length) reply(`got: ${results.join(' | ')}`);
   else if (text.includes('SLOW')) continue;
