@@ -4,7 +4,7 @@ A modular monorepo containing extensions, LLM resilience controllers, the native
 
 > **Welcome to the workshop!**  
 > Whether you're exploring custom DSH plugins, looking for Android integration patterns, or building resilient LLM workflows, here is where to start:
-> - **[DSH Plugins](plugins/README.md):** Modular plugins for file operations (`trash`, `list`, `apply-patch`), deep research (`research`), browser automation (`browser`), audio (`music`), and session resilience.
+> - **[DSH Plugins](plugins/README.md):** Modular plugins for file operations (`trash`, `list`, `apply-patch`), deep research (`research`), browser automation (`browser`), audio (`music`), cost-aware scheduling (`peak-gate`), and session resilience.
 > - **[Android Companion](android/companion/README.md):** Native Jetpack Compose mobile client with zero-trust token handshakes, secure local downloads, and live session interaction.
 > - **[Tools & Tooling](tools/task10-profile/README.md):** Offline prompt auditing, profile portability, and clean container builds.
 
@@ -127,6 +127,7 @@ dotfiles, avoiding committing machine-specific data to Git or breaking another h
 | **[`plugins/browser/README.md`](plugins/browser/README.md)** | Hierarchical browser automation, Playwright integration, screenshots | Tool consumers |
 | **[`plugins/research/README.md`](plugins/research/README.md)** | Orchestrated search tool, evidence dumps, and multi-source connectors | Tool consumers |
 | **[`plugins/research/REDDIT.md`](plugins/research/REDDIT.md)** | Reddit OAuth read-only connector specifications | Integrators |
+| **[`plugins/peak-gate/README.md`](plugins/peak-gate/README.md)** | DeepSeek peak/off-peak hold, schedule shared with the `wait` tool, `npm run peak:plan` | Cost-conscious operators |
 | **[`plugins/session/README.md`](plugins/session/README.md)** | Session reader API, pagination, and multi-version JSONL discovery | Host / Companion engine |
 | **[`android/companion/README.md`](android/companion/README.md)** | Native Android Companion application (Architecture, UI, Security) | Mobile developers |
 | **[`android/companion/NOTIFICATIONS.md`](android/companion/NOTIFICATIONS.md)**| Android FCM push delivery and background notifications | Mobile / Cloud infra |
@@ -411,11 +412,15 @@ A template file [`.env.example`](.env.example) is available with all configurabl
 | `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | llama.cpp backend endpoint for grammar correction | Plugin: `grammar-fix` |
 | `GRAMMAR_GPT_MODEL` | `openai-codex/gpt-6-sol` | GPT model used for grammar fixes | Plugin: `grammar-fix` |
 | `GRAMMAR_GEMINI_MODEL` | `google-antigravity/gemini-3.8-flash-low` | Gemini model used for grammar fixes | Plugin: `grammar-fix` |
+| `DSH_PEAK_GATE` | *(unset)* | `off` bypasses the DeepSeek peak-hour hold for that process | Plugin: `peak-gate` |
 
 ## Validation
 
 ```fish
 npm run test:prompt-audit
+npm run test:peak-gate
+npm run test:wait
+npm run peak:plan
 npm run test:workshop
 npm run test:lts:contracts
 npm run test:project-mcp
