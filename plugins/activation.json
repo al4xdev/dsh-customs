@@ -50,7 +50,7 @@
       "module": "grammar-fix/index.mjs",
       "profiles": ["dsh-tui"],
       "config": {
-        "model": "google-antigravity/gemini-3.8-flash-low",
+        "model": "deepseek-official/deepseek-flash",
         "language": "Brazilian Portuguese (pt-BR)"
       }
     },

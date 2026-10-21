@@ -11,7 +11,11 @@ and provider lookup come from the DSH `llm` service.
 - `Ctrl+Shift+G`: open the external editor in terminals that distinguish this shortcut.
 
 The `alex-grammar-fix` entry in `plugins/activation.json` pins
-`google-antigravity/gemini-3.8-flash-low` and `Brazilian Portuguese (pt-BR)`.
+`deepseek-official/deepseek-flash` and `Brazilian Portuguese (pt-BR)`; the route
+resolves the `DEEPSEEK_API_KEY` credential, so it expects only the API-key
+DeepSeek adapter, not the account one. That entry is the source of truth: the
+`alex-grammar-fix` rows in `~/.dsh/profiles/*/cordis.patch.yml` are generated
+from it by `node tools/activate.mjs --write`.
 Change `config.model` to another `provider/model-id` or `config.language` to a
 language name or code (`pt`, `pt-BR`, `pt-PT`, `en`, etc.) to choose another
 route or output language. Model IDs may contain `/`, for example
