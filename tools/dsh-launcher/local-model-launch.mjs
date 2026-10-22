@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { applyEntryPatches, entryListSchema } from '@deepseek-ai/cordis-plugin-include';
 
@@ -65,42 +65,116 @@ function readLaunchEntries() {
     return load(dump.stdout, { schema: entryListSchema });
 }
 
-function localCompactionPatches(models, entries) {
-    const patchFor = entry => {
-        if (!entry) throw new Error('compaction-basic não encontrado; políticas existentes não serão substituídas.');
-        const config = entry.config ?? {};
-        const policies = config.modelPolicies ?? [];
-        if (!Array.isArray(policies)) throw new Error('modelPolicies não é uma lista; mantendo a configuração original.');
-        let updated = [...policies];
-        for (const model of models) {
-            const matches = policy => policy.provider === 'strata-local' && policy.model === model.id;
-            const existing = updated.find(matches) ?? {};
-            // Bound the reserve for smaller contexts too; keep enough input budget left.
-            const headroomTokens = Math.min(16384, Math.floor((model.contextWindow - model.maxTokens) / 2));
-            updated = [
-                ...updated.filter(policy => !matches(policy)),
-                { ...existing, provider: 'strata-local', model: model.id,
-                    headroomTokens, maxTokens: Math.max(1, Math.min(16384, headroomTokens)) },
-            ];
-        }
-        return { id: 'compaction-basic', config: { ...config, modelPolicies: updated } };
-    };
-    const patches = [patchFor(findEntry(entries, 'compaction-basic'))];
-    const preset = findEntry(entries, 'preset-standard');
-    const managed = findEntry(preset?.config?.plugins, 'standard-managed-plugins');
-    if (managed) {
-        // Presets mount their own isolated services later. Root patches cannot
-        // see those children: attach the override to the include that owns them.
-        // Include paths may be profile-relative (portable dotfiles); the loader
-        // resolves them against the profile directory, so read them the same way.
-        const children = load(readFileSync(resolve(profileDir, managed.config.path), 'utf8'), { schema: entryListSchema });
-        const scoped = applyEntryPatches(children, managed.config.patches, () => {});
-        const scopedPatch = patchFor(findEntry(scoped, 'compaction-basic'));
-        const update = rows => rows.map(row => row === managed
-            ? { ...row, config: { ...row.config, patches: [...(row.config.patches ?? []), scopedPatch] } }
-            : row.group && Array.isArray(row.config) ? { ...row, config: update(row.config) } : row);
-        patches.push({ id: preset.id, config: { ...preset.config, plugins: update(preset.config.plugins) } });
+const INCLUDE = '@deepseek-ai/cordis-plugin-include';
+
+function isInclude(entry) {
+    return entry?.name === INCLUDE && typeof entry?.config?.path === 'string';
+}
+
+// Include rows at any depth of one file: a group may wrap an include, and the parent's
+// patch list reaches a group's children by id too.
+function includeRows(rows) {
+    return (rows ?? []).flatMap(row => [
+        ...(isInclude(row) ? [row] : []),
+        ...(row?.group && Array.isArray(row?.config) ? includeRows(row.config) : []),
+    ]);
+}
+
+// One row patch for a compaction-basic entry. Default headroomTokens is 65536, so a
+// routed request that reserves 32768 output tokens triggers at
+// 131072 - 32768 - 65536 = 32768 tokens: ~32k on a 128k model. A quarter of the
+// message budget (capped at 16k) keeps a usable reserve and moves that trigger to
+// ~82k, which is what the earlier bonsai-only policy did.
+function compactionPolicy(entry) {
+    if (!entry) throw new Error('compaction-basic não encontrado; políticas existentes não serão substituídas.');
+    const config = entry.config ?? {};
+    const policies = config.modelPolicies ?? [];
+    if (!Array.isArray(policies)) throw new Error('modelPolicies não é uma lista; mantendo a configuração original.');
+    let updated = [...policies];
+    for (const model of localModels) {
+        const matches = policy => policy.provider === 'strata-local' && policy.model === model.id;
+        const existing = updated.find(matches) ?? {};
+        const headroomTokens = model.headroomTokens;
+        updated = [
+            ...updated.filter(policy => !matches(policy)),
+            { ...existing, provider: 'strata-local', model: model.id, headroomTokens,
+                maxTokens: Math.max(1, Math.min(16384, headroomTokens)) },
+        ];
     }
+    return { id: 'compaction-basic', config: { ...config, modelPolicies: updated } };
+}
+
+// Presets mount their own isolated compaction service, so a root patch never reaches
+// a session. The row also sits behind more than one include now (research activation
+// wraps every preset's plugin list in an alex-research-*.yml derivative), hence the
+// walk instead of one known include id: carry the policy down to whichever include
+// file owns compaction-basic.
+function patchInclude(row, base, seen) {
+    if (!isInclude(row)) return;
+    const file = resolve(base, row.config.path);
+    if (seen.has(file)) return; // include cycle on this chain only
+    seen.add(file);
+    try {
+        let children;
+        try {
+            children = load(readFileSync(file, 'utf8'), { schema: entryListSchema });
+        } catch {
+            return; // unreadable include: the loader reports it and nothing here is ours
+        }
+        const scoped = applyEntryPatches(children, row.config.patches, () => {});
+        const own = findEntry(scoped, 'compaction-basic');
+        if (own) {
+            return { ...row, config: { ...row.config, patches: [...(row.config.patches ?? []), compactionPolicy(own)] } };
+        }
+        const patches = [...(row.config.patches ?? [])];
+        let carried = false;
+        for (const child of includeRows(scoped)) {
+            const nested = patchInclude(child, dirname(file), seen);
+            if (!nested) continue;
+            patches.push({ id: nested.id, config: nested.config });
+            carried = true;
+        }
+        return carried ? { ...row, config: { ...row.config, patches } } : undefined;
+    } finally {
+        seen.delete(file);
+    }
+}
+
+// Inline rows and includes, at any depth of a preset's plugin list.
+function patchRows(rows, base, seen) {
+    let changed = false;
+    const updated = rows.map(row => {
+        if (row?.id === 'compaction-basic') {
+            changed = true;
+            return { ...row, config: compactionPolicy(row).config };
+        }
+        const included = patchInclude(row, base, seen);
+        if (included) {
+            changed = true;
+            return included;
+        }
+        if (row?.group && Array.isArray(row?.config)) {
+            const inner = patchRows(row.config, base, seen);
+            if (inner.changed) {
+                changed = true;
+                return { ...row, config: inner.rows };
+            }
+        }
+        return row;
+    });
+    return { rows: updated, changed };
+}
+
+function localCompactionPatches(entries) {
+    const patches = [];
+    const root = findEntry(entries, 'compaction-basic');
+    if (root) patches.push(compactionPolicy(root));
+    for (const preset of entries) {
+        if (!/^preset-/.test(preset?.id ?? '') || !Array.isArray(preset?.config?.plugins)) continue;
+        const patched = patchRows(preset.config.plugins, profileDir, new Set());
+        if (patched.changed) patches.push({ id: preset.id, config: { ...preset.config, plugins: patched.rows } });
+    }
+    if (!patches.length) throw new Error('compaction-basic não encontrado; políticas existentes não serão substituídas.');
     return patches;
 }
 
@@ -154,6 +228,14 @@ try {
     process.stderr.write(`dsht: configuração efetiva não lida: ${error.message}\n`);
 }
 const models = [...catalog.values()];
+// Every local route gets a policy, not only the bonsai: the default 65k headroom
+// makes any 128k local model compact at ~32k. A model whose window barely exceeds its
+// output reservation keeps the default (and dsh warns) instead of compacting every
+// turn; that pair needs a smaller catalog maxTokens, not a tiny headroom.
+const localModels = models
+    .map(model => ({ ...model, budget: model.contextWindow - model.maxTokens }))
+    .filter(model => Number.isInteger(model.budget) && model.budget >= 8192)
+    .map(({ budget, ...model }) => ({ ...model, headroomTokens: Math.min(16384, Math.floor(budget / 4)) }));
 const providerConfig = findEntry(entries, 'llm-pi-ai')?.config ?? {};
 const patch = [{ id: 'llm-pi-ai', config: {
     ...providerConfig,
@@ -166,7 +248,7 @@ const patch = [{ id: 'llm-pi-ai', config: {
 } }];
 if (entries) {
     try {
-        patch.push(...localCompactionPatches(models.filter(model => /ternary-bonsai-2-27b/i.test(model.id)), entries));
+        patch.push(...localCompactionPatches(entries));
     } catch (error) {
         // A policy failure must not hide an otherwise usable local catalog.
         process.stderr.write(`dsht: compactação local não ajustada: ${error.message}\n`);

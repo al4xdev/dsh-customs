@@ -18,6 +18,7 @@
     "test:workspace-context": "node --test plugins/workspace-context/workspace-context.test.mjs",
     "test:list": "node --test plugins/list/list.test.mjs",
     "test:apply-patch": "node --test plugins/apply-patch/apply-patch.test.mjs",
+    "test:launcher": "node --test tools/dsh-launcher/*.test.mjs",
     "test:grammar": "node --test plugins/grammar-fix/grammar-fix.test.mjs plugins/grammar-fix/language-alias.test.mjs && node tools/task10-profile/grammar-config-check.mjs",
     "test:grammar:live": "node plugins/grammar-fix/live-check.mjs",
     "test:project-mcp": "node --test plugins/project-mcp/project-mcp.test.mjs",

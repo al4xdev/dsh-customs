@@ -105,6 +105,11 @@ dev checkouts `frontend/dsh-tui` (`custom`) and `plugins/dsh-antigravity` (`main
 symlinks `~/.dsh/profiles/{,dsh-tui/}node_modules` → runtime, and the launcher
 `tools/dsh-launcher/local-model-launch.mjs` copied to runtime. OAuth login is
 manual in the TUI; initial launch displays the welcome guide (`Esc` skips).
+The launcher also bounds automatic compaction for every local route: `headroomTokens`
+becomes a quarter of the message budget (capped at 16k), because the shipped 65k
+default makes a 128k model compact at ~32k. Presets mount their own isolated compaction
+service, so the policy is carried down the `alex-research-*.yml` include chain instead
+of a single known include id.
 
 **Portable profiles.** DSH anchors the loader `baseUrl` to the profile directory, and
 `name:`/`path:` starting with `./` or `../` resolve relative to it. Thus the
@@ -418,6 +423,7 @@ A template file [`.env.example`](.env.example) is available with all configurabl
 
 ```fish
 npm run test:prompt-audit
+npm run test:launcher
 npm run test:peak-gate
 npm run test:wait
 npm run peak:plan
