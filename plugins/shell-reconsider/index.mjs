@@ -327,33 +327,30 @@ const fingerprint = value => JSON.stringify(value, (_key, item) => item && typeo
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 
 /**
- * Relaxes the description requirement on the bash tool:
- * 1. Removes 'description' from parameters.required so schema validation passes.
- * 2. Augments exec.arguments in tools/execute if description is omitted by the model.
- * 3. Wraps bash.execute as a fallback.
+ * Fills a missing bash `description` without touching the advertised schema.
+ *
+ * The tool catalog is part of the request prefix. Removing 'description' from
+ * parameters.required after the first request rewrites that prefix, and the
+ * provider then re-evaluates the whole conversation from the tool block on —
+ * once per session, at the first bash call, for a field the model may not even
+ * omit. The fill runs before dispatchToolBody validates arguments, so the schema
+ * can stay exactly as the bash tool ships it.
  */
 export function apply(ctx, config = {}) {
   const patchBash = agent => {
     const bash = ctx.tools.get('bash', agent) ?? ctx.tools.get('bash');
-    if (!bash) return;
-
-    if (bash.parameters?.required && Array.isArray(bash.parameters.required)) {
-      bash.parameters.required = bash.parameters.required.filter(key => key !== 'description');
-    }
-
-    if (!bash._descriptionRelaxed) {
-      bash._descriptionRelaxed = true;
-      const originalExecute = bash.execute;
-      bash.execute = async function (args, exec) {
-        const normalized = { ...args };
-        if (typeof normalized.description !== 'string' || normalized.description.trim().length === 0) {
-          normalized.description = typeof normalized.command === 'string' && normalized.command.trim()
-            ? `Run: ${normalized.command.slice(0, 60)}`
-            : 'Execute bash command';
-        }
-        return originalExecute.call(this, normalized, exec);
-      };
-    }
+    if (!bash || bash._descriptionRelaxed) return;
+    bash._descriptionRelaxed = true;
+    const originalExecute = bash.execute;
+    bash.execute = async function (args, exec) {
+      const normalized = { ...args };
+      if (typeof normalized.description !== 'string' || normalized.description.trim().length === 0) {
+        normalized.description = typeof normalized.command === 'string' && normalized.command.trim()
+          ? `Run: ${normalized.command.slice(0, 60)}`
+          : 'Execute bash command';
+      }
+      return originalExecute.call(this, normalized, exec);
+    };
   };
 
   patchBash();
@@ -385,7 +382,7 @@ export function apply(ctx, config = {}) {
   const states = new WeakMap();
   const stateOf = session => {
     let state = states.get(session);
-    if (!state) states.set(session, state = { ticks: 0, last: null, pending: null, permit: null, notices: new Map() });
+    if (!state) states.set(session, state = { ticks: 0, last: null, pending: null, permit: null });
     return state;
   };
 
@@ -418,12 +415,10 @@ export function apply(ctx, config = {}) {
     // path; read/list/grep denials point at the native tool and need no permit.
     if (check.type === 'destructive' || check.type === 'compound') {
       state.pending = key;
-      state.notices.set(exec.callId, { event: null, exposed: false });
       return { kind: 'deny', reason: check.reason };
     }
 
     // Read/list/grep operations: direct deny pointing to native tools (read, list, glob, grep).
-    state.notices.set(exec.callId, { event: null, exposed: false });
     return { kind: 'deny', reason: check.reason };
   }, true);
 
@@ -443,25 +438,10 @@ export function apply(ctx, config = {}) {
     },
   }));
 
-  ctx.on('session/event', (session, event) => {
-    if (event.type !== 'tool/result' || event.surfaceOp !== 'append') return;
-    const entry = states.get(session)?.notices.get(event.data.message.toolCallId);
-    if (entry) entry.event = event;
-  });
-  ctx.on('agent/pre-step', async ({ agent }, next) => {
-    const state = states.get(agent.session);
-    if (state) for (const [callId, entry] of state.notices) {
-      if (!entry.event) continue;
-      if (!entry.exposed) { entry.exposed = true; continue; }
-      const event = entry.event;
-      // Keep immutable audit history and tool-call pairing, but remove the instruction
-      // from future model requests after the model has had one opportunity to see it.
-      if (agent.session.surface.nodes.includes(event.seq)) agent.session.append('tool/result', {
-        ...event.data,
-        message: { ...event.data.message, content: [{ type: 'text', text: 'Shell was not executed.' }] },
-      }, { surfaceOp: { op: 'replace', startSeq: event.seq, endSeq: event.seq }, sourceEventSeqs: [event.seq] });
-      state.notices.delete(callId);
-    }
-    return next();
-  });
+  // The denial stays in history verbatim. Rewriting it one step later would
+  // replace a message in the middle of the conversation: the provider then
+  // re-evaluates everything after it, and the bumped content generation forces
+  // the next system-prompt projection onto its replace path. One redirect line
+  // per denial is far cheaper than a prefix rewrite, and the permit state that
+  // actually decides the retry lives in `pending`/`permit`, not in that text.
 }

@@ -31,11 +31,11 @@ This reads command text; it is not a security boundary. It does not sandbox anyt
 - `interval`: positive integer, default `50` (retained for backward compatibility).
 - `unit`: `steps` or `turns` (retained for backward compatibility).
 
-## State and notices
+## State and denials
 
 Pending decisions and grants expire at the next agent turn; state is process-local, per session, and reset on restart. PTC/run_code nested bash calls are intentionally not intercepted: an inner program cannot request a separate model decision.
 
-The notice is available for one following model step. Before later steps its result content is replaced on the supported model surface with neutral text. The original audit transcript remains intact. This does **not** erase the assistant's own prose/reasoning or confirmation call; those cannot safely be stripped by this small plugin. A restart before cleanup can retain an outstanding notice.
+A denial is an ordinary tool result and stays in the transcript exactly as the model received it. It is never rewritten, retracted or re-rendered: replacing a message mid-history makes the provider re-evaluate every token after it, which costs more than the one redirect line the denial carries. The permission state that decides a retry lives in the plugin's own per-session `pending`/`permit` fields, so nothing about the guard depends on editing earlier messages.
 
 Activation is intentionally separate: the adjacent `cordis.patch.yml` inserts only this plugin, with paths relative to the overlay. Load it as an additional DSH overlay, or insert the entry in your selected profile. Do not install the same entry twice.
 
