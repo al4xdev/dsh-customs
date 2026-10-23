@@ -124,6 +124,20 @@ test('an include cycle ends the walk instead of recursing forever', { skip }, as
     assert.deepEqual(patch.map(row => row.id), ['llm-pi-ai', 'compaction-basic'], 'root policy only, no preset patch');
 });
 
+test('the bonsai catalog offers only reasoning levels its template accepts', { skip }, async () => {
+    const patch = await runLauncher();
+    const provider = patch.find(row => row.id === 'llm-pi-ai').config.providers['strata-local'];
+    const bonsai = provider.models.find(model => model.id === 'Ternary-Bonsai-2-27B-PQ2_0');
+    // The template resolves xhigh (its own default), medium and low, renders the
+    // value into the prompt head, and raises on anything else. A rejected level is
+    // a Jinja 500; a changed one costs the whole prefix cache.
+    assert.deepEqual(Object.keys(bonsai.reasoningEfforts).sort(), ['high', 'low', 'medium', 'xhigh']);
+    for (const [id, wire] of Object.entries(bonsai.reasoningEfforts)) {
+        assert.ok(['xhigh', 'medium', 'low'].includes(wire), `level ${id} sends "${wire}", which the template rejects`);
+    }
+    assert.equal(bonsai.reasoningEfforts.low, 'low', 'low stays selectable: this model over-thinks at xhigh');
+});
+
 test('an include wrapped in a group is still reached', { skip }, async () => {
     const grouped = `- id: wrapper
   name: cordis:group

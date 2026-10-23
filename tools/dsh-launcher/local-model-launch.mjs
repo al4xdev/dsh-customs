@@ -31,7 +31,7 @@ const profileDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'profil
 const bonsaiModel = {
     id: 'Ternary-Bonsai-2-27B-PQ2_0', name: 'Bonsai 2 27B (QW)',
     contextWindow: 131072, maxTokens: 32768, input: ['text', 'image'],
-    reasoningEfforts: { off: 'none', medium: 'medium', high: 'xhigh', xhigh: 'xhigh' },
+    reasoningEfforts: { low: 'low', medium: 'medium', high: 'xhigh', xhigh: 'xhigh' },
     compat: { supportsReasoningEffort: true, requiresReasoningContentOnAssistantMessages: false },
 };
 
@@ -205,7 +205,12 @@ try {
         ? caps.supports_reasoning_effort : known?.compat.supportsReasoningEffort === true;
     const bonsai = /ternary-bonsai-2-27b/i.test(chosen.id);
     const reasoningEfforts = bonsai
-        ? { off: 'none', medium: 'medium', high: 'xhigh', xhigh: 'xhigh' }
+        // This template accepts exactly xhigh (its own default), medium and low,
+        // and renders the chosen level into the prompt head. A level it rejects
+        // fails the request with a Jinja 500, and a level that changes mid-session
+        // costs the whole prefix cache. There is no 'off': thinking is switched
+        // through enable_thinking, which this adapter cannot send.
+        ? { low: 'low', medium: 'medium', high: 'xhigh', xhigh: 'xhigh' }
         : { off: 'none', low: 'low', medium: 'medium', high: 'high' };
     const model = {
         id: chosen.id,
