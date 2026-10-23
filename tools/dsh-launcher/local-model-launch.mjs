@@ -30,7 +30,7 @@ const profileDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'profil
 // wins at launch; a server started later must use this context until TUI restart.
 const bonsaiModel = {
     id: 'Ternary-Bonsai-2-27B-PQ2_0', name: 'Bonsai 2 27B (QW)',
-    contextWindow: 131072, maxTokens: 32768, input: ['text', 'image'],
+    contextWindow: 131072, maxTokens: 16384, input: ['text', 'image'],
     reasoningEfforts: { low: 'low', medium: 'medium', high: 'xhigh', xhigh: 'xhigh' },
     compat: { supportsReasoningEffort: true, requiresReasoningContentOnAssistantMessages: false },
 };
@@ -40,7 +40,7 @@ const bonsaiModel = {
 const gemmaModel = {
     id: '/home/alex/.cache/huggingface/hub/models--EZForever--gemma-4-26B-A4B-it-qat-uncensored-heretic-UDmerge-GGUF/snapshots/9567a9ca99f1ee12c9d43082c7351f24b4feef63/gemma-4-26B-A4B-it-qat-uncensored-heretic-UDmerge-Q4_K_XXL.gguf',
     name: 'Gemma 4 26B Local (Q4_K_XXL)',
-    contextWindow: 65536, maxTokens: 32768, input: ['text', 'image'],
+    contextWindow: 65536, maxTokens: 16384, input: ['text', 'image'],
     reasoningEfforts: false,
     compat: { supportsReasoningEffort: false, requiresReasoningContentOnAssistantMessages: false },
 };
@@ -82,9 +82,9 @@ function includeRows(rows) {
 
 // One row patch for a compaction-basic entry. Default headroomTokens is 65536, so a
 // routed request that reserves 32768 output tokens triggers at
-// 131072 - 32768 - 65536 = 32768 tokens: ~32k on a 128k model. A quarter of the
-// message budget (capped at 16k) keeps a usable reserve and moves that trigger to
-// ~82k, which is what the earlier bonsai-only policy did.
+// 131072 - 32768 - 65536 = 32768 tokens: ~32k on a 128k model. The headroom is
+// computed below as half of the room left after the output reservation, which puts
+// the trigger at 70% of the window: 98.304 on the 27B, 45.056 on a 64k model.
 function compactionPolicy(entry) {
     if (!entry) throw new Error('compaction-basic não encontrado; políticas existentes não serão substituídas.');
     const config = entry.config ?? {};
@@ -94,11 +94,13 @@ function compactionPolicy(entry) {
     for (const model of localModels) {
         const matches = policy => policy.provider === 'strata-local' && policy.model === model.id;
         const existing = updated.find(matches) ?? {};
-        const headroomTokens = model.headroomTokens;
         updated = [
             ...updated.filter(policy => !matches(policy)),
-            { ...existing, provider: 'strata-local', model: model.id, headroomTokens,
-                maxTokens: Math.max(1, Math.min(16384, headroomTokens)) },
+            { ...existing, provider: 'strata-local', model: model.id,
+                // The summarizer's own output budget; kept well under the headroom it
+                // has to work in, and never the old fixed 16k ceiling on the headroom.
+                maxTokens: Math.max(1, Math.min(16384, model.maxTokens)),
+                headroomTokens: model.headroomTokens },
         ];
     }
     return { id: 'compaction-basic', config: { ...config, modelPolicies: updated } };
@@ -216,7 +218,12 @@ try {
         id: chosen.id,
         name: known?.name ?? chosen.id.split('/').pop(),
         contextWindow: context,
-        maxTokens: Math.min(32768, context - 1),
+        // 16k, not 32k: the output reservation is one of the two terms that decide the
+        // compaction trigger (context - reservation - headroom). Halving it moves the
+        // 27B from 82k to 98k, so a long session re-reads its own history far less
+        // often; the longest generation observed on this model was 6.5k tokens. It
+        // stays above the 8k headroom floor, so `budget >= 8192` keeps every route.
+        maxTokens: Math.min(16384, context - 1),
         input: ['text', ...(vision ? ['image'] : [])],
         reasoningEfforts: effort ? reasoningEfforts : false,
         compat: { supportsReasoningEffort: effort,
@@ -238,9 +245,12 @@ const models = [...catalog.values()];
 // output reservation keeps the default (and dsh warns) instead of compacting every
 // turn; that pair needs a smaller catalog maxTokens, not a tiny headroom.
 const localModels = models
-    .map(model => ({ ...model, budget: model.contextWindow - model.maxTokens }))
-    .filter(model => Number.isInteger(model.budget) && model.budget >= 8192)
-    .map(({ budget, ...model }) => ({ ...model, headroomTokens: Math.min(16384, Math.floor(budget / 4)) }));
+    // The trigger is context - maxTokens - headroomTokens, so the headroom is
+    // subtracted once and the reservation once. A fifth of the window leaves the
+    // summarizer 20% to work in and moves the trigger to 88.384 on the 27B and
+    // 44.032 on a 64k model, instead of the 82k a quarter-of-window cap produced,
+    // where every compaction re-evaluated ~82k tokens.
+    .map(model => ({ ...model, headroomTokens: Math.floor(model.contextWindow / 5) }));
 const providerConfig = findEntry(entries, 'llm-pi-ai')?.config ?? {};
 const patch = [{ id: 'llm-pi-ai', config: {
     ...providerConfig,

@@ -102,7 +102,9 @@ test('carries the local compaction policy down the preset include chain', { skip
     const patch = await runLauncher();
     const root = patch.find(row => row.id === 'compaction-basic');
     assert.deepEqual(root.config.modelPolicies.find(policy => policy.model === 'Ternary-Bonsai-2-27B-PQ2_0'),
-        { provider: 'strata-local', model: 'Ternary-Bonsai-2-27B-PQ2_0', headroomTokens: 16384, maxTokens: 16384 });
+        // A fifth of the 131072 window: with the 16k output reservation the session may
+        // fill 88.474 tokens before the summarizer is invoked.
+        { provider: 'strata-local', model: 'Ternary-Bonsai-2-27B-PQ2_0', headroomTokens: 26214, maxTokens: 16384 });
     assert.ok(root.config.modelPolicies.some(policy => policy.model === 'gpt-x'), 'existing root policies survive');
 
     const preset = patch.find(row => row.id === 'preset-standard');
@@ -113,9 +115,11 @@ test('carries the local compaction policy down the preset include chain', { skip
     const [inner] = carried.config.patches;
     assert.equal(inner.id, 'compaction-basic');
     const bonsai = inner.config.modelPolicies.find(policy => policy.model === 'Ternary-Bonsai-2-27B-PQ2_0');
-    assert.equal(bonsai.headroomTokens, 16384, 'policy reaches the row the preset actually mounts');
+    assert.equal(bonsai.headroomTokens, 26214, 'policy reaches the row the preset actually mounts');
     assert.ok(inner.config.modelPolicies.some(policy => policy.model === 'gpt-x'), 'the scoped row keeps its own policies');
-    assert.ok(inner.config.modelPolicies.some(policy => policy.provider === 'strata-local' && policy.model.endsWith('.gguf') && policy.headroomTokens === 8192),
+    // The 64k Gemma entry gets a fifth of its own window (13107), so the policy must
+    // reach that route too.
+    assert.ok(inner.config.modelPolicies.some(policy => policy.provider === 'strata-local' && policy.model.endsWith('.gguf') && policy.headroomTokens === 13107),
         'every local model gets a policy, not only the bonsai');
 });
 
@@ -136,6 +140,30 @@ test('the bonsai catalog offers only reasoning levels its template accepts', { s
         assert.ok(['xhigh', 'medium', 'low'].includes(wire), `level ${id} sends "${wire}", which the template rejects`);
     }
     assert.equal(bonsai.reasoningEfforts.low, 'low', 'low stays selectable: this model over-thinks at xhigh');
+});
+
+test('local routes reserve 16k of output and leave a fifth of the window to the summarizer', { skip }, async () => {
+    const patch = await runLauncher();
+    const provider = patch.find(row => row.id === 'llm-pi-ai').config.providers['strata-local'];
+    const policies = patch.find(row => row.id === 'compaction-basic').config.modelPolicies;
+    // The offline Gemma entry is a 64k window: a 16k reservation plus a 13k fifth
+    // leaves 55% to the session, the best a small window can do. The ratio is
+    // asserted on the model this rig actually boots.
+    const booted = provider.models.filter(model => !model.id.endsWith('.gguf'));
+    assert.ok(booted.length > 0, 'the fixture catalog has a booted route');
+    for (const model of booted) {
+        assert.ok(model.maxTokens <= 16384, `${model.name} reserves ${model.maxTokens} output tokens`);
+        const policy = policies.find(candidate => candidate.model === model.id);
+        assert.ok(policy, `${model.name} has a compaction policy`);
+        // The harness reads the trigger as context - maxTokens - headroomTokens, so the
+        // headroom is what is left for the summarizer: a fifth of the window, which
+        // keeps the session well past the old 62% trigger without starving compaction.
+        assert.equal(policy.headroomTokens, Math.floor(model.contextWindow / 5),
+            `${model.name} keeps ${policy.headroomTokens} tokens for the summarizer`);
+        const trigger = model.contextWindow - model.maxTokens - policy.headroomTokens;
+        assert.ok(trigger >= model.contextWindow * 0.65,
+            `${model.name} triggers compaction at ${trigger} of ${model.contextWindow}`);
+    }
 });
 
 test('an include wrapped in a group is still reached', { skip }, async () => {
