@@ -33,3 +33,15 @@ export function buildSystemPrompt(language) {
     '- Reply with ONLY the corrected text. No explanations, no quotes, no preamble.',
   ].join('\n');
 }
+
+export function buildNaturalTipPrompt() {
+  return [
+    'You are an English language coach for software developers.',
+    'Given the user draft and its grammatically corrected version, suggest ONE short, practical tip or alternative phrasing that sounds more natural in English.',
+    'Rules:',
+    '- If the text is already completely natural, reply with NOTHING (empty text).',
+    '- Reply with ONLY the tip starting with 💡, on ONE line, maximum 120 characters.',
+    '- Example: 💡 Tip: "Did you commit yet?" sounds more natural in casual dev chat.',
+    '- Do NOT add greetings, preamble, quotes around the tip, or multiple bullet points.',
+  ].join('\n');
+}

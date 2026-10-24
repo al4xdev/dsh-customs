@@ -52,6 +52,9 @@ test('rejects invalid configuration and missing model/service', async (t) => {
   for (const language of ['', ' ', 'two\nlines', 'x'.repeat(81)]) {
     assert.throws(() => apply({}, { language }), /language must/);
   }
+  for (const naturalTips of ['true', 1, {}]) {
+    assert.throws(() => apply({}, { naturalTips }), /naturalTips must be a boolean/);
+  }
   const { bridge, ctx } = setup(t);
   await assert.rejects(bridge.fix('draft'), /No model/);
   ctx.llm.stream = undefined;
@@ -69,6 +72,15 @@ test('slash command with text corrects the body while preserving command prefix'
   assert.equal(await bridge.fix('/btw She have two file.', current), '/btw Corrected.');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].messages[0].content[0].text, 'She have two file.');
+});
+
+test('suggestTip generates natural phrasing tips when enabled, empty when disabled', async (t) => {
+  const { bridge } = setup(t, {}, { naturalTips: false });
+  assert.equal(await bridge.suggestTip('have you committed', 'Have you committed?', current), '');
+  const { bridge: enabledBridge, requests } = setup(t, {}, { naturalTips: true });
+  assert.equal(await enabledBridge.suggestTip('have you committed', 'Have you committed?', current), 'Corrected.');
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].messages[0].content[0].text, /Draft: have you committed/);
 });
 
 test('unsupported reasoning effort retries only supported candidates', async (t) => {

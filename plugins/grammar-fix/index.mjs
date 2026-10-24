@@ -1,4 +1,4 @@
-import { buildSystemPrompt, languageLabel } from './prompt.mjs';
+import { buildNaturalTipPrompt, buildSystemPrompt, languageLabel } from './prompt.mjs';
 
 export const name = 'grammar-fix';
 export const inject = ['llm'];
@@ -105,6 +105,9 @@ export function apply(ctx, config = {}) {
   if (config.language !== undefined && (typeof config.language !== 'string' || !config.language.trim() || config.language.length > 80 || /[\r\n\0]/.test(config.language))) {
     throw new Error('language must be nonempty text up to 80 characters on one line.');
   }
+  if (config.naturalTips !== undefined && typeof config.naturalTips !== 'boolean') {
+    throw new Error('naturalTips must be a boolean.');
+  }
   let busy = false;
   let disposed = false;
   let activeAbort;
@@ -119,7 +122,36 @@ export function apply(ctx, config = {}) {
       return {
         model: selectModel(current)?.model ?? 'Session model',
         language: languageLabel(config.language),
+        naturalTips: Boolean(config.naturalTips),
       };
+    },
+    async suggestTip(original, corrected, current, signal) {
+      if (disposed || !config.naturalTips) return '';
+      if (!original?.trim() || !corrected?.trim()) return '';
+      const selected = selectModel(current);
+      if (!selected?.provider || !selected?.model || !ctx.llm?.stream) return '';
+      const options = {
+        provider: selected.provider,
+        model: selected.model,
+        maxTokens: 256,
+        system: buildNaturalTipPrompt(),
+        messages: [{
+          role: 'user',
+          content: [{ type: 'text', text: `Draft: ${original}\nCorrected: ${corrected}` }],
+        }],
+        signal,
+      };
+      let tip = '';
+      try {
+        for await (const chunk of ctx.llm.stream(options)) {
+          if (signal?.aborted) return '';
+          if (chunk.type === 'text-delta') tip += chunk.text;
+          if (chunk.type === 'finish' && chunk.reason.kind === 'error') return '';
+        }
+        return tip.trim();
+      } catch {
+        return '';
+      }
     },
     async fix(text, current, signal, onProgress) {
       signal?.throwIfAborted();

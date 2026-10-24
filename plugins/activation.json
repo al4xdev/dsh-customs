@@ -51,7 +51,8 @@
       "profiles": ["dsh-tui"],
       "config": {
         "model": "deepseek-official/deepseek-flash",
-        "language": "en"
+        "language": "en",
+        "naturalTips": true
       }
     },
     {
