@@ -25,7 +25,7 @@
       name: /home/alex/git/my/dsh-customs/plugins/grammar-fix/index.mjs
       config:
         model: deepseek-official/deepseek-flash
-        language: Brazilian Portuguese (pt-BR)
+        language: en
     - id: alex-managed-plans
       name: /home/alex/git/my/dsh-customs/plugins/managed-plans/index.mjs
       config:

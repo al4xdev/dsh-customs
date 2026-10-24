@@ -51,7 +51,7 @@
       "profiles": ["dsh-tui"],
       "config": {
         "model": "deepseek-official/deepseek-flash",
-        "language": "Brazilian Portuguese (pt-BR)"
+        "language": "en"
       }
     },
     {
