@@ -125,7 +125,12 @@ export function apply(ctx, config = {}) {
       signal?.throwIfAborted();
       if (disposed) throw new Error('Grammar fixer unloaded; draft preserved.');
       if (busy) throw new Error('A correction is already in progress.');
-      if (!text.trim() || text.trimStart().startsWith('/')) return text;
+      if (!text.trim()) return text;
+      const commandMatch = text.match(/^(\s*\/\S+\s+)([\s\S]+)$/);
+      if (text.trimStart().startsWith('/') && !commandMatch) return text;
+      const prefix = commandMatch ? commandMatch[1] : '';
+      const body = commandMatch ? commandMatch[2] : text;
+      if (!body.trim()) return text;
       busy = true;
       const abort = new AbortController();
       activeAbort = abort;
@@ -143,7 +148,8 @@ export function apply(ctx, config = {}) {
           let lastError;
           for (const effort of candidates) {
             try {
-              return await streamCorrection(ctx, selected, text, effort, combinedSignal, config.language);
+              const corrected = await streamCorrection(ctx, selected, body, effort, combinedSignal, config.language);
+              return prefix + corrected;
             } catch (error) {
               lastError = error;
               combinedSignal.throwIfAborted();

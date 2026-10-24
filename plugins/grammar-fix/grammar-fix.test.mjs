@@ -58,10 +58,17 @@ test('rejects invalid configuration and missing model/service', async (t) => {
   await assert.rejects(bridge.fix('draft', current), /no LLM service/);
 });
 
-test('blank drafts and slash commands never call LLM', async (t) => {
+test('blank drafts and bare slash commands never call LLM', async (t) => {
   const { bridge, requests } = setup(t);
-  for (const draft of ['', '  ', '  /help']) assert.equal(await bridge.fix(draft, current), draft);
+  for (const draft of ['', '  ', '  /help', '/btw', '  /clear  ']) assert.equal(await bridge.fix(draft, current), draft);
   assert.equal(requests.length, 0);
+});
+
+test('slash command with text corrects the body while preserving command prefix', async (t) => {
+  const { bridge, requests } = setup(t);
+  assert.equal(await bridge.fix('/btw She have two file.', current), '/btw Corrected.');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].messages[0].content[0].text, 'She have two file.');
 });
 
 test('unsupported reasoning effort retries only supported candidates', async (t) => {
