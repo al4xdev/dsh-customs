@@ -245,12 +245,17 @@ const models = [...catalog.values()];
 // output reservation keeps the default (and dsh warns) instead of compacting every
 // turn; that pair needs a smaller catalog maxTokens, not a tiny headroom.
 const localModels = models
-    // The trigger is context - maxTokens - headroomTokens, so the headroom is
-    // subtracted once and the reservation once. A fifth of the window leaves the
-    // summarizer 20% to work in and moves the trigger to 88.384 on the 27B and
-    // 44.032 on a 64k model, instead of the 82k a quarter-of-window cap produced,
-    // where every compaction re-evaluated ~82k tokens.
-    .map(model => ({ ...model, headroomTokens: Math.floor(model.contextWindow / 5) }));
+    // The trigger is context - maxTokens - headroomTokens, so both terms are
+    // subtracted once. A fixed 8k headroom is what the summarizer needs to work in
+    // and puts the 27B trigger at 106.688 of 131.072 (was 81.920 with the shipped
+    // 65k default, then 88.474 at a fifth of the window). Each compaction costs
+    // roughly twice the context in prefill — one pass to summarize, one to warm the
+    // compacted history — so a later trigger buys fewer of them. Half the remaining
+    // room caps it for small windows, where 8k would starve the session.
+    .map(model => ({
+        ...model,
+        headroomTokens: Math.min(8000, Math.max(1, Math.floor((model.contextWindow - model.maxTokens) / 2))),
+    }));
 const providerConfig = findEntry(entries, 'llm-pi-ai')?.config ?? {};
 const patch = [{ id: 'llm-pi-ai', config: {
     ...providerConfig,
