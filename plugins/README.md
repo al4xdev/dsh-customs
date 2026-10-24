@@ -20,7 +20,7 @@ This directory contains modular extensions for the DeepSeek Harness (DSH) runtim
 | **`grammar-fix`** | Hybrid | LLM provider endpoint | Yes (`dsh-tui` only) | Draft grammar correction via `Ctrl+G` shortcut. |
 | **`browser`** | External tool | Playwright browsers | No | Isolated Page-bound Chromium automation and screenshots. |
 | **`research`** | External tool | Internet (optional Context7) | No | Multi-source parallel web, HN, code and Reddit search. |
-| **`music`** | External tool | `simp_mcp` repo + `uv` | No | Local media player integration and MCP audio bridge. |
+| **`music`** | External tool | `kiosktunes-mcp` repo + `uv` | No | Local media player integration and MCP audio bridge. |
 | **`session`** | Companion | DSH Session JSONL | Used with Companion bridge | Reader and navigation engine for past session transcripts. |
 | **`session-create`** | Companion | DSH Host | Used with Companion | Native tool to create and bootstrap fresh DSH sessions. |
 | **`companion-transport`**| Companion | HTTP/1 / WebSocket | Yes (Companion backend) | Wire budget guards, origin verification, and framing. |

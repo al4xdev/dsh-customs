@@ -87,8 +87,8 @@ export function parseInput(raw) {
 }
 
 export function resolveConfig(config = {}, env = process.env, home = homedir()) {
-  const project = config.projectPath ?? env.SIMP_MCP_PROJECT ?? join(home, 'git/my/simp_mcp');
-  const uv = config.uvBinary ?? env.SIMP_MCP_UV ?? 'uv';
+  const project = config.projectPath ?? env.KIOSKTUNES_PROJECT ?? env.SIMP_MCP_PROJECT ?? join(home, 'git/my/kiosktunes-mcp');
+  const uv = config.uvBinary ?? env.KIOSKTUNES_UV ?? env.SIMP_MCP_UV ?? 'uv';
   if (typeof project !== 'string' || !isAbsolute(project) || project.length > 4096 || /[\x00-\x1f\x7f]/.test(project)) throw new Error('Music projectPath / SIMP_MCP_PROJECT must be an absolute path.');
   if (typeof uv !== 'string' || (uv !== 'uv' && !isAbsolute(uv)) || uv.length > 4096 || /[\x00-\x1f\x7f]/.test(uv)) throw new Error('Music uvBinary / SIMP_MCP_UV must be uv or an absolute executable path.');
   const timeoutMs = config.timeoutMs ?? 30_000;
@@ -125,7 +125,7 @@ export function runMusic(args, settings, { signal, spawnProcess = spawn } = {}) 
     };
     const abort = () => stop('Music command canceled.');
     try {
-      child = spawnProcess(settings.uv, ['run', '--directory', settings.project, 'simp-mcp', 'music', ...args], {
+      child = spawnProcess(settings.uv, ['run', '--directory', settings.project, 'kiosktunes-mcp', 'music', ...args], {
         shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
     } catch { finish({ kind: 'error', text: 'Could not start uv. Check the configured executable and project installation.' }); return; }

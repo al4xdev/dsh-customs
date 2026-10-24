@@ -412,7 +412,7 @@ A template file [`.env.example`](.env.example) is available with all configurabl
 | `DSH_DEFAULT_MODEL` | `gpt-6-sol` | Default model selected in launcher | Local LLM |
 | `DSH_DEFAULT_EFFORT` | `low` | Default reasoning effort for model | Local LLM |
 | `CONTEXT7_API_KEY` | *(None)* | Bearer token for Context7 library queries in `research` | Plugin: `research` |
-| `SIMP_MCP_PROJECT` | `~/git/my/simp_mcp` | Path to the SimpMCP audio/music server project | Plugin: `music` |
+| `KIOSKTUNES_PROJECT` | `~/git/my/kiosktunes-mcp` | Path to the KioskTunes audio/music server project | Plugin: `music` |
 | `SIMP_MCP_UV` | `uv` | Path to uv executable for music environment | Plugin: `music` |
 | `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | llama.cpp backend endpoint for grammar correction | Plugin: `grammar-fix` |
 | `GRAMMAR_GPT_MODEL` | `openai-codex/gpt-6-sol` | GPT model used for grammar fixes | Plugin: `grammar-fix` |

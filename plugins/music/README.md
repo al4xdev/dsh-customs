@@ -1,7 +1,7 @@
 # `/music` — standalone player control
 
 A DSH human slash command, **not an LLM tool**. It calls the standalone
-`simp_mcp` CLI directly, without an agent, model request, MCP connection, shell,
+`kiosktunes-mcp` CLI directly, without an agent, model request, MCP connection, shell,
 or runtime installation/reload.
 
 ## Usage
@@ -54,10 +54,10 @@ DSH commands.
 
 Defaults:
 
-- Project: `join(homedir(), 'git/my/simp_mcp')`.
-- `SIMP_MCP_PROJECT`: override with an absolute project path.
+- Project: `join(homedir(), 'git/my/kiosktunes-mcp')`.
+- `KIOSKTUNES_PROJECT` / `SIMP_MCP_PROJECT`: override with an absolute project path.
 - uv executable: `uv`, resolved through the DSH process's `PATH`.
-- `SIMP_MCP_UV`: optional absolute uv executable path.
+- `KIOSKTUNES_UV` / `SIMP_MCP_UV`: optional absolute uv executable path.
 - `timeoutMs`: 30000 (allowed 100–120000).
 - `maxOutputBytes`: 32768 combined stdout/stderr bytes (allowed 256–65536).
 
@@ -68,7 +68,7 @@ Settings are read when the plugin loads; changes require a newly loaded plugin.
 There is no working-directory dependence: every invocation is exactly:
 
 ```text
-uv run --directory PROJECT simp-mcp music SUBCOMMAND ...
+uv run --directory PROJECT kiosktunes-mcp music SUBCOMMAND ...
 ```
 
 The actual implementation uses `spawn(executable, argv, { shell: false })`, with

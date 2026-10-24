@@ -48,7 +48,7 @@ test('unsupported flags, malformed values, and auth source overrides are rejecte
 });
 
 test('configuration respects env and rejects ambiguous executable paths', () => {
-  assert.equal(settings.project, '/test-home/git/my/simp_mcp');
+  assert.equal(settings.project, '/test-home/git/my/kiosktunes-mcp');
   assert.equal(settings.uv, 'uv');
   assert.equal(resolveConfig({}, {SIMP_MCP_PROJECT:'/music project', SIMP_MCP_UV:'/tools/uv'}, '/h').uv, '/tools/uv');
   assert.equal(resolveConfig({projectPath:'/override'}, {SIMP_MCP_PROJECT:'/env'}).project, '/override');
@@ -58,7 +58,7 @@ test('configuration respects env and rejects ambiguous executable paths', () => 
 test('spawn uses exact argv, no shell, ignored stdin and success stdout only', async () => {
   const fake = fakeSpawn(child => { child.stderr.emit('data', Buffer.from('secret diagnostic')); child.stdout.emit('data', Buffer.from('{"state":"playing"}\n')); child.emit('close', 0); });
   const result = await runMusic(['play','--enqueue','$(id); song'], settings, fake);
-  assert.deepEqual(fake.calls[0], ['uv',['run','--directory','/test-home/git/my/simp_mcp','simp-mcp','music','play','--enqueue','$(id); song'],{shell:false,stdio:['ignore','pipe','pipe'],windowsHide:true}]);
+  assert.deepEqual(fake.calls[0], ['uv',['run','--directory','/test-home/git/my/kiosktunes-mcp','kiosktunes-mcp','music','play','--enqueue','$(id); song'],{shell:false,stdio:['ignore','pipe','pipe'],windowsHide:true}]);
   assert.deepEqual(result, {kind:'success',text:'{"state":"playing"}'});
 });
 
