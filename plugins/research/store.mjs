@@ -132,8 +132,11 @@ export async function openStore(cwd, owner) {
   anchors.set(base, await fs.lstat(base));
   try {
     await exec('git', ['check-ignore', '--quiet', '.dumps/research/probe'], { cwd: base, timeout: 5000 });
-  } catch {
-    throw new Error('Research storage refused: git check-ignore .dumps/research/probe must succeed. Ignore .dumps/research before using research; no gitignore was modified.');
+  } catch (error) {
+    if (error?.code === 128 || /not a git repository/i.test(error?.stderr ?? '')) {
+      throw new Error('Research storage refused: working directory is not a Git repository. Research requires a Git repository (run `git init` or switch to a project with git).');
+    }
+    throw new Error('Research storage refused: git check-ignore .dumps/research/probe must succeed. Add `.dumps/` (or `.dumps/research/`) to `.gitignore` before using research; no gitignore was modified.');
   }
   await directory(path.join(base, '.dumps'));
   await directory(root);

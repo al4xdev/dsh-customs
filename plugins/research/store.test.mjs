@@ -23,6 +23,12 @@ test('requires Git ignore without changing project files', async t => {
   await assert.rejects(fs.stat(path.join(cwd, '.gitignore')), { code: 'ENOENT' });
 });
 
+test('requires a Git repository and reports clear actionable error', async t => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'research-no-git-'));
+  t.after(() => fs.rm(cwd, { recursive: true, force: true }));
+  await assert.rejects(openStore(cwd, 'session'), /not a Git repository/);
+});
+
 test('config snapshots, manifest identity and session isolation', async t => {
   const cwd = await fixture(t);
   const store = await openStore(cwd, 'alice');
