@@ -7,9 +7,11 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -155,17 +157,37 @@ private fun NativeTableRow(tile: MarkdownTile.TableRow, scroll: ScrollState, onO
             if (tile.startsRow && !tile.firstInTable) HorizontalDivider(
                 Modifier.testTag("table-rule:${tile.key}"), thickness = with(density) { 1f.toDp() }, color = colors.outlineVariant)
             BoxWithConstraints(Modifier.fillMaxWidth().workspaceGestureExcluded()) {
-                val layout = TableLayout.columns(maxWidth.value, tile.columnCount, bodyEm, density.density)
-                Column(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
-                    Row(Modifier.width(layout.contentWidthDp.dp).padding(
-                        start = TableLayout.SIDE_PADDING_DP.dp, end = TableLayout.SIDE_PADDING_DP.dp,
-                        top = if (tile.startsRow) 10.dp else 0.dp, bottom = if (tile.endsRow) 10.dp else 0.dp),
-                        horizontalArrangement = Arrangement.spacedBy(TableLayout.COLUMN_GAP_DP.dp)) {
-                        repeat(tile.columnCount.coerceIn(1, 16)) { column ->
-                            Column(Modifier.width(layout.columnWidthDp.dp).testTag("table-cell:${tile.key}:$column")) {
-                                InlineText(tile.cells.getOrNull(column).orEmpty(), strong = tile.header, onOpenLink = onOpenLink)
+                val rowChars = tile.cells.map { cell -> cell.sumOf { it.text.length } }
+                val layout = TableLayout.columns(maxWidth.value, tile.columnCount, bodyEm, density.density, rowChars.takeIf { it.isNotEmpty() })
+                Box(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
+                        Row(Modifier.width(layout.contentWidthDp.dp).padding(
+                            start = TableLayout.SIDE_PADDING_DP.dp, end = TableLayout.SIDE_PADDING_DP.dp,
+                            top = if (tile.startsRow) 10.dp else 0.dp, bottom = if (tile.endsRow) 10.dp else 0.dp),
+                            horizontalArrangement = Arrangement.spacedBy(TableLayout.COLUMN_GAP_DP.dp)) {
+                            repeat(tile.columnCount.coerceIn(1, 16)) { column ->
+                                val colWidth = layout.columnWidthsDp.getOrNull(column) ?: layout.columnWidthDp
+                                Column(Modifier.width(colWidth.dp).testTag("table-cell:${tile.key}:$column")) {
+                                    InlineText(tile.cells.getOrNull(column).orEmpty(), strong = tile.header, onOpenLink = onOpenLink)
+                                }
                             }
                         }
+                    }
+                    if (!layout.fitsViewport && scroll.value < scroll.maxValue) {
+                        Box(
+                            Modifier
+                                .align(androidx.compose.ui.Alignment.CenterEnd)
+                                .width(20.dp)
+                                .fillMaxHeight()
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                        listOf(
+                                            androidx.compose.ui.graphics.Color.Transparent,
+                                            if (tile.header) colors.surfaceContainerHigh else colors.surfaceContainerLow
+                                        )
+                                    )
+                                )
+                        )
                     }
                 }
             }

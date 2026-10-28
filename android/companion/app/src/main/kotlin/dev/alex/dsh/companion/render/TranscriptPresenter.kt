@@ -58,6 +58,7 @@ internal class TranscriptPresenter(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
+            dev.alex.dsh.companion.CompanionLog.e("TranscriptPresenter", "Projection worker failed: ${error.message}", error)
             if (!closed) { closed = true; requests.cancel(); onFailure(error) }
         } finally {
             closed = true

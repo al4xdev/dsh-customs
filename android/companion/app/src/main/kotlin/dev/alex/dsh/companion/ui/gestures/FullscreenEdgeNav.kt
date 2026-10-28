@@ -368,12 +368,14 @@ internal fun <T : Any> FullscreenEdgeNav(
                     ) {
                         content(screen)
                         if (!isOver && !reduced) {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer { alpha = SCRIM * (1f - fraction()) }
-                                    .background(Color.Black),
-                            )
+                            val scrimAlpha = (SCRIM * (1f - fraction())).coerceIn(0f, 1f)
+                            if (scrimAlpha > 0f) {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = scrimAlpha)),
+                                )
+                            }
                         }
                     }
                 }

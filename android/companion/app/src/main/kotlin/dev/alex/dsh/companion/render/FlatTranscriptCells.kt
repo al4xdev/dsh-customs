@@ -1,9 +1,11 @@
 package dev.alex.dsh.companion.render
 
+import androidx.compose.runtime.Immutable
 import dev.alex.dsh.companion.ui.MessageRole
 import kotlinx.serialization.json.JsonObject
 
 /** Cells retain only their tile/heading, not a changing full message or prepared document. */
+@Immutable
 data class TranscriptCell(
     val stableId: String,
     val sourceStableId: String,
@@ -20,6 +22,7 @@ data class TranscriptCell(
     val contentType: String get() = body.javaClass.simpleName
 }
 
+@Immutable
 sealed interface TranscriptCellBody {
     data class Markdown(val tile: MarkdownTile, val scrollScopeKey: String) : TranscriptCellBody
     data class MarkdownImage(val tile: MarkdownTile.Image, val binding: MarkdownImageBinding) : TranscriptCellBody

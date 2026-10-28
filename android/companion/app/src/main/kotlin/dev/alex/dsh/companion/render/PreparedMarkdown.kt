@@ -1,8 +1,12 @@
 package dev.alex.dsh.companion.render
 
+import androidx.compose.runtime.Immutable
+
 /** Source/AST/tiles belong only to the current presentation window, never navigation saved state. */
+@Immutable
 data class PreparedMarkdown(val source: String, val document: MarkdownDocument, val tiles: List<MarkdownTile>)
 
+@Immutable
 data class MarkdownDecoration(
     val quoteDepth: Int = 0,
     val listDepth: Int = 0,
@@ -10,6 +14,7 @@ data class MarkdownDecoration(
     val continuation: Boolean = false,
 )
 
+@Immutable
 sealed interface MarkdownTile {
     val key: String
     val decoration: MarkdownDecoration

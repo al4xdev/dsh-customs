@@ -34,6 +34,7 @@ import dev.alex.dsh.companion.ui.MessageRole
 class RichRenderState {
     private val folds = mutableStateMapOf<String, Boolean>()
     private val horizontal = LinkedHashMap<String, androidx.compose.foundation.ScrollState>(16, .75f, true)
+    private val tableChars = LinkedHashMap<String, MutableList<Int>>(16, .75f, true)
     fun expanded(key: String, default: Boolean = false): Boolean = folds[key] ?: default
     fun toggle(key: String, default: Boolean = false) { folds[key] = !expanded(key, default) }
     /** Capture on the UI thread; preparation workers read only this immutable copy. */
@@ -43,7 +44,16 @@ class RichRenderState {
     }.also {
         while (horizontal.size > 128) horizontal.remove(horizontal.entries.first().key)
     }
-    fun clear() { folds.clear(); horizontal.clear() }
+    fun tableMaxChars(key: String, rowChars: List<Int>): List<Int> {
+        val current = tableChars.getOrPut(key) { rowChars.toMutableList() }
+        rowChars.forEachIndexed { idx, count ->
+            if (idx < current.size) current[idx] = maxOf(current[idx], count)
+            else current.add(count)
+        }
+        while (tableChars.size > 128) tableChars.remove(tableChars.entries.first().key)
+        return current.toList()
+    }
+    fun clear() { folds.clear(); horizontal.clear(); tableChars.clear() }
 }
 
 @Composable

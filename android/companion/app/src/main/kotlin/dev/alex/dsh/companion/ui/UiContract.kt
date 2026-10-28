@@ -17,6 +17,7 @@ import dev.alex.dsh.companion.protocol.UserQuestionAnswer
 import dev.alex.dsh.companion.protocol.UserQuestionKey
 import dev.alex.dsh.companion.protocol.UserQuestionPresentation
 import dev.alex.dsh.companion.catalog.ConversationAttention
+import androidx.compose.runtime.Stable
 import dev.alex.dsh.companion.ui.settings.SettingsModelChoice
 import dev.alex.dsh.companion.ui.settings.SettingsUiState
 
@@ -30,6 +31,7 @@ data class SelectedFileChip(val selectionId: String, val name: String, val bytes
 
 data class UiMessage(val seq: Long, val role: MessageRole, val text: String)
 
+@Stable
 data class CompanionUiState(
     val authenticated: Boolean = false,
     val busy: Boolean = false,
@@ -43,6 +45,7 @@ data class CompanionUiState(
     val messages: List<UiMessage> = emptyList(),
     val streamingText: String? = null,
     val draft: String = "",
+    val pendingPrompt: String? = null,
     val hasMore: Boolean = false,
     val approvals: List<ApprovalPresentation> = emptyList(),
     val questions: List<UserQuestionPresentation> = emptyList(),

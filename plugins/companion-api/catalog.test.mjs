@@ -24,11 +24,12 @@ function metadataSource(initial) {
   return { persistence, calls, set: value => { snapshots = value; } };
 }
 const code = expected => error => error.code === `companion/${expected}`;
-async function host(t, profileName = 'companion', snapshots = [owned('chat')]) {
+async function host(t, profileName = 'companion', snapshots = [owned('chat')], services = {}) {
   const ctx = new Context(); t.after(() => ctx.fiber.dispose());
   await ctx.plugin(Registry); await ctx.plugin(Gateway);
   const source = metadataSource(snapshots);
   ctx.provide('sessionPersistence', source.persistence);
+  for (const [service, value] of Object.entries(services)) ctx.provide(service, value);
   if (profileName !== null) ctx.provide('profileContext', { name: profileName, dir: '/synthetic-companion' });
   await ctx.plugin(sessionSdk.default);
   return { ctx, source, invoke: (method, request, extra = {}) => ctx.typertGateway.invoke({ namespace: 'companion', method, args: { request, ...extra }, signal: new AbortController().signal }) };
@@ -152,6 +153,15 @@ test('missing or wrong actual launcher profile refuses before any service/endpoi
 test('profile is rechecked on every call, not trusted from constructor config', async t => {
   const fixture = await host(t); await apply(fixture.ctx); fixture.ctx.get('profileContext').name = 'web';
   await assert.rejects(fixture.invoke('detail', { id: 'chat' }), code('profile-mismatch')); assert.equal(fixture.source.calls.length, 0);
+});
+test('public Gateway enriches an admitted page with a log-backed title', async t => {
+  const sessionQuery = { readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled',
+    value: { session: owned(id, 5).header, title: { title: 'Log-backed name', eventSeq: 3, updatedAt: 9 } } })) };
+  const fixture = await host(t, 'companion', [owned('chat', 5)], { sessionQuery });
+  await apply(fixture.ctx);
+  assert.deepEqual((await fixture.invoke('listChats', {})).chats, [{ id: 'chat', createdAt: 5, title: 'Log-backed name' }]);
+  // Membership, detail and cursor behavior stay exactly as before the enrichment.
+  assert.equal((await fixture.invoke('detail', { id: 'chat' })).chat.id, 'chat');
 });
 test('owned fiber disposal withdraws definitions and forbids SRC fallback', async t => {
   const fixture = await host(t); let owner;

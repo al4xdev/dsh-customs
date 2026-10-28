@@ -5,6 +5,10 @@ plugins {
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+composeCompiler {
+    metricsDestination = layout.buildDirectory.dir("compose_metrics")
+    reportsDestination = layout.buildDirectory.dir("compose_metrics")
+}
 // Optional public Companion Firebase identifiers, never a sender key. No google-services
 // plugin/config is required, and the default APK makes no Firebase registration request.
 val companionPushConfig = Properties().apply {

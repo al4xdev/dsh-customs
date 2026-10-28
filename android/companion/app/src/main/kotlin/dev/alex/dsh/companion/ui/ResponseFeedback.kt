@@ -1,5 +1,10 @@
 package dev.alex.dsh.companion.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,15 +37,22 @@ internal fun ResponseFeedback(state: CompanionUiState, actions: UiActions, modif
         MaidLoader(mood = MaidMood.Decorative, active = active && state.connected)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("DSH", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(when (phase) {
+            val statusText = when (phase) {
                 ResponsePhase.WAITING -> "Na fila…"
                 ResponsePhase.RUNNING -> "Preparando resposta…"
                 ResponsePhase.STREAMING -> if (writing) "Escrevendo…" else "Preparando resposta…"
                 ResponsePhase.STOP_REQUESTED -> "Parada solicitada"
                 ResponsePhase.STOP_UNCONFIRMED -> "Parada sem confirmação"
                 ResponsePhase.IDLE -> ""
-            }, style = MaterialTheme.typography.bodySmall,
-                color = if (phase == ResponsePhase.STOP_UNCONFIRMED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AnimatedContent(
+                targetState = statusText,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                label = "feedback-text-fade",
+            ) { target ->
+                Text(target, style = MaterialTheme.typography.bodySmall,
+                    color = if (phase == ResponsePhase.STOP_UNCONFIRMED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         if (showStop && state.canStopResponse && !requested) {
             IconButton(onClick = {

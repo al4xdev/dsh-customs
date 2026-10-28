@@ -26,7 +26,7 @@
       config:
         model: deepseek-official/deepseek-flash
         language: en
-        naturalTips: true
+        naturalTips: false
     - id: alex-managed-plans
       name: /home/alex/git/my/dsh-customs/plugins/managed-plans/index.mjs
       config:

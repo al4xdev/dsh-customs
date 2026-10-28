@@ -1007,7 +1007,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             messages = if (previous.selectedId == id) previous.messages else emptyList(),
             richMessages = if (previous.selectedId == id) previous.richMessages else emptyList(),
             streamingText = null, connected = false, busy = true, status = "Verificando conversa",
-            error = null, approvals = emptyList(), draft = drafts[id].orEmpty(),
+            error = null, approvals = emptyList(), draft = if (fromDraft != null) "" else drafts[id].orEmpty(),
             delivery = if (fromDraft != null) DeliveryStatus.SENDING else submissions.status(id),
         ) }
         updateDelivery()
@@ -1243,6 +1243,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val ticket = newChatDraft.begin(epoch, hasFiles = files != null) ?: run { if (files != null) retireFileSend(); return }
         firstDraft = FirstDraft(ticket, epoch, files = files)
         mutable.update { it.copy(busy = true, delivery = DeliveryStatus.SENDING, error = null, status = "Preparando primeira mensagem",
+            draft = "", pendingPrompt = ticket.literal,
             fileSendPhase = if (files != null) FileSendPhase.PREPARING else FileSendPhase.NONE) }
         val createJob = viewModelScope.launch {
             try {
@@ -1255,7 +1256,8 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     newChatDraft.interrupt(epoch)
                     return@launch
                 }
-                drafts[receipt.sessionId] = ticket.literal
+                // Submitted draft: clear draft so selecting does not restore text into composer.
+                drafts[receipt.sessionId] = ""
                 mutable.update { it.copy(busy = false) }
                 selectInternal(receipt.sessionId, ticket)
             } catch (error: Exception) {
@@ -1299,6 +1301,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val createdReadState = if (fromDraft != null) conversationReads else null
         val createdReadAuthority = readScopeAuthEpoch
         mutable.update { it.copy(delivery = DeliveryStatus.SENDING, error = null,
+            draft = "", pendingPrompt = literal,
             fileSendPhase = if (files != null) FileSendPhase.PREPARING else FileSendPhase.NONE) }
         val sendJob = viewModelScope.launch {
             var postAttempted = false
@@ -2111,6 +2114,8 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 // A page of compact reasoning streams can exceed the node budget without being corrupt.
                 if (error is ProtocolException && error.code == "json-limit" && historyWindow.shrink()) {
                     disconnect(epoch, null, retryable = true, quiet = true)
+                } else if (error is IllegalStateException && error.message?.contains("overflow") == true) {
+                    disconnect(epoch, error, retryable = true, quiet = false)
                 } else disconnect(epoch, error)
             })
         ingress?.close()
@@ -2340,7 +2345,9 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     private fun updateDelivery() {
         if (state.value.isNewDraft && state.value.selectedId == null) {
             val local = newChatDraft.snapshot()
-            mutable.update { it.copy(resendFiles = 0, delivery = when {
+            mutable.update { it.copy(resendFiles = 0,
+                pendingPrompt = if (local.pending) local.text else null,
+                delivery = when {
                 local.pending -> DeliveryStatus.SENDING
                 local.phase == NewChatDraftController.Phase.CREATE_UNKNOWN -> DeliveryStatus.UNKNOWN
                 else -> DeliveryStatus.NONE
@@ -2362,8 +2369,13 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val pending = firstDraft
         val preparingFirst = pending != null && pending.sessionId == sessionId && pending.generation == generation &&
             newChatDraft.current(pending.ticket, generation, sessionId)
+        val userMessageDelivered = state.value.richMessages.any { it.role == MessageRole.USER }
+        val candidatePrompt = (if (preparingFirst) pending?.ticket?.literal else null)
+            ?: entry?.takeIf { it.status == DeliveryStatus.SENDING || it.status == DeliveryStatus.ADMITTED }?.text
+        val sendingPrompt = if (userMessageDelivered) null else (candidatePrompt ?: state.value.pendingPrompt)
         val uncertainFiles = submissions.entry(sessionId)?.takeIf { it.status == DeliveryStatus.UNKNOWN }?.files?.size ?: 0
         mutable.update { it.copy(resendFiles = uncertainFiles,
+            pendingPrompt = sendingPrompt,
             delivery = if (preparingFirst || preparations.active(sessionId)) DeliveryStatus.SENDING else submissions.status(sessionId)) }
     }
 
@@ -2418,6 +2430,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     }
     /** [retryable] false: a data error or refused upgrade, which only an explicit Reconectar retries. */
     private fun disconnect(epoch: Long, error: Exception?, retryable: Boolean = error == null, quiet: Boolean = false) {
+        if (error != null) CompanionLog.e("CompanionVM", "disconnect epoch=$epoch retryable=$retryable quiet=$quiet: ${error.message}", error)
         if (epoch != generation) return
         retireFileSend()
         newChatDraft.interrupt(epoch)
@@ -2447,6 +2460,8 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             error = when {
                 quiet -> null
                 error == null -> "Conexão encerrada. Reconecte para obter um histórico confirmado."
+                error is IllegalStateException && error.message?.contains("overflow") == true ->
+                    "Saturação de buffer de mensagens. Reconectando…"
                 else -> "Dados não suportados. Reconecte sem reenviar mensagens."
             }) }
         updateDelivery()

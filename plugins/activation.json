@@ -52,7 +52,7 @@
       "config": {
         "model": "deepseek-official/deepseek-flash",
         "language": "en",
-        "naturalTips": true
+        "naturalTips": false
       }
     },
     {

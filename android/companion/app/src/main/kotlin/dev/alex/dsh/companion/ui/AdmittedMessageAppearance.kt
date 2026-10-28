@@ -60,12 +60,15 @@ internal fun admitMessageAppearance(identity: String, newlyAdmitted: Boolean, pl
 internal fun Modifier.admittedMessageAppearance(identity: String, newlyAdmitted: Boolean, played: MutableSet<String>): Modifier {
     val scope = rememberCoroutineScope()
     val instant = scope.coroutineContext[MotionDurationScale]?.scaleFactor == 0f
-    val entrance = remember(identity) { Animatable(if (admitMessageAppearance(identity, newlyAdmitted, played, instant)) 0f else 1f) }
+    val shouldAnimate = remember(identity) { admitMessageAppearance(identity, newlyAdmitted, played, instant) }
+    if (!shouldAnimate && !instant) return this
+    val entrance = remember(identity) { Animatable(if (shouldAnimate) 0f else 1f) }
     val density = LocalDensity.current.density
     LaunchedEffect(identity, instant) {
         if (instant) entrance.snapTo(1f)
         else if (entrance.value != 1f) entrance.animateTo(1f, tween(AdmittedMessageMotion.DurationMillis, easing = LinearEasing))
     }
+    if (entrance.value == 1f && !entrance.isRunning) return this
     return this.graphicsLayer {
         val progress = if (instant) 1f else entrance.value
         alpha = AdmittedMessageMotion.alpha(progress)

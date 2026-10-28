@@ -7,6 +7,7 @@ import { messageHeadsCodecs } from './message-heads-contracts.mjs';
 import * as catalogContracts from './contracts.mjs';
 import { createCatalogActivity } from './activity-source.mjs';
 import { createRecentCatalog } from './recent-catalog.mjs';
+import { createTitleHints } from './title-hints.mjs';
 import { createInteractionHeads } from './interaction-heads.mjs';
 import { interactionHeadsCodecs } from './interaction-heads-contracts.mjs';
 import { catalogStateCodecs, parseCatalogState, parseCatalogStateRequest } from './catalog-state-contracts.mjs';
@@ -51,7 +52,9 @@ export class CompanionCatalogService extends TypertRemoteService {
     assertCompanionProfile(ctx);
     super(ctx, 'companionCatalog', { namespace: 'companion' });
     this.activity = createCatalogActivity(ctx, { identityOf });
-    this.catalog = createRecentCatalog(ctx.sessionPersistence, this.activity, createCatalog(ctx.sessionPersistence), catalogContracts);
+    // Titles are optional display hints; their resolver closes with the catalog.
+    this.titles = createTitleHints(ctx);
+    this.catalog = createRecentCatalog(ctx.sessionPersistence, this.activity, createCatalog(ctx.sessionPersistence), catalogContracts, { titles: this.titles });
     this.deletion = createDeletion(ctx.sessionPersistence);
     // Policy comes from the trusted project composition, never RPC arguments.
     // Missing local binding refuses local selections rather than probing a different server.
@@ -65,6 +68,7 @@ export class CompanionCatalogService extends TypertRemoteService {
       this.interactionMetadata.close();
       this.messageMetadata.clear();
       this.catalog.close();
+      this.titles.close();
       this.activity.close();
     });
     // Public strict definitions own their fiber lifetime. Withdrawal fails closed

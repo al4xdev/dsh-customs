@@ -69,6 +69,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalAutofill
@@ -359,7 +361,7 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets).imePadding()) {
             // The retained catalog does not grow a global loader merely because a route closes.
-            if (state.busy && (chat || !state.authenticated)) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.busy && !state.authenticated) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MaidLoader(active = visible)
                 Text(state.status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -371,7 +373,12 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
             if (state.authenticated) state.hostStatusMessage?.let { message ->
                 dev.alex.dsh.companion.ui.catalog.HostMetadataBanner(message, state.appStarted && state.appResumed && !state.busy, actions::refreshMetadata)
             }
-            if (state.showConnectionWarning) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = state.showConnectionWarning && !state.busy && state.delivery != DeliveryStatus.SENDING &&
+                    state.status != "Conectando" && state.status != "Verificando conversa" && state.status != "Carregando histórico",
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(250)),
+                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+            ) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Conexão interrompida", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = actions::reconnect, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reconectar") }
@@ -680,6 +687,9 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                 receipt.sessionId, receipt.generation, receipt.transcriptRevision, receipt.sequence)
         }
     }
+    val pendingPrompt = state.pendingPrompt?.takeIf { prompt ->
+        prompt.isNotBlank() && transcript.none { it.human || it.role == MessageRole.USER }
+    }
     Column(modifier.fillMaxWidth()) {
         // Weight belongs to this direct Column child, not a selection wrapper's internal layout.
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -696,31 +706,81 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
             }
             if (hasRich) items(transcript, key = { "$imageScope:${it.stableId}" }, contentType = { it.contentType }) { item ->
                 ObserveTranscriptCell("$imageScope:${item.stableId}")
-                val header: (@Composable () -> Unit)? = if (showResponse && item.stableId == liveHeaderItemId) {
-                    { ResponseFeedback(state, actions, showStop = false) }
-                } else null
                 val anchor = item.first || item.body is TranscriptCellBody.ActivityHeader || item.body is TranscriptCellBody.ToolHeader
                 val admitted = anchor && (item.sourceStableId in presentation.animatedKeys || item.headerSourceIds.any { it in presentation.animatedKeys })
-                val appearance = Modifier.animateItem().admittedMessageAppearance(item.stableId, admitted, entrances)
+                val appearance = Modifier
+                    .animateItem(
+                        fadeInSpec = androidx.compose.animation.core.tween(220),
+                        placementSpec = androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        fadeOutSpec = androidx.compose.animation.core.tween(150),
+                    )
+                    .admittedMessageAppearance(item.stableId, admitted, entrances)
                     .padding(horizontal = 16.dp)
                 TranscriptCellContent(item, imageContent, renderState, modifier = appearance,
-                    headerContent = header, onInspect = onInspect)
+                    headerContent = null, onInspect = onInspect)
             } else items(state.messages, key = { "message-${it.seq}" }) { message -> MessageCard(message) }
             state.streamingText?.takeIf { !hasRich }?.let { partial ->
                 item(key = "streaming") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (showResponse) ResponseFeedback(state, actions, showStop = false) else Text(if (state.connected) "Resposta em andamento" else "Resposta parcial · conexão interrompida", style = MaterialTheme.typography.labelMedium)
+                        Text(if (state.connected) "Resposta em andamento" else "Resposta parcial · conexão interrompida", style = MaterialTheme.typography.labelMedium)
                         SelectionContainer { Text(partial, style = MaterialTheme.typography.bodyLarge) }
                     }
                 }
             }
-            if (feedbackItem) item(key = "response-${state.response.key}") {
-                ResponseFeedback(state, actions, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), showStop = false)
+            if (pendingPrompt != null) {
+                item(key = "pending-prompt") {
+                    val density = LocalDensity.current.density
+                    val floatAnim = remember(pendingPrompt) { androidx.compose.animation.core.Animatable(100f) }
+                    val alphaAnim = remember(pendingPrompt) { androidx.compose.animation.core.Animatable(0f) }
+                    LaunchedEffect(pendingPrompt) {
+                        launch {
+                            floatAnim.animateTo(0f, androidx.compose.animation.core.tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                        }
+                        launch {
+                            alphaAnim.animateTo(1f, androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.LinearEasing))
+                        }
+                    }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .graphicsLayer {
+                                translationY = floatAnim.value * density
+                                alpha = alphaAnim.value
+                            },
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                        ) {
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(pendingPrompt, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                Text("Enviando…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
+                            }
+                        }
+                    }
+                }
             }
-            if (hasRich && transcript.isEmpty()) item(key = "preparing") {
-                Text("Preparando conversa…", modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
+            val hasUserMessage = state.richMessages.any { it.role == MessageRole.USER } || pendingPrompt != null
+            if (showResponse && hasUserMessage) {
+                item(key = "response-feedback") {
+                    ResponseFeedback(
+                        state,
+                        actions,
+                        Modifier
+                            .animateItem(
+                                fadeInSpec = androidx.compose.animation.core.tween(300),
+                                placementSpec = androidx.compose.animation.core.tween(350, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                                fadeOutSpec = androidx.compose.animation.core.tween(200)
+                            )
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        showStop = false
+                    )
+                }
             }
-            if (!hasRich && state.messages.isEmpty() && state.streamingText == null && !showResponse && state.isNewDraft) item(key = "blank") {
+            if (!hasRich && state.messages.isEmpty() && state.streamingText == null && !showResponse && state.isNewDraft && pendingPrompt == null) item(key = "blank") {
                 Text("Envie uma mensagem para começar.", modifier = Modifier.padding(24.dp), style = MaterialTheme.typography.bodyLarge)
             }
         }
@@ -730,7 +790,10 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (!state.isNewDraft && !hasTranscript && (state.busy || state.presentationPending || !state.connected)) {
+        if (!state.isNewDraft && !hasTranscript && !hasRich && state.delivery != DeliveryStatus.SENDING && pendingPrompt == null &&
+            !plan.pending && !state.presentationPending &&
+            state.status != "Conectando" && state.status != "Verificando conversa" && state.status != "Carregando histórico" &&
+            (state.busy || !state.connected)) {
             MockFrameStage(Modifier.fillMaxSize(), active = visible)
         }
         }
@@ -829,11 +892,11 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
     Column(Modifier.fillMaxWidth().workspaceGestureExcluded().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when (state.delivery) {
             DeliveryStatus.NONE -> Unit
-            DeliveryStatus.SENDING -> Text(when (state.fileSendPhase) {
+            DeliveryStatus.SENDING -> if (state.fileSendPhase != FileSendPhase.NONE) Text(when (state.fileSendPhase) {
                 FileSendPhase.PREPARING -> "Preparando conversa…"
                 FileSendPhase.UPLOADING -> "Enviando arquivos…"
                 FileSendPhase.AWAITING_PROMPT -> "Aguardando confirmação da mensagem…"
-                FileSendPhase.NONE -> "Enviando…"
+                FileSendPhase.NONE -> ""
             }, style = MaterialTheme.typography.bodySmall)
             DeliveryStatus.ADMITTED -> Unit
             DeliveryStatus.UNKNOWN -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

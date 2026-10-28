@@ -70,8 +70,8 @@ internal class SocketIngress(
     private val onFrame: (DecodedSocketFrame) -> Unit,
     private val onFailure: (Exception) -> Unit,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val maxQueuedChars: Int = 4 * 1024 * 1024,
-    private val maxQueuedFrames: Int = 256,
+    private val maxQueuedChars: Int = 8 * 1024 * 1024,
+    private val maxQueuedFrames: Int = 8192,
     private val decode: suspend (String) -> DecodedSocketFrame = { text ->
         val mux = NativeCodec.mux(text)
         if (mux is MuxFrame.Item && mux.streamId == eventsId) decodeEventItem(mux)
@@ -125,6 +125,7 @@ internal class SocketIngress(
         } catch (_: CancellationException) {
             // Owner cancellation and close are not connection errors.
         } catch (error: Exception) {
+            dev.alex.dsh.companion.CompanionLog.e("SocketIngress", "Worker failed: ${error.message}", error)
             fail(error)
         } finally {
             queue.cancel()
@@ -170,6 +171,7 @@ internal class SocketIngress(
         // Subtraction avoids integer overflow. String.length charges UTF-16
         // code units, including both halves of a supplementary character.
         if (frames >= maxQueuedFrames || text.length > maxQueuedChars - chars) {
+            dev.alex.dsh.companion.CompanionLog.e("SocketIngress", "Queue overflow: frames=$frames/$maxQueuedFrames, chars=$chars/$maxQueuedChars, newLen=${text.length}")
             fail(IllegalStateException("socket-ingress-overflow"))
             return@synchronized false
         }

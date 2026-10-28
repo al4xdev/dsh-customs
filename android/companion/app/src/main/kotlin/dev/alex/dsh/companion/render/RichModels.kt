@@ -1,8 +1,10 @@
 package dev.alex.dsh.companion.render
 
+import androidx.compose.runtime.Immutable
 import dev.alex.dsh.companion.ui.MessageRole
 
 /** Presentation values only: none of these references authorizes a read or a tool action. */
+@Immutable
 data class RichMessage(
     val seq: Long,
     val role: MessageRole,
@@ -23,6 +25,7 @@ data class RichMessage(
     val provenanceSeqs: List<Long> = emptyList(),
 )
 
+@Immutable
 sealed interface RenderBlock {
     data class Text(val text: String) : RenderBlock
     data class Reasoning(val text: String) : RenderBlock
@@ -46,6 +49,7 @@ data class ImageReference(
 
 enum class ToolPhase { PREPARING, RUNNING, OK, ERROR, STOPPED, UNKNOWN }
 data class ToolError(val name: String?, val code: String?, val reason: String?)
+@Immutable
 data class ToolPresentation(
     val callId: String,
     val name: String?,
