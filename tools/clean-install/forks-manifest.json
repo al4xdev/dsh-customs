@@ -8,7 +8,7 @@
       "package": "@deepseek-harness-tui/dsh-tui",
       "version": "0.14.0",
       "repository": "https://github.com/al4xdev/dsh-TUI.git",
-      "commit": "7df378075f6dc4a175db4bcbabc6932f0bfed30e",
+      "commit": "8e2cf62ac37d60f6cbb90f8546de5d20634ac84f",
       "strategy": "source-compile",
       "submodule": {
         "path": "vendor/dsh-std",
@@ -22,7 +22,7 @@
       "package": "@deepseek-ai/dsh-llm-pi-ai-antigravity",
       "version": "0.1.0-rc.5",
       "repository": "https://github.com/al4xdev/dsh-antigravity.git",
-      "commit": "77c0c0fe39c0ddfa9647400db6d4726720aa7852",
+      "commit": "7983e26fa8086709e3126b4c795b6ce624ceab1d",
       "strategy": "host-source-compile-with-committed-auxiliary-faces",
       "sourceEntry": "src/index.ts",
       "sourceOutput": "lib/index.js",

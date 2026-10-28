@@ -8,13 +8,13 @@ The build above is from `98f3882`; **Docker was not rebuilt after these changes*
 
 - `096bd6f` caused `install.mjs` to break on import on a clean machine (`profile.mjs` → `tools/resilience/profile.mjs` loaded `yaml` at import time). Now `profile.mjs` is imported only during the seed step, when the runtime already has `yaml`.
 - `@deepseek-ai/cordis` 4.0.5 was released after the build: `dsh` (`~4.0.4`) nested a second copy and `sharedGraph` rejected it. The runtime now pins `cordis` 4.0.4 via override, the exact version Antigravity requires and identical to the lab setup.
-- TUI pin: `ebea5d7` → `4d0b808` (lab `custom` branch: added global favorites and question ownership) → `7df3780` (background update-check notice removed: this fork is not the upstream package), built and with `verify:oauth` approved on host.
+- TUI pin: `ebea5d7` → `4d0b808` (lab `custom` branch: added global favorites and question ownership) → `7df3780` (background update-check notice removed: this fork is not the upstream package) → `8e2cf62` (grammar natural-English tips, slash-command arguments and Ctrl+G in the btw panel), built and with `verify:oauth` approved on host.
 
 ## Compilation
 
 - TUI: fork `al4xdev/dsh-TUI`, commit `ebea5d738481bbc7c35006410ad9ce1a998dc883`, fixed submodule and source build with pnpm 11.21.0.
 - Pi: recovered snapshot versioned in `sources/pi-ai`, without faked Git HEAD; lock dependencies, complete telemetry/AI build with observer38 patch, versioned public catalog, and Codex fix.
-- Antigravity: fork `al4xdev/dsh-antigravity`, commit `77c0c0fe39c0ddfa9647400db6d4726720aa7852`; host JS compiled via esbuild 0.28.2. **Auxiliary types/client/typert remain prebuilt and committed**: this is not claimed as a build of all exports.
+- Antigravity: fork `al4xdev/dsh-antigravity`, commit `7983e26fa8086709e3126b4c795b6ce624ceab1d` (Gemini 4 Argon and Claude 5.5 catalog limits, current CLI user-agent, Claude payload sanitizing); host JS compiled via esbuild 0.28.2. **Auxiliary types/client/typert remain prebuilt and committed**: this is not claimed as a build of all exports.
 - Self-heal: bundle recompiled from current sources, including persistence; SDK50 bridge applied to only two official catalogs with checked base hashes.
 - DSH 0.2.0-rc.2 installed at `/home/alex/.local/share/dsh-cli`; shared Cordis/scope/Pi must have a single physical identity. New public profile at `/home/alex/.dsh/profiles/dsh-tui`; no private session or configuration is copied.
 
