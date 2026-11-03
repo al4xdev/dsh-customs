@@ -70,5 +70,6 @@ export function applyChunks(text, chunks) {
     cursor = index + chunk.old.length;
   }
   for (const edit of edits.toReversed()) source.splice(edit.index, edit.count, ...edit.replacement);
-  return { after: source.length ? source.join('\n') + (newline || text === '' ? '\n' : '') : '', covered: [...covered] };
+  const changes = edits.map(({ index, count, replacement }) => ({ index, count, length: replacement.length }));
+  return { after: source.length ? source.join('\n') + (newline || text === '' ? '\n' : '') : '', covered: [...covered], changes };
 }

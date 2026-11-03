@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parsePatch, applyChunks } from './parser.mjs';
-import { apply as observe, observed, requireCoverage, rememberMutation, snapshot } from './observation.mjs';
+import { apply as observe, carryLines, observed, requireCoverage, rememberMutation, snapshot } from './observation.mjs';
 import { patchCallView, patchMeta, patchResultView, undoResultView } from './presentation.mjs';
 
 const patch = (...lines) => ['*** Begin Patch', ...lines, '*** End Patch'].join('\n');
@@ -34,7 +34,7 @@ test('parser rejects wrappers, absent boundaries, empty updates, and missing lin
 test('context matches exactly, including indentation; coverage includes unchanged context', () => {
   const change = chunks('@@', ' heading', '-  old', '+  new', ' tail');
   assert.deepEqual(applyChunks('heading\n  old\ntail\n', change), {
-    after: 'heading\n  new\ntail\n', covered: [0, 1, 2],
+    after: 'heading\n  new\ntail\n', covered: [0, 1, 2], changes: [{ index: 0, count: 3, length: 3 }],
   });
   assert.throws(() => applyChunks('heading\n old\ntail\n', change), /unique exact context, found 0/);
 });
@@ -45,7 +45,7 @@ test('ambiguous context is rejected instead of choosing the first match', () => 
 
 test('anchors search strictly after the anchor and contribute to coverage', () => {
   assert.deepEqual(applyChunks('scope\nold\n', chunks('@@ scope', '-old', '+new')), {
-    after: 'scope\nnew\n', covered: [0, 1],
+    after: 'scope\nnew\n', covered: [0, 1], changes: [{ index: 1, count: 1, length: 1 }],
   });
   assert.throws(() => applyChunks('scope\nold\n', chunks('@@ scope', ' scope', '-old', '+new')), /do not repeat the anchor/);
   assert.throws(() => applyChunks('old\n', chunks('@@ missing', '-old', '+new')), /Anchor not found/);
@@ -53,7 +53,7 @@ test('anchors search strictly after the anchor and contribute to coverage', () =
 
 test('end-of-file marker selects only context at the file end', () => {
   assert.deepEqual(applyChunks('same\nmiddle\nsame\n', chunks('@@', '-same', '+last', '*** End of File')), {
-    after: 'same\nmiddle\nlast\n', covered: [2],
+    after: 'same\nmiddle\nlast\n', covered: [2], changes: [{ index: 2, count: 1, length: 1 }],
   });
 });
 
@@ -65,8 +65,8 @@ test('updates preserve final newline presence and support removing all content',
 });
 
 test('insert-only chunks append; independent edits retain their order', () => {
-  assert.deepEqual(applyChunks('first', chunks('@@', '+second')), { after: 'first\nsecond', covered: [0] });
-  assert.deepEqual(applyChunks('', chunks('@@', '+first')), { after: 'first\n', covered: [] });
+  assert.deepEqual(applyChunks('first', chunks('@@', '+second')), { after: 'first\nsecond', covered: [0], changes: [{ index: 1, count: 0, length: 1 }] });
+  assert.deepEqual(applyChunks('', chunks('@@', '+first')), { after: 'first\n', covered: [], changes: [{ index: 0, count: 0, length: 1 }] });
   assert.equal(applyChunks('a\nmiddle\nb\n', chunks('@@', '-a', '+A', '@@', '-b', '+B')).after, 'A\nmiddle\nB\n');
 });
 
@@ -111,6 +111,46 @@ test('observations are session-local and snapshots keep pre-mutation versions', 
   assert.equal(observed(exec, target).version, 'v2');
   assert.throws(() => requireCoverage(exec, target, [0]), /observation is absent/);
   assert.throws(() => requireCoverage({ agent: { session: {} } }, target, []), /observation is absent/);
+});
+
+test('after a change, read lines shift with it and the written lines count as observed', () => {
+  const sorted = set => [...set].sort((a, b) => a - b);
+  // Line 2 replaced by three lines: 1 stays, 5 becomes 7, 2-4 were just written.
+  assert.deepEqual(sorted(carryLines(new Set([1, 2, 5]), [{ index: 1, count: 1, length: 3 }])), [1, 2, 3, 4, 7]);
+  assert.deepEqual(sorted(carryLines(new Set([1, 2]), [{ index: 1, count: 0, length: 1 }])), [1, 2, 3]);
+  assert.deepEqual(sorted(carryLines(new Set([1, 2, 3]), [{ index: 1, count: 1, length: 0 }])), [1, 2]);
+  // Unread lines stay unread, wherever they move.
+  assert.deepEqual(sorted(carryLines(new Set([1]), [{ index: 2, count: 1, length: 2 }])), [1, 3, 4]);
+});
+
+test('an edit keeps what this session knows of the file, and no more', async () => {
+  const listeners = new Map();
+  let text = 'a\nb\nc\nd\n', version = 'v1';
+  observe({ on(event, listener) { listeners.set(event, listener); }, fs: { stat: async () => ({ version }), readText: async () => text } });
+  const session = {}, target = { targetKey: '/fixture.txt', displayPath: '/fixture.txt' };
+  const read = { name: 'read', agent: { session } };
+  listeners.get('fs/observed')(target, { kind: 'present', version }, read);
+  listeners.get('tools/result')(read, { isError: false, value: { lines: [{ number: 1, text: 'a' }, { number: 2, text: 'b' }], totalLines: 4 } });
+  const edit = (old_string, new_string, after, replace_all = false) => {
+    const exec = { name: 'edit', token: {}, agent: { session }, arguments: { old_string, new_string, replace_all } };
+    return listeners.get('fs/edit-intent')(target, exec, async () => {}).then(() => {
+      text = after; version = `${version}+`;
+      listeners.get('fs/observed')(target, { kind: 'present', version }, exec);
+      listeners.get('tools/result')(exec, { isError: false });
+    });
+  };
+  await edit('b', 'B1\nB2', 'a\nB1\nB2\nc\nd\n');
+  assert.doesNotThrow(() => requireCoverage(read, target, [0, 1, 2]));
+  assert.throws(() => requireCoverage(read, target, [3]), /observation is absent or insufficient/);
+  // The written line is editable again without a re-read.
+  await edit('B2', 'B2!', 'a\nB1\nB2!\nc\nd\n');
+  assert.doesNotThrow(() => requireCoverage(read, target, [0, 1, 2]));
+  // Two matches on one line do not map line by line: coverage resets, as before.
+  text = 'x x\n'; version = 'w1';
+  listeners.get('fs/observed')(target, { kind: 'present', version }, read);
+  listeners.get('tools/result')(read, { isError: false, value: { lines: [{ number: 1, text: 'x x' }], totalLines: 2 } });
+  await edit('x', 'y\ny', 'y\ny y\ny\n', true);
+  assert.throws(() => requireCoverage(read, target, [0]), /observation is absent or insufficient/);
 });
 
 const args = { patch: patch('*** Update File: a.txt', '@@', '-old', '+new') };

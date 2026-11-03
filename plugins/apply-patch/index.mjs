@@ -3,7 +3,7 @@ import { mkdtemp, chmod, writeFile, readFile } from 'node:fs/promises';
 import { join, relative, isAbsolute, sep } from 'node:path';
 import { defineTool, cwdOf, assertActive, resolveHost } from '../common.mjs';
 import { parsePatch, applyChunks } from './parser.mjs';
-import { requireCoverage, rememberMutation, snapshot } from './observation.mjs';
+import { carryLines, requireCoverage, rememberMutation, snapshot } from './observation.mjs';
 import { checkedSource, trashOne } from '../trash/index.mjs';
 import { patchCallView, patchMeta, patchResultView, undoCallView, undoMeta, undoResultView } from './presentation.mjs';
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
@@ -46,9 +46,9 @@ async function exclusive(keys, fn) {
   await Promise.all(prior);
   try { return await fn(); } finally { resolve(); for (const key of keys) if (locks.get(key) === promise) locks.delete(key); }
 }
-function recordWrite(ctx, target, exec, version, full) {
+function recordWrite(ctx, target, exec, version, full, lines) {
   ctx.emit('fs/observed', target, { kind: 'present', version }, exec);
-  rememberMutation(exec, target, version, full);
+  rememberMutation(exec, target, version, full, lines);
 }
 async function prepare(ctx, { operation, target, destination }, view, exec) {
   if (operation.kind === 'add') {
@@ -67,7 +67,8 @@ async function prepare(ctx, { operation, target, destination }, view, exec) {
   }
   if (full) await checkedSource(target.displayPath, cwdOf(exec), { ctx, exec });
   if (destination && await versionOf(ctx, destination) !== null) throw new Error(`Conflict: Move destination exists: ${destination.displayPath}`);
-  return { operation, target, destination, before, after: change.after, version: entry.version, full: entry.full };
+  const lines = change.changes && !entry.full ? carryLines(entry.lines, change.changes) : undefined;
+  return { operation, target, destination, before, after: change.after, version: entry.version, full: entry.full, lines };
 }
 async function settle(ctx, plan, record, exec) {
   const source = await versionOf(ctx, plan.target);
@@ -106,7 +107,7 @@ async function publish(ctx, plans, exec, policy) {
         const intent = kind === 'add' || plan.destination ? { kind: 'createIfAbsent' } : { kind: 'replaceIfVersion', version: plan.version };
         const outcome = await ctx.fs.writeText(output, plan.after, intent, exec.signal, policy);
         record.version = outcome.version; record.status = 'written';
-        recordWrite(ctx, output, exec, outcome.version, record.full);
+        recordWrite(ctx, output, exec, outcome.version, record.full, plan.lines);
       }
       if (kind === 'delete' || plan.destination) {
         await assertVersion(ctx, plan.target, plan.version, exec);
