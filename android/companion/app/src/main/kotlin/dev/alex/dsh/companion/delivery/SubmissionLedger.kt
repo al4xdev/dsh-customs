@@ -85,6 +85,18 @@ class SubmissionLedger {
         if (entry.requestId != requestId || entry.status != DeliveryStatus.SENDING) return
         if (entry.resent) entries[sessionId] = entry.copy(status = DeliveryStatus.UNKNOWN) else entries.remove(sessionId)
     }
+    /**
+     * Explicit owner "Cancelar": abandons an UNKNOWN intent locally so a fresh message may be
+     * started. Nothing is POSTed; an ADMITTED row (a delivered prompt) and a SENDING/in-flight
+     * row are left untouched. Returns true when an entry was removed.
+     */
+    @Synchronized
+    fun discardUnknown(sessionId: String): Boolean {
+        val entry = entries[sessionId] ?: return false
+        if (entry.status != DeliveryStatus.UNKNOWN) return false
+        entries.remove(sessionId)
+        return true
+    }
 
     /**
      * Events must come from this session's admitted, validated contiguous journal.

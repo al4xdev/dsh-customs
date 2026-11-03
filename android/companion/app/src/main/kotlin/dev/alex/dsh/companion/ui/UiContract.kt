@@ -92,6 +92,9 @@ data class CompanionUiState(
     val canResendUncertain: Boolean get() = authenticated && delivery == DeliveryStatus.UNKNOWN && !busy && !filePickerPending &&
         (if (isNewDraft) selectedId == null
         else selectedId != null && connected && (resendFiles == 0 || (selectedFiles.size == resendFiles && selectedFiles.none { it.needsReselect })))
+    // Cancelar abandons the uncertain intent locally (no POST) so a fresh send may be started;
+    // it works offline and is never invoked automatically.
+    val canDiscardUncertain: Boolean get() = authenticated && delivery == DeliveryStatus.UNKNOWN && !busy
     val canStopResponse: Boolean get() = authenticated && selectedId != null && connected &&
         ((fileSendPhase == FileSendPhase.PREPARING || fileSendPhase == FileSendPhase.UPLOADING) ||
             (delivery != DeliveryStatus.SENDING && delivery != DeliveryStatus.UNKNOWN && response.canStop))
@@ -122,6 +125,8 @@ interface UiActions {
     fun cancelTurn()
     /** Explicit owner action for an UNKNOWN send/create; never invoked automatically. */
     fun resendUncertain() {}
+    /** Explicit owner action to abandon an UNKNOWN send/create without resending; never invoked automatically. */
+    fun discardUncertain() {}
     fun refreshNativeGoals() {}
     fun refreshMetadata() {}
     fun setCatalogVisible(visible: Boolean) {}

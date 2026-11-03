@@ -14,6 +14,7 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -728,6 +730,7 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                 }
             }
             if (pendingPrompt != null) {
+                val promptLabel = if (state.delivery == DeliveryStatus.UNKNOWN) "Envio sem confirmação" else "Enviando…"
                 item(key = "pending-prompt") {
                     val density = LocalDensity.current.density
                     val floatAnim = remember(pendingPrompt) { androidx.compose.animation.core.Animatable(100f) }
@@ -756,7 +759,7 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
                         ) {
                             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                                 Text(pendingPrompt, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Text("Enviando…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
+                                Text(promptLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f), modifier = Modifier.padding(top = 4.dp))
                             }
                         }
                     }
@@ -899,14 +902,26 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                 FileSendPhase.NONE -> ""
             }, style = MaterialTheme.typography.bodySmall)
             DeliveryStatus.ADMITTED -> Unit
-            DeliveryStatus.UNKNOWN -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            DeliveryStatus.UNKNOWN -> Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.pendingPrompt?.takeIf { it.isNotBlank() }?.let { prompt ->
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer) {
+                        Text(prompt, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp))
+                    }
+                }
                 Text(when {
                     state.isNewDraft -> "Criação sem confirmação. Pode ter ficado uma conversa vazia na lista; Reenviar cria outra."
                     state.resendFiles > 0 -> "Envio sem confirmação. Selecione os mesmos arquivos e toque em Reenviar; o mesmo identificador não duplica a mensagem."
                     else -> "Envio sem confirmação. Reenviar usa o mesmo identificador e não duplica uma mensagem já recebida."
-                }, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = actions::resendUncertain, enabled = state.canResendUncertain,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("resend-uncertain")) { Text("Reenviar") }
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Row(horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { actions.discardUncertain() }, enabled = state.canDiscardUncertain,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("cancel-uncertain")) { Text("Cancelar") }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = actions::resendUncertain, enabled = state.canResendUncertain,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("resend-uncertain")) { Text("Reenviar") }
+                }
             }
         }
         if (state.filePickerPending) Text("Conferindo seleção de arquivos…", style = MaterialTheme.typography.bodySmall)

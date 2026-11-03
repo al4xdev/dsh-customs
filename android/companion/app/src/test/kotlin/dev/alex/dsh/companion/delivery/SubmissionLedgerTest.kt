@@ -207,6 +207,32 @@ class SubmissionLedgerTest {
         assertNotNull(ledger.retry("chat-1", "request-1", 3))
         assertThrows(IllegalArgumentException::class.java) { ledger.retry("chat-1", "request-1", -1) }
     }
+    @Test fun discardUnknownRemovesOnlyUnknownAndEnablesFreshSend() {
+        val ledger = ledger()
+        ledger.interrupted(1)
+        assertTrue(ledger.discardUnknown("chat-1"))
+        assertNull(ledger.entry("chat-1"))
+        assertEquals(DeliveryStatus.NONE, ledger.status("chat-1"))
+        // The abandoned intent is not resumable.
+        assertNull(ledger.retry("chat-1", "request-1", 2))
+        // A fresh, distinct intent may start under a newer generation.
+        assertTrue(ledger.begin("chat-1", "request-2", "fresh literal", 2) != null)
+        assertEquals(DeliveryStatus.SENDING, ledger.status("chat-1"))
+        assertEquals("request-2", ledger.entry("chat-1")?.requestId)
+    }
+    @Test fun discardUnknownLeavesInFlightAndDeliveredIntentsUntouched() {
+        // In-flight SENDING: a local abandon must not drop evidence of a possibly-sent POST.
+        val sending = ledger()
+        assertFalse(sending.discardUnknown("chat-1"))
+        assertEquals(DeliveryStatus.SENDING, sending.status("chat-1"))
+        assertEquals("request-1", sending.entry("chat-1")?.requestId)
+        // ADMITTED (delivered) is never discarded.
+        val admitted = SubmissionLedger()
+        admitted.begin("chat-2", "request-1", "delivered", 1)
+        admitted.acknowledged("chat-2", "request-1", 1, 1)
+        assertFalse(admitted.discardUnknown("chat-2"))
+        assertEquals(DeliveryStatus.ADMITTED, admitted.status("chat-2"))
+    }
     @Test fun aResendRefusedBeforeItsPostStaysUnknownInsteadOfBeingForgotten() {
         val ledger = ledger(); ledger.interrupted(1)
         assertNotNull(ledger.retry("chat-1", "request-1", 2))

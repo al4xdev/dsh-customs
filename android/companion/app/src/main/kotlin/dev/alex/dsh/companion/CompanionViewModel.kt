@@ -1233,6 +1233,31 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         if (!submitAdmitted(proof, entry.text, entry.requestId, generation, files = files, resend = true) && files != null) retireFileSend()
     }
 
+    /**
+     * Explicit owner action to abandon an UNKNOWN send without resending ("Cancelar"). Local-only:
+     * the uncertain intent is dropped so a fresh message may be started, and the uncertain message
+     * is no longer shown as pending. An uncertain chat creation is released, keeping the typed
+     * literal so the next deliberate Send creates again. Nothing is POSTed.
+     */
+    override fun discardUncertain() {
+        val current = state.value
+        if (!current.authenticated || current.busy || current.delivery != DeliveryStatus.UNKNOWN) return
+        retireFileSend()
+        if (current.isNewDraft) {
+            if (current.selectedId != null) return
+            val local = newChatDraft.snapshot()
+            if (!newChatDraft.releaseUncertainCreate()) return
+            mutable.update { it.copy(draft = local.text, error = null) }
+            updateDelivery()
+            return
+        }
+        val sessionId = current.selectedId ?: return
+        if (submissions.entry(sessionId)?.status != DeliveryStatus.UNKNOWN) return
+        submissions.discardUnknown(sessionId)
+        mutable.update { it.copy(pendingPrompt = null, error = null) }
+        updateDelivery()
+    }
+
     private fun sendFirstDraft() {
         val current = state.value
         if (!current.authenticated || !current.isNewDraft || current.selectedId != null || current.busy ||
