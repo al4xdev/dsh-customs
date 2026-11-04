@@ -89,6 +89,10 @@ export class ClaudeSession {
   async *step(signal, tools, { textOnly = false } = {}) {
     this.busy = true;
     this.lastUsed = Date.now();
+    // Set before the finish is yielded, since a consumer may stop pulling there. A cut is
+    // the harness stopping the reply, yet the CLI records the interrupt as "[Request
+    // interrupted by user]"; an abort is a real stop and stays unexplained.
+    this.lastStepCut = false;
     const out = new StepWriter();
     // Summaries and one-shot answers are text: no call parsing at all.
     const parser = textOnly ? { feed: text => [{ text }], end: () => [], calls: 0, cut: false } : new CallParser(tools);
@@ -117,6 +121,7 @@ export class ClaudeSession {
           if (!cutting) yield* emit(parser.end());
           yield* out.close();
           ended = true;
+          this.lastStepCut = cutting && !aborting;
           if (parser.calls > 0 && !aborting) yield* out.finish({ kind: 'tool-calls' });
           else yield* out.finish(aborting ? abortedReason() : { kind: 'error', failure: { code: 'PROVIDER_ERROR', message: `claude exited ${item.code}: ${this.stderr.trim() || 'no output'}` } });
           return;
@@ -149,6 +154,7 @@ export class ClaudeSession {
             yield* out.close();
             if (!out.hasUsage && event.usage) out.addUsage(event.usage);
             ended = true;
+            this.lastStepCut = cutting && !aborting;
             if (aborting) yield* out.finish(abortedReason());
             // A reply that asked for tools ends the step on them, even when it was cut.
             else if (parser.calls > 0) yield* out.finish({ kind: 'tool-calls' });

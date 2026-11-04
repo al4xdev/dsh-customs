@@ -12,7 +12,7 @@ const root = mkdtempSync(join(tmpdir(), 'claude-bare-dsh-test-'));
 process.env.XDG_STATE_HOME = join(root, 'state');
 process.env.FAKE_CLAUDE_LOG = join(root, 'fake.log');
 process.env.ANTHROPIC_API_KEY = 'must-not-reach-the-cli';
-const { ClaudeCliAdapter, Config, afterLastAssistant, claudeSessionId, imageTarget } = await import('./index.mjs');
+const { ClaudeCliAdapter, Config, CUT_NOTE, afterLastAssistant, claudeSessionId, imageTarget } = await import('./index.mjs');
 const { resultReason } = await import('./session.mjs');
 const { CallParser, toolsPrompt } = await import('./protocol.mjs');
 test.after(() => rmSync(root, { recursive: true, force: true }));
@@ -218,6 +218,23 @@ test('an invented result after a call cuts the turn and never reaches dsh', asyn
   assert.equal(chunks.filter(c => c.type === 'block-end' && c.block.type === 'tool-call').length, 1);
   assert.ok(!textOf(chunks).includes('invented'));
   assert.ok(log().some(entry => entry.interrupted), 'the CLI turn was interrupted');
+});
+
+test('the line after a cut tells Claude the harness stopped it, not the user', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const first = [system, user('HALLU')];
+  const step1 = await collect(adapter, { sessionId: 's-cut-note', messages: first });
+  const call = step1.find(c => c.type === 'block-end' && c.block.type === 'tool-call').block;
+  const assistant = { id: id(), role: 'assistant', content: [call], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'claude-sonnet-5-5' } };
+  const result = { id: id(), role: 'tool', toolCallId: call.id, content: [{ type: 'text', text: 'RESULT-H' }], source: { kind: 'tool', callId: call.id } };
+  const second = [...first, assistant, result];
+  const step2 = await collect(adapter, { sessionId: 's-cut-note', messages: second });
+  assert.equal(prompts().at(-1), `${CUT_NOTE}\n\n<function_results>\n<dsh_result name="echo" index="1">\nRESULT-H\n</dsh_result>\n</function_results>`);
+  assert.equal(textOf(step2), 'got: RESULT-H');
+  const reply = { id: id(), role: 'assistant', content: [{ type: 'text', text: 'got: RESULT-H' }], source: { kind: 'model', provider: 'claude-bare-dsh', model: 'claude-sonnet-5-5' } };
+  await collect(adapter, { sessionId: 's-cut-note', messages: [...second, reply, user('after')] });
+  assert.equal(prompts().at(-1), 'after', 'a reply that was not cut leaves no note');
 });
 
 test('developer messages reach Claude', async t => {

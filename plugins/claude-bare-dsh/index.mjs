@@ -38,6 +38,9 @@ const DEFAULT_MODELS = [
 // Claude Code's own prompt describes the environment (cwd, platform, git) of the empty
 // dir the CLI runs in.
 const ENVIRONMENT_NOTE = "The working directory, platform and git facts in Claude Code's environment section above describe an empty placeholder directory; the dsh context in this conversation is authoritative.";
+// The CLI puts its "[Request interrupted by user]" for a cut right before the next user
+// line, so the explanation opens that line.
+export const CUT_NOTE = '(The harness ended your previous reply early, as it does once the tool calls are written; the "[Request interrupted by user]" just before this is that stop, not the user. Continue without remarking on it.)';
 
 // Built-in plugins that add context (AGENTS.md loading, plugin-authoring guidance) and
 // auto-memory, verified against the 2.1.303 init frame. The telemetry plugin adds none.
@@ -186,6 +189,7 @@ class ClaudeCliAdapter extends LlmAdapter {
     this.config = config;
     this.sessions = new Map(); // dsh session id -> ClaudeSession
     this.locks = new Map();    // dsh session id -> tail of its step chain
+    this.cutSessions = new Set(); // dsh session ids whose last Claude reply the harness cut
     this.root = stateRoot();
     this.home = join(this.root, 'claude-home');
     this.work = join(this.root, 'work');
@@ -277,9 +281,11 @@ class ClaudeCliAdapter extends LlmAdapter {
     const tail = afterLastAssistant(options.messages);
     // Images of this step's new messages are attached; older ones stay placeholders.
     const images = [];
+    // A fresh conversation never saw the cut, so the note is consumed either way.
+    const afterCut = this.cutSessions.delete(sessionId);
     const text = spawned && !resume && priorAssistant
       ? transcript(options.messages, images, options.messages.length - tail.length)
-      : newInput(tail, options.messages, images);
+      : [afterCut ? CUT_NOTE : '', newInput(tail, options.messages, images)].filter(Boolean).join('\n\n');
     session.sendUser(await this.userContent(text, images, options.signal));
 
     // The finish decides whether a refused session id is retried, so the usage chunk
@@ -293,11 +299,13 @@ class ClaudeCliAdapter extends LlmAdapter {
         if (again) {
           if (again === 'fresh') this.forget(claudeId); else this.markStarted(claudeId);
           this.drop(sessionId);
+          if (afterCut) this.cutSessions.add(sessionId);
           yield* this.turn(options, token, again);
           return;
         }
       }
       if (chunk.type === 'finish' && chunk.reason.kind !== 'error' && chunk.reason.kind !== 'aborted') this.saveLineage(sessionId, { generation: lineage.generation, ids });
+      if (chunk.type === 'finish' && session.lastStepCut) this.cutSessions.add(sessionId);
       if (held) { yield held; held = undefined; }
       yield chunk;
     }
