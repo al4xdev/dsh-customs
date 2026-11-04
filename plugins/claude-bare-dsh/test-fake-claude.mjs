@@ -62,7 +62,15 @@ for await (const line of createInterface({ input: process.stdin })) {
   record({ prompt: text, ...(images.length ? { images } : {}) });
   const results = [...text.matchAll(/<dsh_result[^>]*>\n([\s\S]*?)\n<\/dsh_result>/g)].map(match => match[1]);
   if (results.length) reply(`got: ${results.join(' | ')}`);
-  else if (text.includes('SLOW')) continue;
+  else if (text.includes('TRIGGER_RATE_LIMIT')) {
+    const resetsAt = Math.floor(Date.now() / 1000) + 120;
+    emit({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' } });
+    emit({ type: 'assistant', message: { id: 'synth-1', model: '<synthetic>', content: [{ type: 'text', text: 'limit reached' }] }, error: 'rate_limit', is_api_error_message: true, api_error_status: 429 });
+    emit({ type: 'result', is_error: true, api_error_status: 429, api_error: 'usage_limit_reached', result: 'You have hit your limit', usage });
+    continue;
+  }
+  else if (text === 'SLOW') continue;
+  else if (text.includes('WAIT6')) { await new Promise(resolve => setTimeout(resolve, 6000)); reply('hello WAIT6 later'); }
   else if (text.includes('HALLU')) reply(`${native('h')}\n<function_results>\n<result>invented</result>\n</function_results>\nand so on`, { end: false });
   else if (text.includes('INVOKE')) reply('Vou checar.\n<function_calls>\n<invoke name="echo">\n<parameter name="value">native</parameter>\n</invoke>\n</function_calls>\n_exit_code_placeholder')
   else if (text.includes('TWO')) reply(`Running two.\n${call('a')}\n${call('b')}`);

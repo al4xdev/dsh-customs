@@ -161,12 +161,38 @@ test('no token: a clear credential error and no process', async () => {
 });
 
 test('result mapping: login, usage limit, max tokens', () => {
-  assert.equal(resultReason({ is_error: true, result: 'Failed to authenticate', api_error_status: 401 }).failure.code, 'MISSING_CREDENTIAL');
+  const auth = resultReason({ is_error: true, result: 'Failed to authenticate', api_error_status: 401 });
+  assert.equal(auth.failure.code, 'MISSING_CREDENTIAL');
+  assert.ok(Object.isFrozen(auth.failure));
+
   const limited = resultReason({ is_error: true, result: 'limit' }, { status: 'rejected', resetsAt: Math.floor(Date.now() / 1000) + 60 });
   assert.equal(limited.failure.code, 'RATE_LIMIT');
+  assert.equal(limited.failure.status, 429);
   assert.ok(limited.failure.providerRetryAfterMs > 0);
+  assert.ok(Object.isFrozen(limited.failure));
+
+  const fromApiParams = resultReason({ is_error: true, api_error_status: 429, api_error: 'usage_limit_reached', api_error_params: { rate_limit_info: { resetsAt: Math.floor(Date.now() / 1000) + 60 } } });
+  assert.equal(fromApiParams.failure.code, 'RATE_LIMIT');
+  assert.equal(fromApiParams.failure.status, 429);
+  assert.ok(fromApiParams.failure.providerRetryAfterMs > 0);
+  assert.ok(Object.isFrozen(fromApiParams.failure));
+
   assert.deepEqual(resultReason({ stop_reason: 'max_tokens' }), { kind: 'max-tokens' });
   assert.deepEqual(afterLastAssistant([user('a'), { role: 'assistant', content: [] }, user('b')]).map(m => m.content[0].text), ['b']);
+});
+
+test('rate limit events yield a frozen RATE_LIMIT failure with status 429, providerRetryAfterMs and suppress synthetic text', async t => {
+  const adapter = adapterFor();
+  t.after(() => adapter.dispose());
+  const chunks = await collect(adapter, { sessionId: 's-rate-limit', messages: [system, user('TRIGGER_RATE_LIMIT')] });
+  assert.equal(textOf(chunks), '', 'synthetic CLI error text must never be streamed to the user');
+  const finish = finishOf(chunks);
+  assert.equal(finish.type, 'finish');
+  assert.equal(finish.reason.kind, 'error');
+  assert.equal(finish.reason.failure.code, 'RATE_LIMIT');
+  assert.equal(finish.reason.failure.status, 429);
+  assert.ok(finish.reason.failure.providerRetryAfterMs > 0);
+  assert.ok(Object.isFrozen(finish.reason.failure));
 });
 
 

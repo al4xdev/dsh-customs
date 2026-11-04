@@ -472,7 +472,7 @@ class ClaudeCliAdapter extends LlmAdapter {
 
 function* errorFinish(code, message) {
   yield { type: 'usage', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 } };
-  yield { type: 'finish', reason: { kind: 'error', failure: { code, message } } };
+  yield { type: 'finish', reason: { kind: 'error', failure: Object.freeze({ code, message }) } };
 }
 
 export function apply(ctx, config) {
