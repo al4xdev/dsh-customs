@@ -201,7 +201,7 @@ export class ClaudeSession {
           this.#settle();
           yield* out.close();
           ended = true;
-          yield* out.finish(aborting ? abortedReason() : { kind: 'error', failure: { code: 'PROVIDER_ERROR', message: `claude exited ${item.code}: ${this.stderr.trim() || 'no output'}` } });
+          yield* out.finish(aborting ? abortedReason() : { kind: 'error', failure: Object.freeze({ code: 'PROVIDER_ERROR', message: `claude exited ${item.code}: ${this.stderr.trim() || 'no output'}` }) });
           return;
         }
         const event = item.event;
@@ -245,8 +245,13 @@ export class ClaudeSession {
           }
           case 'assistant':
             // With partial messages on, a whole message only matters when it was never
-            // streamed (the CLI's synthetic rate-limit notice has a fresh id).
+            // streamed. The CLI's synthetic error messages (a rate-limit notice) are not
+            // the model's: they never reach the user, but their limit info is kept.
             if (event.parent_tool_use_id || this.streamed.has(event.message?.id)) break;
+            if (event.is_api_error_message || event.error === 'rate_limit' || event.message?.model === '<synthetic>') {
+              if (event.api_error_params?.rate_limit_info) out.limit ??= event.api_error_params.rate_limit_info;
+              break;
+            }
             for (const block of event.message?.content ?? []) if (block.type === 'text' && block.text) yield* out.text(block.text);
             break;
           case 'rate_limit_event': {
@@ -278,19 +283,29 @@ export class ClaudeSession {
   }
 }
 
-const abortedReason = () => ({ kind: 'aborted', failure: { code: 'ABORTED', message: 'aborted' } });
+const abortedReason = () => ({ kind: 'aborted', failure: Object.freeze({ code: 'ABORTED', message: 'aborted' }) });
 
 export function resultReason(result, limit) {
-  if (limit) {
-    const resetAt = Number(limit.resetsAt) * (Number(limit.resetsAt) < 1e12 ? 1000 : 1);
-    return { kind: 'error', failure: { code: 'RATE_LIMIT', message: 'Claude usage limit reached',
-      ...(Number.isFinite(resetAt) && resetAt > Date.now() ? { providerRetryAfterMs: resetAt - Date.now() } : {}) } };
+  const rateLimit = limit ?? (result.api_error_status === 429 || result.api_error === 'usage_limit_reached' ? result.api_error_params?.rate_limit_info : undefined);
+  if (rateLimit) {
+    const resetAt = Number(rateLimit.resetsAt) * (Number(rateLimit.resetsAt) < 1e12 ? 1000 : 1);
+    const delay = Number.isFinite(resetAt) && resetAt > Date.now() ? (resetAt - Date.now() + 2000) : undefined;
+    return { kind: 'error', failure: Object.freeze({
+      code: 'RATE_LIMIT',
+      status: 429,
+      message: result.result || 'Claude usage limit reached',
+      ...(delay ? { providerRetryAfterMs: delay } : {}),
+    }) };
   }
   if (result.is_error) {
     const message = String(result.result || (Array.isArray(result.errors) ? result.errors.join('; ') : '') || result.subtype || 'claude error');
     const login = result.api_error_status === 401 || /not logged in|authentication_error|failed to authenticate|oauth .*invalid/i.test(message);
-    return { kind: 'error', failure: { code: login ? 'MISSING_CREDENTIAL' : 'PROVIDER_ERROR', message: login ? `${message} (refresh the token: claude setup-token)` : message,
-      ...(Number.isInteger(result.api_error_status) ? { status: result.api_error_status } : {}) } };
+    const status = Number.isInteger(result.api_error_status) ? result.api_error_status : undefined;
+    return { kind: 'error', failure: Object.freeze({
+      code: login ? 'MISSING_CREDENTIAL' : 'PROVIDER_ERROR',
+      message: login ? `${message} (refresh the token: claude setup-token)` : message,
+      ...(status ? { status } : {}),
+    }) };
   }
   if (result.stop_reason === 'max_tokens') return { kind: 'max-tokens' };
   return { kind: 'stop' };

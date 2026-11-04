@@ -8,6 +8,7 @@
 //   [tool result: ...] blocks (a resumed process) -> "got: <their first lines joined by ' | '>"
 //   SLOW  -> nothing (waits for interrupt)
 //   WAIT6 -> answers after 6 s
+//   TRIGGER_RATE_LIMIT -> a rejected rate_limit_event, the CLI's synthetic notice and a 429 result
 //   anything else -> "hello <text>"
 // A line sent with `priority: "next"` while a tool turn waits joins that turn's answer.
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -119,6 +120,12 @@ async function answer(input) {
   abort = Promise.withResolvers();
   const results = [...text.matchAll(/\[tool result: [^\]]*\]\n([^\n]*)/g)].map(match => match[1]);
   if (results.length) reply(`got: ${results.join(' | ')}`);
+  else if (text.includes('TRIGGER_RATE_LIMIT')) {
+    const resetsAt = Math.floor(Date.now() / 1000) + 120;
+    emit({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' } });
+    emit({ type: 'assistant', message: { id: 'synth-1', model: '<synthetic>', content: [{ type: 'text', text: 'limit reached' }] }, error: 'rate_limit', is_api_error_message: true, api_error_status: 429 });
+    emit({ type: 'result', is_error: true, api_error_status: 429, api_error: 'usage_limit_reached', result: 'You have hit your limit', usage });
+  }
   else if (text.includes('SLOW')) { await abort.promise; interrupted(); }
   else if (text.includes('TWO')) await toolTurn('Running two.\n', ['a', 'b']);
   else if (text.includes('TOOL')) await toolTurn('Checking.\n', ['x']);
