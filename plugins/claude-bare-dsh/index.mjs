@@ -41,6 +41,7 @@ const DEFAULT_MODELS = [
 const ENVIRONMENT_NOTE = "The working directory, platform and git facts in Claude Code's environment section above describe an empty placeholder directory; the dsh context in this conversation is authoritative.";
 // The answer for a call whose result is missing from dsh's history (its run was dropped).
 const NO_RESULT = { content: [{ type: 'text', text: '(no result: dsh did not run this call)' }], isError: true };
+const PARKED_LIMIT_MS = 24 * 60 * 60_000;
 
 // Built-in plugins that add context (AGENTS.md loading, plugin-authoring guidance) and
 // auto-memory, verified against the 2.1.303 init frame. The telemetry plugin adds none.
@@ -360,8 +361,10 @@ class ClaudeCliAdapter extends LlmAdapter {
   }
 
   spawn(sessionId, options, token, spec, prompt, mode) {
+    // A turn parked on dsh's tools is not idle: killing it would leave Claude's
+    // transcript with calls that never got their results.
     while (this.sessions.size >= this.config.maxProcesses) {
-      const idle = [...this.sessions.entries()].filter(([, s]) => !s.busy).sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
+      const idle = [...this.sessions.entries()].filter(([, s]) => !s.busy && !s.parked).sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
       if (!idle) break;
       this.drop(idle[0]);
     }
@@ -507,8 +510,13 @@ class ClaudeCliAdapter extends LlmAdapter {
   }
 
   sweep() {
-    const cutoff = Date.now() - this.config.idleMinutes * 60_000;
-    for (const [id, session] of this.sessions) if (!session.busy && session.lastUsed < cutoff) this.drop(id);
+    const now = Date.now();
+    // A parked turn waits as long as dsh's tools run (subagents, builds); only one left
+    // for a day is taken for abandoned.
+    for (const [id, session] of this.sessions) {
+      const limit = session.parked ? PARKED_LIMIT_MS : this.config.idleMinutes * 60_000;
+      if (!session.busy && now - session.lastUsed > limit) this.drop(id);
+    }
   }
 
   dispose() {

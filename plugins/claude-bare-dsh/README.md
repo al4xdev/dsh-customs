@@ -105,8 +105,8 @@ other's refresh token.
 | `command` | `claude` | CLI executable |
 | `tokenRef` | `CLAUDE_CODE_OAUTH_TOKEN` | dsh credential with the token |
 | `models` | Opus 5.5, Sonnet 5.5, Haiku 5.5, Fable 5.1 | `{ id, name, contextWindow }` (default 250000), fixed list |
-| `idleMinutes` | `30` | stop an idle session process; the next step resumes it |
-| `maxProcesses` | `6` | idle processes are evicted beyond this |
+| `idleMinutes` | `30` | stop an idle session process; the next step resumes it (a turn parked on dsh's tools waits up to a day) |
+| `maxProcesses` | `6` | idle processes are evicted beyond this; a turn parked on dsh's tools never is |
 
 State: `$XDG_STATE_HOME/claude-bare-dsh` (config dir, empty working dir, started-session
 ids, and `lineage.json`: the history each dsh session's Claude conversation was built from).

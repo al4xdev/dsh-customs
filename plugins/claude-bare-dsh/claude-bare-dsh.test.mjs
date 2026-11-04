@@ -149,6 +149,24 @@ test('a call missing from dsh history is answered as not run', async t => {
   assert.match(textOf(step2), /^got: \(no result: dsh did not run this call\)/);
 });
 
+test('a turn parked on tools is neither evicted for a new process nor swept as idle', async t => {
+  const adapter = new ClaudeCliAdapter(ctx(), Config({ command: fake, maxProcesses: 1 }));
+  t.after(() => adapter.dispose());
+  const first = [system, user('TOOL long')];
+  const [call] = callsOf(await collect(adapter, { sessionId: 's-park-a', messages: first }));
+  const parked = adapter.sessions.get('s-park-a');
+  await collect(adapter, { sessionId: 's-park-b', messages: [system, user('other')] });
+  assert.equal(adapter.sessions.get('s-park-a'), parked, 'not evicted to make room');
+  parked.lastUsed = Date.now() - 2 * 60 * 60_000;
+  adapter.sweep();
+  assert.equal(adapter.sessions.get('s-park-a'), parked, 'not swept after the idle minutes');
+  const step2 = await collect(adapter, { sessionId: 's-park-a', messages: [...first, assistantWith([call]), toolMessage(call, [{ type: 'text', text: 'LATE' }])] });
+  assert.equal(textOf(step2), 'got: LATE', 'the same turn takes the late result');
+  parked.lastUsed = Date.now() - 2 * 60 * 60_000;
+  adapter.sweep();
+  assert.equal(adapter.sessions.get('s-park-a'), undefined, 'idle again once the turn ended');
+});
+
 test('results reach Claude byte for byte, markup and all', async t => {
   const adapter = adapterFor();
   t.after(() => adapter.dispose());
