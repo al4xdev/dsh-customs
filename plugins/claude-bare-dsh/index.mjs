@@ -1,7 +1,8 @@
 // dsh provider backed by the official Claude Code CLI, as close to a bare model as the
 // CLI allows with a subscription login:
-// - no tools of its own at all (`--tools ""`, no MCP servers): dsh's tools reach Claude
-//   through the text protocol of protocol.mjs and run in dsh's own loop;
+// - no tools of its own at all (`--tools ""`, no MCP servers from any config): dsh's
+//   tools reach Claude natively as an in-process MCP server (mcp.mjs) and run in dsh's
+//   own loop;
 // - no skills, setting sources, built-in context plugins or auto-memory;
 // - an empty config dir of its own (no user CLAUDE.md, settings, hooks, agents or
 //   plugins) and an empty working dir (no project CLAUDE.md);
@@ -15,7 +16,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveHost } from '../common.mjs';
-import { callsText, resultsText, toolsPrompt } from './protocol.mjs';
+import { MCP_ENV, PREFIX, callText, resultText } from './mcp.mjs';
 import { ClaudeSession } from './session.mjs';
 
 const { default: z } = await import(resolveHost('@deepseek-ai/schemastery'));
@@ -38,9 +39,8 @@ const DEFAULT_MODELS = [
 // Claude Code's own prompt describes the environment (cwd, platform, git) of the empty
 // dir the CLI runs in.
 const ENVIRONMENT_NOTE = "The working directory, platform and git facts in Claude Code's environment section above describe an empty placeholder directory; the dsh context in this conversation is authoritative.";
-// The CLI puts its "[Request interrupted by user]" for a cut right before the next user
-// line, so the explanation opens that line.
-export const CUT_NOTE = '(The harness ended your previous reply early, as it does once the tool calls are written; the "[Request interrupted by user]" just before this is that stop, not the user. Continue without remarking on it.)';
+// The answer for a call whose result is missing from dsh's history (its run was dropped).
+const NO_RESULT = { content: [{ type: 'text', text: '(no result: dsh did not run this call)' }], isError: true };
 
 // Built-in plugins that add context (AGENTS.md loading, plugin-authoring guidance) and
 // auto-memory, verified against the 2.1.303 init frame. The telemetry plugin adds none.
@@ -123,32 +123,25 @@ export function systemText(options) {
     .filter(Boolean).join('\n\n');
 }
 
-/** Tool results of `messages`, named after the assistant calls in `history` they answer. */
-function toolResults(messages, history, images) {
-  const names = new Map(history.flatMap(message => message.role === 'assistant'
-    ? message.content.filter(block => block.type === 'tool-call').map(block => [block.id, block.name]) : []));
-  return messages.filter(message => message.role === 'tool').map(message => ({
-    name: names.get(message.toolCallId) ?? 'tool', text: textOf(message.content, images) || '(no output)', isError: message.isError === true }));
-}
+/** Tool name of every call in `history`, by call id. */
+const callNames = history => new Map(history.flatMap(message => message.role === 'assistant'
+  ? message.content.filter(block => block.type === 'tool-call').map(block => [block.id, block.name]) : []));
+
+/** A tool message as text, named after the call it answers. */
+const toolText = (message, names, images) =>
+  resultText(names.get(message.toolCallId) ?? 'tool', textOf(message.content, images) || '(no output)', message.isError === true);
 
 /** A whole conversation as one prompt, for a fresh process. */
 export function transcript(messages, images, attachFrom = messages.length) {
+  const names = callNames(messages);
   const out = [];
-  for (let at = 0; at < messages.length; at++) {
-    const message = messages[at];
+  for (const [at, message] of messages.entries()) {
     const collect = at >= attachFrom ? images : undefined;
     if (message.role === 'system') continue;
-    if (message.role === 'tool') {
-      // Consecutive results go together, as the next user message would carry them.
-      const run = [];
-      while (messages[at]?.role === 'tool') run.push(messages[at++]);
-      at--;
-      out.push(`[tool results]\n${resultsText(toolResults(run, messages, collect))}`);
-      continue;
-    }
+    if (message.role === 'tool') { out.push(toolText(message, names, collect)); continue; }
     if (message.role === 'assistant') {
-      const calls = callsText(message.content.filter(block => block.type === 'tool-call'));
-      out.push(`[assistant]\n${[textOf(message.content, collect), calls].filter(Boolean).join('\n')}`);
+      const calls = message.content.filter(block => block.type === 'tool-call').map(callText);
+      out.push(`[assistant]\n${[textOf(message.content, collect), ...calls].filter(Boolean).join('\n')}`);
       continue;
     }
     out.push(`[${message.role === 'developer' ? 'developer' : 'user'}]\n${textOf(message.content, collect)}`);
@@ -157,20 +150,28 @@ export function transcript(messages, images, attachFrom = messages.length) {
 }
 
 /**
- * The next user line for a step: the results of the calls the last reply made, then any
- * new text. Plain text when there is nothing but user messages.
+ * A new user line: plain text when there is nothing but user messages. Tool results only
+ * appear here when the process that made the calls is gone (a resumed conversation), so
+ * they go as text ahead of the rest.
  */
 export function newInput(tail, history = tail, images) {
   const relevant = tail.filter(message => message.role !== 'system');
-  const results = toolResults(relevant, history, images);
+  const names = callNames(history);
+  const results = relevant.filter(message => message.role === 'tool').map(message => toolText(message, names, images));
   const others = relevant.filter(message => message.role !== 'tool');
   const text = others.every(message => message.role === 'user')
     ? others.map(message => textOf(message.content, images)).filter(Boolean).join('\n\n')
     : transcript(others, images, 0);
-  return [results.length ? resultsText(results) : '', text].filter(Boolean).join('\n\n');
+  return [...results, text].filter(Boolean).join('\n\n');
 }
 
 const sha = text => createHash('sha256').update(text).digest('hex');
+
+/** dsh's prompt as appended to Claude Code's; the tools travel apart, over MCP. */
+const sessionPrompt = options => [systemText(options), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n');
+/** What a process is fixed to: a change respawns it on the same Claude session. */
+const sessionSpec = (options, prompt) => JSON.stringify({ model: options.model, effort: options.reasoningEffort ?? null,
+  prompt: sha(prompt), tools: sha(JSON.stringify(options.tools ?? [])) });
 
 /** The ids of a request's conversation, in order (system messages excluded). */
 export const historyIds = messages => messages.filter(message => message.role !== 'system')
@@ -189,7 +190,6 @@ class ClaudeCliAdapter extends LlmAdapter {
     this.config = config;
     this.sessions = new Map(); // dsh session id -> ClaudeSession
     this.locks = new Map();    // dsh session id -> tail of its step chain
-    this.cutSessions = new Set(); // dsh session ids whose last Claude reply the harness cut
     this.root = stateRoot();
     this.home = join(this.root, 'claude-home');
     this.work = join(this.root, 'work');
@@ -249,10 +249,8 @@ class ClaudeCliAdapter extends LlmAdapter {
   /** @param retry undefined, or 'fresh' / 'resume' after a refused session id */
   async *turn(options, token, retry) {
     const sessionId = String(options.sessionId);
-    const prompt = [systemText(options), toolsPrompt(options.tools), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n');
-    // The prompt (tools included) is fixed for a process: a change respawns it on the
-    // same Claude session.
-    const spec = JSON.stringify({ model: options.model, effort: options.reasoningEffort ?? null, prompt: sha(prompt) });
+    const prompt = sessionPrompt(options);
+    const spec = sessionSpec(options, prompt);
     let session = this.sessions.get(sessionId);
     // Claude keeps its own transcript; dsh rewrites its history when it compacts (or on
     // an edit). History that no longer starts with what this Claude conversation was
@@ -276,22 +274,34 @@ class ClaudeCliAdapter extends LlmAdapter {
     if (!session) session = this.spawn(sessionId, options, token, spec, prompt, resume ? { resume: claudeId } : { fresh: claudeId });
 
     // A live or resumed process already holds everything up to the last assistant
-    // message; a fresh one for an existing conversation gets all of it once.
+    // message (and whatever it was sent after it, such as a message whose step was
+    // aborted); a fresh one for an existing conversation gets all of it once.
     const priorAssistant = options.messages.some(message => message.role === 'assistant');
-    const tail = afterLastAssistant(options.messages);
+    const tail = afterLastAssistant(options.messages).filter(message => !session.delivered.has(message.id));
     // Images of this step's new messages are attached; older ones stay placeholders.
     const images = [];
-    // A fresh conversation never saw the cut, so the note is consumed either way.
-    const afterCut = this.cutSessions.delete(sessionId);
-    const text = spawned && !resume && priorAssistant
-      ? transcript(options.messages, images, options.messages.length - tail.length)
-      : [afterCut ? CUT_NOTE : '', newInput(tail, options.messages, images)].filter(Boolean).join('\n\n');
-    session.sendUser(await this.userContent(text, images, options.signal));
+    if (session.parked) {
+      // The reply that made the calls is still open in the CLI: dsh's results answer its
+      // parked calls, and anything new (a message sent meanwhile) joins the same turn.
+      const byCall = new Map(tail.filter(message => message.role === 'tool').map(message => [message.toolCallId, message]));
+      const answers = [];
+      for (const id of session.owed) answers.push([id, byCall.has(id) ? await this.toolResult(byCall.get(id), options.signal) : NO_RESULT]);
+      const text = newInput(tail.filter(message => message.role !== 'tool'), options.messages, images);
+      // Queued before the answers, so the CLI has it when the turn resumes.
+      if (text) session.sendUser(await this.userContent(text, images, options.signal), { next: true });
+      for (const [id, result] of answers) session.answer(id, result);
+    } else {
+      const text = spawned && !resume && priorAssistant
+        ? transcript(options.messages, images, options.messages.length - tail.length)
+        : newInput(tail, options.messages, images);
+      session.sendUser(await this.userContent(text, images, options.signal));
+    }
+    for (const message of tail) if (message.id) session.delivered.add(message.id);
 
     // The finish decides whether a refused session id is retried, so the usage chunk
     // before it is held back: a retried attempt must not leave a usage chunk behind.
     let held;
-    for await (const chunk of session.step(options.signal, options.tools)) {
+    for await (const chunk of session.step(options.signal)) {
       if (chunk.type === 'usage') { held = chunk; continue; }
       if (chunk.type === 'finish' && chunk.reason.kind === 'error' && !retry) {
         const message = chunk.reason.failure.message;
@@ -299,13 +309,11 @@ class ClaudeCliAdapter extends LlmAdapter {
         if (again) {
           if (again === 'fresh') this.forget(claudeId); else this.markStarted(claudeId);
           this.drop(sessionId);
-          if (afterCut) this.cutSessions.add(sessionId);
           yield* this.turn(options, token, again);
           return;
         }
       }
       if (chunk.type === 'finish' && chunk.reason.kind !== 'error' && chunk.reason.kind !== 'aborted') this.saveLineage(sessionId, { generation: lineage.generation, ids });
-      if (chunk.type === 'finish' && session.lastStepCut) this.cutSessions.add(sessionId);
       if (held) { yield held; held = undefined; }
       yield chunk;
     }
@@ -326,22 +334,24 @@ class ClaudeCliAdapter extends LlmAdapter {
     const region = options.messages.slice(0, -1);
     const lineage = this.lineage(sessionId);
     const claudeId = claudeSessionId(sessionId, lineage.generation);
+    const live = this.sessions.get(sessionId);
+    // A turn parked on dsh's tools cannot take the instruction.
     const matches = lineage.ids.length > 0 && startsWith(lineage.ids, historyIds(region)) && instruction?.role === 'user'
-      && (this.sessions.get(sessionId)?.alive || this.started().has(claudeId));
+      && !live?.parked && (live?.alive || this.started().has(claudeId));
     if (!matches) { yield* this.oneShot(options, token, { sessionPrompt: true }); return; }
-    const prompt = [systemText(options), toolsPrompt(options.tools), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n');
-    const spec = JSON.stringify({ model: options.model, effort: options.reasoningEffort ?? null, prompt: sha(prompt) });
-    let session = this.sessions.get(sessionId);
+    const prompt = sessionPrompt(options);
+    const spec = sessionSpec(options, prompt);
+    let session = live;
     if (session && (session.spec !== spec || !session.alive || session.dirty)) { this.drop(sessionId); session = undefined; }
     if (!session) session = this.spawn(sessionId, options, token, spec, prompt, { resume: claudeId });
     const last = [...region].reverse().find(message => message.role !== 'system');
-    const anchor = (last ? (textOf(last.content) || callsText(last.content?.filter?.(block => block.type === 'tool-call') ?? [])) : '').replace(/\s+/g, ' ').trim().slice(0, COMPACTION_ANCHOR_CHARS);
+    const anchor = (last ? (textOf(last.content) || (last.content?.filter?.(block => block.type === 'tool-call') ?? []).map(callText).join('\n')) : '').replace(/\s+/g, ' ').trim().slice(0, COMPACTION_ANCHOR_CHARS);
     const scope = anchor
       ? `Condense only the conversation up to and including the ${last.role} message that begins: «${anchor}». Everything after that message stays verbatim and must not be summarized.\n\n`
       : '';
     try {
       session.sendUser(scope + textOf(instruction.content));
-      yield* session.step(options.signal, [], { textOnly: true });
+      yield* session.step(options.signal, { textOnly: true });
     } finally {
       // The summary request now sits in this transcript; the next turn starts a new one.
       this.drop(sessionId);
@@ -359,34 +369,63 @@ class ClaudeCliAdapter extends LlmAdapter {
       ...(mode.resume ? ['--resume', mode.resume] : ['--session-id', mode.fresh])];
     const claudeId = mode.resume ?? mode.fresh;
     const session = new ClaudeSession({ command: this.config.command, args, env: this.env(token), cwd: this.work, spec,
-      onInit: () => this.markStarted(claudeId) });
+      tools: options.tools, onInit: () => this.markStarted(claudeId) });
     this.sessions.set(sessionId, session);
     return session;
   }
 
-  /** Flags shared by every call: stream-json both ways, and Claude Code stripped down. */
+  /**
+   * Flags shared by every call: stream-json both ways, Claude Code stripped down, and
+   * dsh's MCP tools (when a call has them) allowed without a permission prompt.
+   */
   baseArgs(options) {
     return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
       '--tools', '', '--strict-mcp-config', '--disable-slash-commands', '--setting-sources', 'user', '--settings', JSON.stringify(SESSION_SETTINGS),
+      '--permission-mode', 'dontAsk', '--allowedTools', `${PREFIX}*`,
       ...(options.model ? ['--model', options.model] : []),
       ...(options.reasoningEffort ? ['--effort', String(options.reasoningEffort)] : [])];
   }
 
-  /** The user line: text, then each collected image read through dsh's attachment store. */
+  /** The user line: text, then each collected image. */
   async userContent(text, images, signal) {
     if (!images.length) return text;
-    const attachments = this.ctx.get?.('attachments');
     const parts = [{ type: 'text', text: text || '(see attached)' }];
     for (const [index, block] of images.entries()) {
       try {
-        if (!attachments) throw new Error('no attachment service in this dsh');
-        const image = await attachments.readImageRequest(block.attachment, imageTarget(block.attachment), signal);
-        parts.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: Buffer.from(image.data).toString('base64') } });
+        const image = await this.readImage(block, signal);
+        parts.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
       } catch (error) {
         parts.push({ type: 'text', text: `[image ${index + 1} could not be loaded: ${error?.message ?? error}]` });
       }
     }
     return parts;
+  }
+
+  /** dsh's result for a parked call, as its MCP answer: text as is, images attached. */
+  async toolResult(message, signal) {
+    const content = [];
+    for (const block of message.content ?? []) {
+      if (block.type === 'text' && block.text) content.push({ type: 'text', text: block.text });
+      if (block.type !== 'image') continue;
+      const label = block.attachment?.name ? ` ${block.attachment.name}` : '';
+      if (block.offloaded) { content.push({ type: 'text', text: `[image${label}: not attached here]` }); continue; }
+      try {
+        const image = await this.readImage(block, signal);
+        content.push({ type: 'image', data: image.data, mimeType: image.mediaType });
+      } catch (error) {
+        content.push({ type: 'text', text: `[image${label} could not be loaded: ${error?.message ?? error}]` });
+      }
+    }
+    if (!content.length) content.push({ type: 'text', text: '(no output)' });
+    return { content, ...(message.isError === true ? { isError: true } : {}) };
+  }
+
+  /** One image read through dsh's attachment store, at Claude's useful size, base64. */
+  async readImage(block, signal) {
+    const attachments = this.ctx.get?.('attachments');
+    if (!attachments) throw new Error('no attachment service in this dsh');
+    const image = await attachments.readImageRequest(block.attachment, imageTarget(block.attachment), signal);
+    return { mediaType: image.mediaType, data: Buffer.from(image.data).toString('base64') };
   }
 
   /** dsh's prompt goes by file: one argv element is capped at 128 KiB and shows in `ps`. */
@@ -398,30 +437,30 @@ class ClaudeCliAdapter extends LlmAdapter {
 
   env(token) {
     const env = { ...process.env, CLAUDE_CONFIG_DIR: this.home, CLAUDE_CODE_OAUTH_TOKEN: token, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
-      DISABLE_AUTO_COMPACT: '1' };
+      DISABLE_AUTO_COMPACT: '1', ...MCP_ENV };
     delete env.ANTHROPIC_API_KEY; // the token is the login; an inherited key would win over it
+    // An inherited cap would fail every dsh tool that runs longer (subagents, builds).
+    delete env.MCP_TOOL_TIMEOUT;
     return env;
   }
 
   /**
    * Titles, recaps and compaction: one answer, no session, no transcript. With
-   * `sessionPrompt` the system prompt is the session's own (tools included), so its
-   * prefix is shared with the session's cache entry.
+   * `sessionPrompt` the system prompt and tools are the session's own, so the request
+   * prefix is shared with the session's cache entry; any call is refused.
    */
-  async *oneShot(options, token, { sessionPrompt = false } = {}) {
-    const system = sessionPrompt
-      ? [systemText(options), toolsPrompt(options.tools), ENVIRONMENT_NOTE].filter(Boolean).join('\n\n')
-      : systemText(options);
+  async *oneShot(options, token, { sessionPrompt: shared = false } = {}) {
+    const system = shared ? sessionPrompt(options) : systemText(options);
     const args = [...this.baseArgs(options), '--max-turns', '1', '--no-session-persistence',
       ...(system ? ['--append-system-prompt-file', this.promptFile(system)] : [])];
-    const session = new ClaudeSession({ command: this.config.command, args, env: this.env(token), cwd: this.work, spec: 'one-shot' });
-    // stdin is closed below, so an interrupt cannot be written: abort kills instead.
+    const session = new ClaudeSession({ command: this.config.command, args, env: this.env(token), cwd: this.work, spec: 'one-shot',
+      tools: shared ? options.tools : undefined });
+    // Nothing of a one-shot is worth keeping: abort kills it.
     const onAbort = () => session.kill();
     options.signal?.addEventListener('abort', onAbort, { once: true });
     try {
       session.sendUser(newInput(options.messages));
-      session.child.stdin.end();
-      yield* session.step(options.signal, [], { textOnly: true });
+      yield* session.step(options.signal, { textOnly: true });
     } finally {
       options.signal?.removeEventListener('abort', onAbort);
       session.kill();
