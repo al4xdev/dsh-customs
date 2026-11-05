@@ -495,9 +495,9 @@ test('compaction without a matching conversation is a one-shot sharing the sessi
   assert.deepEqual(sinceLastSpawn().find(entry => entry.tools)?.tools.map(tool => tool.name), ['echo'], 'and the same tools');
 });
 
-test('models declare a 250k window so dsh compacts around 200k', async () => {
+test('models declare a 500k window so dsh compacts around 400k', async () => {
   const adapter = adapterFor();
-  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'claude-sonnet-5-5')).context.contextWindow, 250000);
-  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'unknown-model')).context.contextWindow, 250000);
+  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'claude-sonnet-5-5')).context.contextWindow, 500000);
+  assert.equal((await adapter.resolveModel('claude-bare-dsh', 'unknown-model')).context.contextWindow, 500000);
   adapter.dispose();
 });

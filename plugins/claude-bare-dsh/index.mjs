@@ -27,9 +27,10 @@ export const name = 'alex-claude-bare-dsh';
 export const inject = ['llm', 'credentials'];
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-// Declared window, not the models' real 1M: dsh compacts at 80% of it, so ~200k, which
-// keeps steps fast and leaves 50k of headroom for the reply and tool results.
-const DEFAULT_CONTEXT_WINDOW = 250_000;
+// Declared window, not the models' real 1M (the CLI reports contextWindow 1000000 on the
+// subscription login): dsh compacts at 80% of it, so ~400k, leaving the real window ample
+// headroom for the reply and tool results while capping how much each step re-reads.
+const DEFAULT_CONTEXT_WINDOW = 500_000;
 const DEFAULT_MODELS = [
   { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
   { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },

@@ -175,7 +175,7 @@ export function applyWithClock(ctx, config = {}, clock) {
     defineTool({
       name: 'wait',
       description:
-        'Wait for a specified duration before continuing. Use this instead of running sleep via bash or busy-polling when waiting for external conditions (e.g. servers starting, build watchers, ports opening, long-running external tasks, or debounce). Supports up to 24 hours (86400s). Clock targets are also supported: `until` for the next occurrence of a local HH:MM, and `untilOffPeak` to hold until DeepSeek\'s off-peak price window opens (peak tokens cost double during 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday).',
+        'Wait for a specified duration before continuing. Use this instead of running sleep via bash or busy-polling when waiting for conditions outside this session (e.g. servers starting, build watchers, ports opening, processes you did not start here, or debounce). Do not use it to wait for your own background jobs or subagents: you are notified in-session when they finish, and this wait does not end early when they do, so keep working or end your turn instead. Supports up to 24 hours (86400s). Clock targets are also supported: `until` for the next occurrence of a local HH:MM, and `untilOffPeak` to hold until DeepSeek\'s off-peak price window opens (peak tokens cost double during 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday).',
       parameters: {
         seconds: {
           type: 'number',
