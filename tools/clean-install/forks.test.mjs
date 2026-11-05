@@ -27,7 +27,7 @@ async function fixture(overrides = {}) {
     if (args[0] === '--version') return { status: 0, stdout: command.endsWith('pnpm') ? '11.21.0\n' : `${overrides.esbuildVersion ?? '0.28.2'}\n` };
     if (args.includes('clone')) {
       const source = args.at(-1), id = source.endsWith('/tui') ? 'tui' : 'antigravity';
-      const metadata = id === 'tui' ? { name: manifest.components[0].package, version: '0.14.0', packageManager: 'pnpm@11.21.0' } : agPackage;
+      const metadata = id === 'tui' ? { name: manifest.components[0].package, version: '0.18.0', packageManager: 'pnpm@11.21.0' } : agPackage;
       await mkdir(join(source, '.git'));
       await mkdir(join(source, 'src'));
       await writeFile(join(source, 'src/index.ts'), id === 'tui' ? 'export const retryPolicies = true;\n' : 'export const v4 = true;\n');
@@ -79,7 +79,7 @@ async function fixture(overrides = {}) {
 
 test('manifest pins current OAuth32 and AGV4 quota-policy forks rather than historical workshop', async () => {
   const manifest = await loadForkManifest();
-  assert.equal(manifest.components[0].commit, '8e2cf62ac37d60f6cbb90f8546de5d20634ac84f');
+  assert.equal(manifest.components[0].commit, 'b4b5fb9bf9ab50650b83126d81153679734d90c3');
   assert.equal(manifest.components[1].commit, '7983e26fa8086709e3126b4c795b6ce624ceab1d');
   assert.match(manifest.components[1].qualification, /committed-prebuilt/);
   assert.match(manifest.components[1].qualification, /quota-reset-24h/);
