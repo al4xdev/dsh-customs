@@ -80,6 +80,8 @@ private fun PreviewControls(controller: FixtureController, onReturn: () -> Unit,
                 OutlinedButton(onClick = controller::toggleUnknown, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.delivery == DeliveryStatus.UNKNOWN) "Limpar UNKNOWN local" else "UNKNOWN local") }
                 OutlinedButton(onClick = controller::toggleLoading, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.busy) "Encerrar loading" else "Loading local") }
                 OutlinedButton(onClick = controller::toggleApproval, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.approvals.isEmpty()) "Confirmação local" else "Ocultar confirmação") }
+                OutlinedButton(onClick = controller::cycleHost, modifier = Modifier.heightIn(min = 48.dp)) { Text("Estado do PC") }
+                OutlinedButton(onClick = controller::cycleDisconnectNotice, modifier = Modifier.heightIn(min = 48.dp)) { Text("Queda local") }
             }
         }
     }

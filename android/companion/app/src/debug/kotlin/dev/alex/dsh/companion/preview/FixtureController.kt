@@ -8,6 +8,9 @@ import dev.alex.dsh.companion.protocol.ApprovalDecision
 import dev.alex.dsh.companion.protocol.ApprovalKey
 import dev.alex.dsh.companion.protocol.ApprovalPresentation
 import dev.alex.dsh.companion.protocol.CompanionChat
+import dev.alex.dsh.companion.protocol.HostPhase
+import dev.alex.dsh.companion.catalog.hostStatusLabel
+import dev.alex.dsh.companion.disconnectNotice
 import dev.alex.dsh.companion.render.ImageReference
 import dev.alex.dsh.companion.render.RenderBlock
 import dev.alex.dsh.companion.render.RichMessage
@@ -122,6 +125,26 @@ internal class FixtureController(private val fixture: FixtureData) : UiActions {
             mapOf("local" to "Prévia local · sem ações no PC"))), status = "Confirmação inventada · escolhas sem efeito externo")
     }
 
+    /** Walks every PC host phase through the production label, ending ready (no banner). */
+    fun cycleHost() {
+        val (phase, available) = HOST_STEPS[hostStep % HOST_STEPS.size]; hostStep++
+        state = state.copy(hostStatusMessage = hostStatusLabel(phase, available))
+    }
+    /** Shows the production disconnect notices: clean close, overflow, unsupported data, then none. */
+    fun cycleDisconnectNotice() {
+        val step = noticeStep % 4; noticeStep++
+        val cause = when (step) { 1 -> IllegalStateException("overflow"); 2 -> IllegalArgumentException("codec"); else -> null }
+        state = state.copy(connected = step == 3, error = if (step == 3) null else disconnectNotice(cause, chatOpen = state.selectedId != null))
+    }
+    private var hostStep = 0
+    private var noticeStep = 0
+
     private fun rememberDraft() { state.selectedId?.let { drafts[it] = state.draft } }
     private fun localStatus(text: String) { state = state.copy(status = text) }
+    private companion object {
+        val HOST_STEPS: List<Pair<HostPhase?, Boolean?>> = listOf(
+            HostPhase.PENDING to false, HostPhase.RECONCILING to false, HostPhase.STALE to false, HostPhase.SUSPENDED to false,
+            HostPhase.CLOSED to false, HostPhase.READY to false, null to null, HostPhase.READY to true,
+        )
+    }
 }

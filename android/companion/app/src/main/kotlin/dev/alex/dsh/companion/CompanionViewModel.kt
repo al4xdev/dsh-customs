@@ -2482,13 +2482,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             streamingText = null, presentationPending = false,
             richMessages = it.richMessages.map { message -> if (message.streaming) message.copy(streaming = false, interrupted = true) else message },
             status = if (quiet) "Abrindo um trecho menor do histórico" else "Desconectado",
-            error = when {
-                quiet -> null
-                error == null -> "Conexão encerrada. Reconecte para obter um histórico confirmado."
-                error is IllegalStateException && error.message?.contains("overflow") == true ->
-                    "Saturação de buffer de mensagens. Reconectando…"
-                else -> "Dados não suportados. Reconecte sem reenviar mensagens."
-            }) }
+            error = if (quiet) null else disconnectNotice(error, chatOpen = it.selectedId != null)) }
         updateDelivery()
         scheduleAnswererReconnect(retryable)
     }
