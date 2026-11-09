@@ -172,7 +172,10 @@ workspace. No production backup or restore was performed by these tests.
 The custom frontend's `externalPlanCommand: true` opt-in routes `/plan` to these
 artifacts. The native planning plugin must not be loaded in the same composition
 with the same `/plan` command; the promoted local profile already disables it.
-The browser explicitly labels project artifacts, not native Plan mode. Updating
+The browser explicitly labels project artifacts, not native Plan mode. With that
+opt-in the TUI skips its native `on`/`off` completions; `tui.mjs` registers the
+`/plan` subcommand tree (`new`, `auto on|off|status`) through `tuiCommandTrees`.
+Updating
 source does not change an already-instantiated plugin or installed frontend
 artifact: reload/restart the appropriate runtime, and rebuild/publish the
 frontend through its separate local tooling when frontend source changes.

@@ -1,5 +1,5 @@
 export const name = 'alex-managed-plans-tui'
-export const inject = ['tuiScenes', 'managedPlans']
+export const inject = ['tuiScenes', 'tuiCommandTrees', 'managedPlans']
 export const sceneId = 'alex-plan-artifacts'
 const destinations = [
   { value: 'tasks', label: 'Tasks' }, { value: 'backlog', label: 'Backlog' },
@@ -418,7 +418,26 @@ export function PlanArtifactsScene({ React, ui, channel, close }) {
     fixed(text(help, { color: 'subtle', wrap: 'truncate-end' })))
 }
 
+// `/plan` completions. The TUI's `externalPlanCommand: true` skips its native
+// on/off children and falls back to this provider.
+const planTree = {
+  root: 'plan',
+  children(path) {
+    if (path.length === 1) return [
+      { name: 'new', description: 'Create project plan artifacts for a request' },
+      { name: 'auto', description: 'Configure project autoApprove' },
+    ]
+    if (path.length === 2 && path[1] === 'auto') return [
+      { name: 'on', description: 'Enable project autoApprove' },
+      { name: 'off', description: 'Disable project autoApprove; require owner approval' },
+      { name: 'status', description: 'Show the project autoApprove setting' },
+    ]
+    return []
+  },
+}
+
 export function apply(ctx) {
+  ctx.tuiCommandTrees.register(planTree)
   ctx.effect(() => {
     const disposeScene = ctx.tuiScenes.register({ id: sceneId, title: 'Managed plans', component: PlanArtifactsScene }, ctx)
     let disposeOpener
