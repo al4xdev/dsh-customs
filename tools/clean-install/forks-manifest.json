@@ -6,16 +6,16 @@
     {
       "id": "tui",
       "package": "@deepseek-harness-tui/dsh-tui",
-      "version": "0.18.0",
+      "version": "0.19.0",
       "repository": "https://github.com/al4xdev/dsh-TUI.git",
-      "commit": "b4b5fb9bf9ab50650b83126d81153679734d90c3",
+      "commit": "998b492acc33d5840a897d5254b1e3179a8c22bb",
       "strategy": "source-compile",
       "submodule": {
         "path": "vendor/dsh-std",
         "repository": "https://github.com/T-Auto/dsh-std.git",
         "commit": "614dfa1ac168db79fcf4577cf0ebb34e2e3b944b"
       },
-      "qualification": "Compiles current committed OAuth32 source and vendor dependencies; fake-credential OAuth regression only, no provider login or inference."
+      "qualification": "Compiles the v0.19 rebuild (upstream main plus the atomic fork stack in FORK.md; no OAuth retryPolicies) and vendor dependencies; fake-credential OAuth regression only, no provider login or inference."
     },
     {
       "id": "antigravity",

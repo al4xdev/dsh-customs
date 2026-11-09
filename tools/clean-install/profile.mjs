@@ -7,7 +7,7 @@ import { DEFAULT_POLICY } from '../../plugins/llm-resilience/policy.mjs';
 import { migrateResilienceProfile, RESILIENCE_MODULES } from '../resilience/profile.mjs';
 
 export function profilePackage() {
-  return { name: 'dsh-profile-dsh-tui', private: true, dependencies: { '@deepseek-ai/dsh-base': '0.2.0-rc.2', '@deepseek-harness-tui/dsh-tui': '0.18.0', yaml: '2.9.1' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-harness-tui/dsh-tui'] } } };
+  return { name: 'dsh-profile-dsh-tui', private: true, dependencies: { '@deepseek-ai/dsh-base': '0.2.0-rc.2', '@deepseek-harness-tui/dsh-tui': '0.19.0', yaml: '2.9.1' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-harness-tui/dsh-tui'] } } };
 }
 
 /** Seeds contain public policy only; credential references/storage stay external. */

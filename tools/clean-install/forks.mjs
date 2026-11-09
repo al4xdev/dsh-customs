@@ -28,7 +28,7 @@ export function validateForkManifest(manifest) {
   const [tui, ag] = manifest.components;
   assert.equal(tui.repository, 'https://github.com/al4xdev/dsh-TUI.git');
   assert.equal(tui.package, '@deepseek-harness-tui/dsh-tui');
-  assert.equal(tui.version, '0.18.0');
+  assert.equal(tui.version, '0.19.0');
   assert.equal(tui.strategy, 'source-compile');
   assert.deepEqual(tui.submodule, {
     path: 'vendor/dsh-std', repository: 'https://github.com/T-Auto/dsh-std.git',

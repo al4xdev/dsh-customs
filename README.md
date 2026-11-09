@@ -211,8 +211,10 @@ explicit subsequent steps. See [the workshop guide](tools/workshop/README.md).
 The host on this machine already runs the separate promotion from task 26: source `f5a24c96…`
 and pi-ai artifact `206545bfd51e`. This does not automatically update workshop pins.
 
-Task 32 adds per-provider `retryPolicies` to local TUI fork OAuth;
-in this machine's profile, Codex uses normal mode, nine retries, and backoff from 5s
+Task 32 added per-provider `retryPolicies` to local TUI fork OAuth. The v0.19 fork
+rebuild (2026-11-09, `frontend/dsh-tui/FORK.md`) dropped them: provider retry
+policy now belongs to `alex-llm-resilience`, and `tools/resilience` migrates old
+`dsh-tui-auth.retryPolicies` entries. Historically, in this machine's profile, Codex uses normal mode, nine retries, and backoff from 5s
 up to 20min (last actual wait 18–20min with jitter; 41min15s nominal accumulated,
 excluding request durations). The official engine remains owner of budget and cancellation.
 Step 32 does not alter other providers; the Antigravity 36 extension described below
