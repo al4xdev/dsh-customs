@@ -3,6 +3,10 @@
 Kotlin/Jetpack Compose/Material3 client, without WebView or React. DSH remains on
 the PC to observe that PC's sessions. Independent application from CasaTequila.
 
+**Build, test, install and login routines (Docker, emulator, adb):**
+[tools/companion-android/README.md](../../tools/companion-android/README.md). Prefer those
+scripts over the local-toolchain command further below; they also pin the signing key.
+
 ## APK14 — Optional Context Fixed on Device (Task 109)
 
 `0.14.0-context-fix` (versionCode 14), **installed and validated on physical device**
