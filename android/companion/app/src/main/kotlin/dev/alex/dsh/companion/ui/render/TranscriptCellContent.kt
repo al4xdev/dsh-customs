@@ -89,33 +89,37 @@ private fun CellBody(cell: TranscriptCell, imageContent: @Composable (ImageRefer
             color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         is TranscriptCellBody.ActivityHeader -> {
             val expanded = state.expanded(body.foldKey)
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).workspaceGestureExcluded().clickable(role = Role.Button) {
+            // One quiet summary line per turn: the whole row is the tap target.
+            Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).workspaceGestureExcluded().clickable(role = Role.Button) {
                 if (!expanded) onInspect()
                 state.toggle(body.foldKey)
             }.semantics {
                 contentDescription = if (expanded) "Recolher atividade" else "Expandir atividade"
                 stateDescription = if (expanded) "Expandida" else "Recolhida"
             }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f)) {
-                    Text(body.title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (body.observations.isNotEmpty()) Text(body.observations, style = MaterialTheme.typography.labelSmall,
-                        color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                FoldChevron(expanded, null)
+                Text(listOf(body.title, body.observations).filter { it.isNotEmpty() }.joinToString(" · "),
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                FoldChevron(expanded, null, Modifier.size(20.dp))
             }
         }
-        is TranscriptCellBody.ToolHeader -> Row(Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(body.name, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                Text(body.status, style = MaterialTheme.typography.labelSmall, maxLines = 2,
-                    color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        is TranscriptCellBody.ToolHeader -> {
             val expanded = state.expanded(body.foldKey)
-            IconButton(onClick = { onInspect(); state.toggle(body.foldKey) }, modifier = Modifier.size(48.dp).workspaceGestureExcluded().semantics {
+            // Name and status share one line; the row, not a 48dp chevron button, toggles details.
+            Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).workspaceGestureExcluded().clickable(role = Role.Button) {
+                onInspect(); state.toggle(body.foldKey)
+            }.semantics {
+                contentDescription = if (expanded) "Recolher ferramenta" else "Expandir ferramenta"
                 stateDescription = if (expanded) "Expandida" else "Recolhida"
-            }) {
-                FoldChevron(expanded, if (expanded) "Recolher ferramenta" else "Expandir ferramenta")
+            }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(body.name, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(body.status, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    color = if (body.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(Modifier.weight(1f))
+                FoldChevron(expanded, null, Modifier.size(16.dp))
             }
         }
         is TranscriptCellBody.FoldHeader -> TextButton(onClick = { onInspect(); state.toggle(body.foldKey) },

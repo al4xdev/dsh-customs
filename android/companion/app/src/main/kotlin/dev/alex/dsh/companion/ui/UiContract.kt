@@ -45,6 +45,9 @@ data class CompanionUiState(
     val messages: List<UiMessage> = emptyList(),
     val streamingText: String? = null,
     val draft: String = "",
+    // Bumped only when the ViewModel deliberately replaces the draft (send, restore, discard).
+    // Keystrokes never bump it, so the composer keeps its own text and a stale echo cannot revert it.
+    val draftRevision: Long = 0,
     val pendingPrompt: String? = null,
     val hasMore: Boolean = false,
     val approvals: List<ApprovalPresentation> = emptyList(),

@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
-internal class TranscriptPlanInput(val rich: List<RichMessage>, val folds: Map<String, Boolean>)
+internal class TranscriptPlanInput(val rich: List<RichMessage>, val folds: Map<String, Boolean>, val showReasoning: Boolean = true)
 internal data class TranscriptPlanFrame(val input: TranscriptPlanInput?, val cells: List<TranscriptCell>)
 internal data class TranscriptPlan(val frame: TranscriptPlanFrame, val pending: Boolean, val cells: List<TranscriptCell> = frame.cells)
 
@@ -42,7 +42,7 @@ internal class TranscriptPlanBuilder(
 
     fun prepare(input: TranscriptPlanInput): TranscriptPlanFrame {
         val used = mutableMapOf<String, Cached>()
-        val logical = ActivityTranscriptProjection.project(input.rich)
+        val logical = ActivityTranscriptProjection.project(input.rich, input.showReasoning)
         val cells = FlatTranscriptProjection.project(logical, input.folds, MarkdownImageAliases(input.rich)) { key, text ->
             val source = MarkdownSource.capture(text)
             val old = documents[key]
@@ -66,8 +66,9 @@ internal class TranscriptPlanBuilder(
 private val transcriptPlanLane = Semaphore(1)
 
 @Composable
-internal fun rememberTranscriptPlan(sessionId: String?, generation: Long, rich: List<RichMessage>, folds: Map<String, Boolean>): TranscriptPlan {
-    val input = remember(sessionId, generation, rich, folds) { TranscriptPlanInput(rich, folds) }
+internal fun rememberTranscriptPlan(sessionId: String?, generation: Long, rich: List<RichMessage>, folds: Map<String, Boolean>,
+    showReasoning: Boolean = true): TranscriptPlan {
+    val input = remember(sessionId, generation, rich, folds, showReasoning) { TranscriptPlanInput(rich, folds, showReasoning) }
     val latest by rememberUpdatedState(input)
     var frame by remember(sessionId, generation) { mutableStateOf(TranscriptPlanFrame(null, emptyList())) }
     LaunchedEffect(sessionId, generation) {
@@ -122,7 +123,7 @@ internal fun displayedTranscriptCells(frame: TranscriptPlanFrame, current: Trans
 /** Replaced rows/folds never return late; an append-only live prefix may render while the next parse is queued. */
 internal fun transcriptPlanCanPublish(computed: TranscriptPlanInput, current: TranscriptPlanInput): Boolean {
     if (computed === current) return true
-    if (computed.folds != current.folds || computed.rich.size != current.rich.size) return false
+    if (computed.folds != current.folds || computed.showReasoning != current.showReasoning || computed.rich.size != current.rich.size) return false
     return computed.rich.indices.all { index ->
         val before = computed.rich[index]
         val after = current.rich[index]

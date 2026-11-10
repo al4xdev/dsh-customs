@@ -971,7 +971,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         mutable.update { it.copy(selectedId = null, isNewDraft = true, title = "Nova conversa",
             messages = emptyList(), richMessages = emptyList(), streamingText = null, hasMore = false,
             approvals = emptyList(), connected = false, busy = false, presentationPending = false,
-            draft = local.text, error = null, status = "Rascunho local", resendFiles = 0,
+            draft = local.text, draftRevision = it.draftRevision + 1, error = null, status = "Rascunho local", resendFiles = 0,
             delivery = if (local.phase == NewChatDraftController.Phase.CREATE_UNKNOWN) DeliveryStatus.UNKNOWN else DeliveryStatus.NONE) }
         reconcileAnswererVisibility()
     }
@@ -1007,7 +1007,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             messages = if (previous.selectedId == id) previous.messages else emptyList(),
             richMessages = if (previous.selectedId == id) previous.richMessages else emptyList(),
             streamingText = null, connected = false, busy = true, status = "Verificando conversa",
-            error = null, approvals = emptyList(), draft = if (fromDraft != null) "" else drafts[id].orEmpty(),
+            error = null, approvals = emptyList(), draft = if (fromDraft != null) "" else drafts[id].orEmpty(), draftRevision = it.draftRevision + 1,
             delivery = if (fromDraft != null) DeliveryStatus.SENDING else submissions.status(id),
         ) }
         updateDelivery()
@@ -1056,7 +1056,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         resetConnection()
         mutable.update { it.copy(selectedId = null, isNewDraft = false, hasMore = false, presentationPending = false,
             messages = emptyList(), richMessages = emptyList(), streamingText = null,
-            approvals = emptyList(), draft = "", connected = false, busy = false, title = "Conversas",
+            approvals = emptyList(), draft = "", draftRevision = it.draftRevision + 1, connected = false, busy = false, title = "Conversas",
             status = "Conversas", delivery = DeliveryStatus.NONE, resendFiles = 0) }
         reconcileAnswererVisibility()
     }
@@ -1247,7 +1247,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             if (current.selectedId != null) return
             val local = newChatDraft.snapshot()
             if (!newChatDraft.releaseUncertainCreate()) return
-            mutable.update { it.copy(draft = local.text, error = null) }
+            mutable.update { it.copy(draft = local.text, draftRevision = it.draftRevision + 1, error = null) }
             updateDelivery()
             return
         }
@@ -1268,7 +1268,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         val ticket = newChatDraft.begin(epoch, hasFiles = files != null) ?: run { if (files != null) retireFileSend(); return }
         firstDraft = FirstDraft(ticket, epoch, files = files)
         mutable.update { it.copy(busy = true, delivery = DeliveryStatus.SENDING, error = null, status = "Preparando primeira mensagem",
-            draft = "", pendingPrompt = ticket.literal,
+            draft = "", draftRevision = it.draftRevision + 1, pendingPrompt = ticket.literal,
             fileSendPhase = if (files != null) FileSendPhase.PREPARING else FileSendPhase.NONE) }
         val createJob = viewModelScope.launch {
             try {
@@ -1322,11 +1322,13 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             check(newChatDraft.transferred(fromDraft, proof.chat.id))
             if (firstDraft?.ticket === fromDraft) firstDraft = null
         }
+        // The literal now belongs to the ledger; a stale per-conversation draft must not resurface on reopen.
+        drafts[proof.chat.id] = ""
         val createdReadScope = if (fromDraft != null) readNamespace else null
         val createdReadState = if (fromDraft != null) conversationReads else null
         val createdReadAuthority = readScopeAuthEpoch
         mutable.update { it.copy(delivery = DeliveryStatus.SENDING, error = null,
-            draft = "", pendingPrompt = literal,
+            draft = "", draftRevision = it.draftRevision + 1, pendingPrompt = literal,
             fileSendPhase = if (files != null) FileSendPhase.PREPARING else FileSendPhase.NONE) }
         val sendJob = viewModelScope.launch {
             var postAttempted = false
@@ -2389,7 +2391,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 publishSelectedFiles()
             }
             if (drafts[sessionId] == entry.text) drafts[sessionId] = ""
-            mutable.update { if (it.draft == entry.text) it.copy(draft = "") else it }
+            mutable.update { if (it.draft == entry.text) it.copy(draft = "", draftRevision = it.draftRevision + 1) else it }
         }
         val pending = firstDraft
         val preparingFirst = pending != null && pending.sessionId == sessionId && pending.generation == generation &&

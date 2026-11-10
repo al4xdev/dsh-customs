@@ -142,6 +142,7 @@ object FlatTranscriptProjection {
                 spaceAfterDp = if (index == end) 12 else cells[index].spaceAfterDp)
         }
         fun activity(group: ActivityGroup) {
+            // Collapsed state shows counts only: tool names stay behind the fold by design.
             val title = if (group.toolCount == 0) "Atividade · raciocínio" else "Atividade · ${group.toolCount} ${if (group.toolCount == 1) "ferramenta" else "ferramentas"}"
             val observations = listOfNotNull(group.errorCount.takeIf { it > 0 }?.let { "$it ${if (it == 1) "erro" else "erros"}" },
                 group.unknownCount.takeIf { it > 0 }?.let { "$it sem status confirmado" }).joinToString(" · ")

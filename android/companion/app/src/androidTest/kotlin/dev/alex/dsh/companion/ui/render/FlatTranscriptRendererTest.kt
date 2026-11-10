@@ -52,9 +52,9 @@ class FlatTranscriptRendererTest {
         val folds = RichRenderState()
         compose.setContent { Fixture(messages, folds) }
         compose.waitUntil(5_000) { current.get().size == 1 }
-        compose.onNodeWithContentDescription("Expandir atividade").assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithContentDescription("Expandir atividade").assertHeightIsAtLeast(40.dp).performClick()
         compose.waitUntil(5_000) { current.get().size == 101 }
-        val visibleHeaders = compose.onAllNodesWithText("session · read").fetchSemanticsNodes().size
+        val visibleHeaders = compose.onAllNodesWithText("session · read", useUnmergedTree = true).fetchSemanticsNodes().size
         assertTrue(visibleHeaders in 1..20)
         assertTrue(mounted.size < 30)
         compose.onNodeWithText("fixture-result-0").assertDoesNotExist()

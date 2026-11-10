@@ -118,7 +118,7 @@ class TranscriptIntegrationTest {
         val mounted = MountObserver()
         fixture(actions, mounted)
         compose.waitUntil(8_000) { compose.onAllNodesWithContentDescription("Expandir atividade").fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithText("Atividade · 100 ferramentas").assertIsDisplayed()
+        compose.onNodeWithText("Atividade · 100 ferramentas", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Expandir atividade").performClick()
         compose.waitUntil(8_000) { compose.onAllNodesWithText("session · read").fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()

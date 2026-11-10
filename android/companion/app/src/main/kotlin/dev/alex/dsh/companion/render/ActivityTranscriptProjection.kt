@@ -36,6 +36,26 @@ private fun reasoningBlock(block: RenderBlock): Boolean = block is RenderBlock.R
 
 /** Operates on paced logical rows, not events. Normal prose and source block order are never folded. */
 object ActivityTranscriptProjection {
+    /**
+     * Reasoning is a live indicator, not history: [showReasoning] false drops it everywhere, true keeps
+     * it only for the exchange after the last human message (the one that can still be running).
+     * Reasoning blocks become empty text so the surviving blocks keep their offsets and fold ids.
+     */
+    internal fun withoutStaleReasoning(messages: List<RichMessage>, showReasoning: Boolean): List<RichMessage> {
+        if (messages.none { m -> m.blocks.any { it is RenderBlock.Reasoning } }) return messages
+        val lastHuman = messages.indexOfLast { it.role == MessageRole.USER && (it.sourceKind == null || it.sourceKind == "user") }
+        return messages.mapIndexedNotNull { index, message ->
+            if ((showReasoning && index > lastHuman) || message.tool != null || message.role != MessageRole.ASSISTANT ||
+                message.blocks.none { it is RenderBlock.Reasoning }) return@mapIndexedNotNull message
+            val blocks = message.blocks.map { if (it is RenderBlock.Reasoning) RenderBlock.Text("") else it }
+            if (blocks.all { it is RenderBlock.Text && it.text.isEmpty() } && !message.streaming) null
+            else message.copy(blocks = blocks, literalText = RichJson.literal(blocks))
+        }
+    }
+
+    fun project(messages: List<RichMessage>, showReasoning: Boolean = true): List<TranscriptItem> =
+        project(withoutStaleReasoning(messages, showReasoning))
+
     fun project(messages: List<RichMessage>): List<TranscriptItem> {
         val output = mutableListOf<TranscriptItem>()
         val pending = mutableListOf<ActivityEntry>()

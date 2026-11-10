@@ -571,7 +571,9 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
     val presentation = rememberPacedTranscript(state)
     val rich = presentation.messages
     val folds = renderState.snapshot()
-    val plan = rememberTranscriptPlan(state.selectedId, state.connectionGeneration, rich, folds)
+    // Reasoning is shown only while a response is running; once it ends the transcript drops it.
+    val plan = rememberTranscriptPlan(state.selectedId, state.connectionGeneration, rich, folds,
+        showReasoning = state.connected && state.response.phase != ResponsePhase.IDLE)
     // Hide a closed section immediately, even while its replacement plan is being prepared.
     val transcript = remember(plan.cells, folds) { plan.cells.filter { cell -> cell.requiredFolds.all { folds[it] == true } } }
     val hasRich = state.richMessages.isNotEmpty()
@@ -670,7 +672,10 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
         val layout = list.layoutInfo
         eligibleReadReceipt(state, lifecycle.currentState == Lifecycle.State.RESUMED, visible,
             rich, plan, transcript, ReadReceiptViewport(
-                visibleCellBottoms = layout.visibleItemsInfo.associate { it.key.toString() to (it.offset + it.size) },
+                // List keys are generation-free; the receipt policy scopes cells to the current generation.
+                visibleCellBottoms = layout.visibleItemsInfo.associate {
+                    "$imageScope:${it.key.toString().removePrefix("${state.selectedId}:")}" to (it.offset + it.size)
+                },
                 start = layout.viewportStartOffset,
                 end = layout.viewportEndOffset - layout.afterContentPadding,
                 canScrollForward = list.canScrollForward,
@@ -706,8 +711,10 @@ private fun ChatScreen(state: CompanionUiState, actions: UiActions,
             if (state.hasMore) item(key = "older") {
                 TextButton(onClick = { following = false; actions.loadMore() }, enabled = !state.busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Carregar mensagens anteriores") }
             }
-            if (hasRich) items(transcript, key = { "$imageScope:${it.stableId}" }, contentType = { it.contentType }) { item ->
-                ObserveTranscriptCell("$imageScope:${item.stableId}")
+            // Keys omit the connection generation: a reconnect must not re-key (and re-compose/re-animate)
+            // every row, which read as flicker and vanished messages. Image authority still uses imageScope.
+            if (hasRich) items(transcript, key = { "${state.selectedId}:${it.stableId}" }, contentType = { it.contentType }) { item ->
+                ObserveTranscriptCell("${state.selectedId}:${item.stableId}")
                 val anchor = item.first || item.body is TranscriptCellBody.ActivityHeader || item.body is TranscriptCellBody.ToolHeader
                 val admitted = anchor && (item.sourceStableId in presentation.animatedKeys || item.headerSourceIds.any { it in presentation.animatedKeys })
                 val appearance = Modifier
@@ -939,8 +946,17 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                     dev.alex.dsh.companion.ui.goals.GoalPanel(nativeGoals, state.authenticated && state.connected,
                         actions::refreshNativeGoals, actions::controlNativeGoal, goalListHeight)
                 }
+            // The field owns the live text. Round-tripping each keystroke through the ViewModel state
+            // let a late echo overwrite newer input; only an explicit draftRevision bump replaces it.
+            var input by remember(state.draftRevision) {
+                mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(state.draft, androidx.compose.ui.text.TextRange(state.draft.length)))
+            }
             Box(Modifier.fillMaxWidth()) {
-                BasicTextField(value = state.draft, onValueChange = actions::draft, enabled = !sending,
+                BasicTextField(value = input, onValueChange = { next ->
+                    val changed = next.text != input.text
+                    input = next
+                    if (changed) actions.draft(next.text)
+                }, enabled = !sending,
                     minLines = 1, maxLines = Int.MAX_VALUE,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -952,7 +968,7 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                         .semantics { contentDescription = "Mensagem" },
                     decorationBox = { field ->
                         Box {
-                            if (state.draft.isEmpty()) Text("Mensagem", style = MaterialTheme.typography.bodyLarge,
+                            if (input.text.isEmpty()) Text("Mensagem", style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             field()
                         }

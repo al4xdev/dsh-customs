@@ -122,6 +122,31 @@ class ActivityTranscriptProjectionTest {
         assertEquals(listOf(context, notice), projected.filterIsInstance<TranscriptItem.Message>().map { it.message })
     }
 
+    @Test fun reasoningIsDroppedOnceNothingIsRunningAndToolsMergeAcrossTheGap() {
+        val messages = listOf(reasoning(0, 1, 0), tool(1, "a"), reasoning(2, 1, 1), tool(3, "b"))
+        val settled = ActivityTranscriptProjection.project(messages, showReasoning = false)
+        val group = (settled.single() as TranscriptItem.Activity).group
+        assertEquals(listOf("tool:a", "tool:b"), group.entries.map { it.stableId })
+        assertTrue(group.entries.none { it.reasoningOnly })
+    }
+
+    @Test fun runningKeepsReasoningOnlyAfterTheLastHumanMessage() {
+        val human = RichMessage(1, MessageRole.USER, "q", listOf(RenderBlock.Text("q")), stableId = "user:q")
+        val old = reasoning(0, 1, 0)
+        val live = reasoning(2, 2, 0)
+        val projected = ActivityTranscriptProjection.project(listOf(old, human, live), showReasoning = true)
+        val entries = projected.filterIsInstance<TranscriptItem.Activity>().flatMap { it.group.entries }
+        assertEquals(listOf(live.stableId), entries.map { it.stableId })
+    }
+
+    @Test fun strippingReasoningKeepsProseBlockOffsets() {
+        val blocks = listOf(RenderBlock.Reasoning("t"), RenderBlock.Text("answer"))
+        val projected = ActivityTranscriptProjection.project(listOf(assistant(0, blocks)), showReasoning = false)
+        val message = (projected.single() as TranscriptItem.Message).message
+        assertEquals("answer", message.literalText.trim())
+        assertEquals(2, message.blocks.size)
+    }
+
     private fun flatten(items: List<TranscriptItem>): List<RenderBlock> = items.flatMap {
         when (it) {
             is TranscriptItem.Message -> it.message.blocks

@@ -139,8 +139,8 @@ class SyntheticAppearanceTest {
         ui.onNodeWithText("synthetic-long-internal-call-id-not-a-chat-heading").assertDoesNotExist()
         screenshot("visual-tool-timeline.png")
         ui.onNodeWithContentDescription("Expandir atividade").performClick()
-        ui.onNodeWithText("session · inspect").assertIsDisplayed()
-        ui.onNodeWithText("read").assertIsDisplayed()
+        ui.onNodeWithText("session · inspect", useUnmergedTree = true).assertIsDisplayed()
+        ui.onNodeWithText("read", useUnmergedTree = true).assertIsDisplayed()
         ui.onNodeWithText("Contexto conferido.").assertDoesNotExist()
         screenshot("visual-activity-expanded.png")
     }

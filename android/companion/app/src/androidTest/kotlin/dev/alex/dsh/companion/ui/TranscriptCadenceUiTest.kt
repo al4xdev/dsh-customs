@@ -22,7 +22,7 @@ class TranscriptCadenceUiTest {
             actions.state.value = actions.state.value.copy(richMessages = listOf(base) + (1..3).map { row("tool:$it", "Entrada sintética $it", MessageRole.TOOL) },
                 response = ResponseActivityState(ResponsePhase.IDLE, null, false, setOf(1)))
         }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Atividade · 1 ferramenta").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Atividade · 1 ferramenta", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Entrada sintética 1").assertDoesNotExist()
         compose.onNodeWithContentDescription("Expandir atividade").performClick()
         compose.onNodeWithText("Entrada sintética 1").assertIsDisplayed()
