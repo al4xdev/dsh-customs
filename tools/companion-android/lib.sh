@@ -32,7 +32,10 @@ ensure_images() {
 # container's ANDROID_HOME, and the host file is never rewritten.
 docker_mounts() {
   mkdir -p "$SIGN_DIR"
-  printf '%s\n' -v "$ROOT:/work" -v "$GRADLE_VOLUME:/root/.gradle" -v "$SIGN_DIR:/root/.android" \
+  # The signing dir is NOT mounted over ~/.android: that hides the emulator image's AVD. AGP finds the
+  # debug keystore through ANDROID_USER_HOME; the emulator keeps its AVD through ANDROID_AVD_HOME.
+  printf '%s\n' -v "$ROOT:/work" -v "$GRADLE_VOLUME:/root/.gradle" -v "$SIGN_DIR:/signing" \
+    -e ANDROID_USER_HOME=/signing -e ANDROID_AVD_HOME=/root/.android/avd \
     -v /dev/null:/work/android/companion/local.properties
 }
 

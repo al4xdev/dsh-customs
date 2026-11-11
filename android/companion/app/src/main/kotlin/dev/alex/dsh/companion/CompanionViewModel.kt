@@ -2211,7 +2211,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                 if (event is RemoteEventFrame.Ready) {
                     eventsReady = true
                     answererRetry.ready()
-                    mutable.update { it.copy(answererUnavailable = false) }
+                    mutable.update { it.copy(answererUnavailable = false, reconnectAttempts = 0) }
                     reconcileQuestionProjection()
                     refreshQuestionProjection()
                 }
@@ -2318,7 +2318,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         assistantLiveDegraded = true
         assistant = AssistantAssembler(epoch).also { it.baseline(JsonObject(mapOf("revision" to JsonPrimitive(0))), epoch, cursor) }
         responses.assistant(assistant.state(), epoch)
-        mutable.update { it.copy(error = "Prévia ao vivo indisponível para esta resposta; o texto aparece quando ela terminar (ou veja no PC).") }
+        mutable.update { it.copy(error = "A prévia ao vivo falhou; a resposta aparece quando terminar.") }
     }
 
     private fun publish() {
@@ -2479,17 +2479,21 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         socket?.cancel(); socket = null
         eventsReady = false; opening = false; admitted = null; journal = null
         interactions.reset(generation, readScopeAuthEpoch)
+        // A failure the app is already healing is not an error the owner can act on.
+        val automatic = retryable && answererVisible()
         mutable.update { it.copy(connected = false, busy = false, approvals = emptyList(), questions = emptyList(),
             chatAttention = emptyMap(), answererConnected = false, answererUnavailable = true, questionProjectionCurrent = false,
             streamingText = null, presentationPending = false,
             richMessages = it.richMessages.map { message -> if (message.streaming) message.copy(streaming = false, interrupted = true) else message },
-            status = if (quiet) "Abrindo um trecho menor do histórico" else "Desconectado",
+            status = when {
+                quiet -> "Abrindo um trecho menor do histórico"
+                automatic -> "Reconectando…"
+                else -> "Desconectado"
+            },
             error = when {
-                quiet -> null
-                error == null -> "Conexão encerrada. Reconecte para obter um histórico confirmado."
-                error is IllegalStateException && error.message?.contains("overflow") == true ->
-                    "Saturação de buffer de mensagens. Reconectando…"
-                else -> "Dados não suportados. Reconecte sem reenviar mensagens."
+                quiet || automatic -> null
+                error == null -> "A conexão foi encerrada. Toque em Reconectar para continuar."
+                else -> "Não foi possível ler os dados desta conversa. Toque em Reconectar; nada será reenviado."
             }) }
         updateDelivery()
         scheduleAnswererReconnect(retryable)
@@ -2503,7 +2507,9 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
     private fun scheduleAnswererReconnect(retryable: Boolean) {
         answererRetryJob?.cancel(); answererRetryJob = null
         if (!answererVisible()) return
-        val wait = answererRetry.failed(retryable) ?: return
+        val wait = answererRetry.failed(retryable)
+        mutable.update { it.copy(reconnectAttempts = if (wait == null) 0 else answererRetry.attempts) }
+        if (wait == null) return
         val epoch = generation
         answererRetryJob = viewModelScope.launch {
             delay(wait)
@@ -2548,7 +2554,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             savedLogin = if (auth) false else storage || it.savedLogin,
             connected = if (auth) false else it.connected, error = message ?: if (auth) "Entre novamente com o link privado."
             else if (storage) "Não foi possível acessar o login salvo. Tente novamente ou esqueça-o localmente."
-            else "Operação indisponível ou dados não suportados.") }
+            else "Algo deu errado. Tente de novo em instantes.") }
     }
     override fun onCleared() { revokeReadAuthority(); revokeNotificationAuthority(); resetConnection(); transport.close() }
     private companion object {

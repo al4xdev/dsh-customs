@@ -11,6 +11,9 @@ internal class AnswererReconnectPolicy(private val nowMillis: () -> Long = { Sys
     private var failures = 0
     private var readyAt: Long? = null
 
+    /** Consecutive automatic reopen attempts since the carrier was last healthy; drives how loud the UI is. */
+    val attempts: Int get() = failures
+
     fun ready() { readyAt = nowMillis() }
 
     /** Explicit owner reconnect: start again from the shortest delay. */

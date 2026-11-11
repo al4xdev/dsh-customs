@@ -376,7 +376,7 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
                 dev.alex.dsh.companion.ui.catalog.HostMetadataBanner(message, state.appStarted && state.appResumed && !state.busy, actions::refreshMetadata)
             }
             androidx.compose.animation.AnimatedVisibility(
-                visible = state.showConnectionWarning && !state.busy && state.delivery != DeliveryStatus.SENDING &&
+                visible = state.showConnectionWarning && !state.reconnectingQuietly && !state.busy && state.delivery != DeliveryStatus.SENDING &&
                     state.status != "Conectando" && state.status != "Verificando conversa" && state.status != "Carregando histórico",
                 enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(250)),
                 exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
@@ -386,6 +386,8 @@ private fun CompanionPane(state: CompanionUiState, actions: UiActions, accountAc
                     TextButton(onClick = actions::reconnect, enabled = !state.busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reconectar") }
                 }
             }
+            if (state.reconnectingQuietly) Text("Reconectando…", Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("reconnecting-quietly"),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // The retained catalog under an open chat must not repeat the chat's own warning.
             if (state.showAnswererWarning && visible) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("answerer-unavailable"), verticalAlignment = Alignment.CenterVertically) {
@@ -531,9 +533,11 @@ private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: M
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(chat.title?.takeIf { it.isNotBlank() } ?: "Conversa ${chat.id.takeLast(8)}", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(chat.id.takeLast(8), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+                            val responding = state.chatActivity[chat.id]?.let { it.knowledge == NativeKnowledge.CURRENT && it.responding == true } == true
+                            // A titled chat does not need its raw id; an untitled one already shows it in the fallback title.
                             if (state.deletingId == chat.id) Text("Apagando conversa…", style = MaterialTheme.typography.bodySmall)
-                            else chatDate(chat)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                            else if (responding) Text("Respondendo…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            else chatDate(chat)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             if (chat.id in state.interactionCheckHints && visible && cardVisible && state.appStarted && state.appResumed) {
                                 dev.alex.dsh.companion.ui.catalog.InteractionCheckHint(chat.id)
                             }
@@ -557,7 +561,7 @@ private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: M
 
 private fun chatDate(chat: CompanionChat): String? {
     val millis = chat.updatedAt ?: chat.createdAt ?: return null
-    return DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(millis))
+    return relativeChatTime(System.currentTimeMillis(), millis)
 }
 
 @Composable
@@ -973,12 +977,12 @@ private fun Composer(state: CompanionUiState, actions: UiActions) {
                             field()
                         }
                     })
-                // The 14dp mark sits above Send inside its existing end gutter;
-                // its independent 48dp target does not take any editor height.
+                // The 20dp mark sits above Send inside its existing end gutter (14dp read as decoration, not a
+                // control); its independent 48dp target does not take any editor height.
                 if (!state.isNewDraft) IconButton(onClick = { goalsExpanded = !goalsExpanded },
                     modifier = Modifier.align(Alignment.TopEnd).padding(end = 8.dp).size(48.dp).testTag("toggle-native-goals")) {
                     CompanionIcon(CompanionGlyph.Goal,
-                        if (goalsExpanded) "Recolher goals e TODO" else "Mostrar goals e TODO", Modifier.size(14.dp))
+                        if (goalsExpanded) "Recolher goals e TODO" else "Mostrar goals e TODO", Modifier.size(20.dp))
                 }
                 Row(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.End) {
                     // Stopping must not replace the existing ability to enqueue another literal prompt.

@@ -30,7 +30,8 @@ in the `dsh-gradle-cache` Docker volume.
 ## Signing key (important)
 
 Docker builds sign with `.dumps/android-signing/debug.keystore` (created on the first build,
-gitignored, mounted as the container's `~/.android`). **Back it up.** Without a stable key,
+gitignored, mounted at `/signing` and selected with `ANDROID_USER_HOME`; it is deliberately not
+mounted over `~/.android`, which would hide the emulator image's AVD). **Back it up.** Without a stable key,
 `install -r` fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` and the only way forward is
 uninstalling, which wipes the app's login.
 

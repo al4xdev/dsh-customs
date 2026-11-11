@@ -37,10 +37,13 @@ internal fun ResponseFeedback(state: CompanionUiState, actions: UiActions, modif
         MaidLoader(mood = MaidMood.Decorative, active = active && state.connected)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("DSH", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // The running tool, when there is one, replaces the generic "preparing" text: one live line
+            // instead of a growing list of tool rows.
+            val working = remember(state.richMessages) { liveActivityLabel(state.richMessages) }
             val statusText = when (phase) {
                 ResponsePhase.WAITING -> "Na fila…"
-                ResponsePhase.RUNNING -> "Preparando resposta…"
-                ResponsePhase.STREAMING -> if (writing) "Escrevendo…" else "Preparando resposta…"
+                ResponsePhase.RUNNING -> working ?: "Preparando resposta…"
+                ResponsePhase.STREAMING -> if (writing) "Escrevendo…" else working ?: "Preparando resposta…"
                 ResponsePhase.STOP_REQUESTED -> "Parada solicitada"
                 ResponsePhase.STOP_UNCONFIRMED -> "Parada sem confirmação"
                 ResponsePhase.IDLE -> ""

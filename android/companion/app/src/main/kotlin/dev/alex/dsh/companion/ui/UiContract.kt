@@ -21,6 +21,9 @@ import androidx.compose.runtime.Stable
 import dev.alex.dsh.companion.ui.settings.SettingsModelChoice
 import dev.alex.dsh.companion.ui.settings.SettingsUiState
 
+/** Automatic retries (1s, 2s, 5s) that stay quiet before the Reconectar banner appears. */
+const val QUIET_RECONNECT_ATTEMPTS = 3
+
 enum class MessageRole { USER, ASSISTANT, TOOL, NOTICE }
 enum class DeliveryStatus { NONE, SENDING, ADMITTED, UNKNOWN }
 enum class FileSendPhase { NONE, PREPARING, UPLOADING, AWAITING_PROMPT }
@@ -85,7 +88,11 @@ data class CompanionUiState(
     val fileSendPhase: FileSendPhase = FileSendPhase.NONE,
     // Files carried by the selected chat's UNKNOWN prompt; Reenviar needs that many reselected.
     val resendFiles: Int = 0,
+    // Automatic reopen attempts since the connection was last healthy. A first few are silent.
+    val reconnectAttempts: Int = 0,
 ) {
+    // Early automatic retries show a small "Reconectando…" instead of an alarming banner.
+    val reconnectingQuietly: Boolean get() = showConnectionWarning && reconnectAttempts in 1..QUIET_RECONNECT_ATTEMPTS
     val hasOpenConversation: Boolean get() = selectedId != null || isNewDraft
     // Catalog RPCs do not own a chat stream; no selected chat is not a disconnect.
     val showConnectionWarning: Boolean get() = authenticated && selectedId != null && !connected
