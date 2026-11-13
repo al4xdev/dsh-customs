@@ -43,6 +43,7 @@
     "resilience:doctor": "node tools/resilience/doctor.mjs",
     "prompt:audit": "node tools/prompt-audit/audit.mjs --profile dsh-tui --profile companion",
     "proxy:anthropic": "node tools/anthropic-proxy/proxy.mjs",
+    "proxy:antigravity": "node tools/antigravity-proxy/proxy.mjs",
     "test:prompt-audit": "node --test --test-timeout=300000 tools/prompt-audit/audit.test.mjs"
   },
   "dependencies": {
