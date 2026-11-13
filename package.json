@@ -39,6 +39,7 @@
     "test:resilience": "node --test --test-timeout=120000 plugins/llm-resilience/*.test.mjs plugins/agent-self-heal/tests/*.test.mjs plugins/codex-transient-close/*.test.mjs tools/resilience/*.test.mjs",
     "resilience:doctor": "node tools/resilience/doctor.mjs",
     "prompt:audit": "node tools/prompt-audit/audit.mjs --profile dsh-tui --profile companion",
+    "proxy:anthropic": "node tools/anthropic-proxy/proxy.mjs",
     "test:prompt-audit": "node --test --test-timeout=300000 tools/prompt-audit/audit.test.mjs"
   },
   "dependencies": {
