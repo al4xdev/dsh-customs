@@ -239,7 +239,9 @@ Sections 1 and 4 above describe the state before this follow-up. What changed af
   probes in one call with `;` and keep `&&` for dependent steps, search with path/glob
   filters, issue independent tool calls together (Fable 40% of tool messages, Gemini
   Flash 0.6%), script data analysis, time out long builds. The study PDF lives outside
-  the repo; the numbers came from read-only aggregate scans.
+  the repo; the numbers came from read-only aggregate scans. The shell-specific rules
+  then moved to the bash tool description itself (`plugins/bash-tools`), where every
+  model reads them when it decides how to call the shell; AGENTS.md keeps the cross-tool ones.
 
 ### Corrections to "Letting a Claude-model run naturally"
 

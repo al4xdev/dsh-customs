@@ -16,7 +16,7 @@
 // Frontier models, trained on Claude Code, call their file reader for images and read text
 // through the shell; in the reference Fable session all six `Read` calls were PNGs.
 import { extname } from 'node:path';
-import { resolveHost } from '../common.mjs';
+import { intercept, resolveHost } from '../common.mjs';
 
 const stock = await import(resolveHost('@deepseek-ai/dsh-tool-fs'));
 
@@ -93,17 +93,6 @@ const IMAGE_OUTPUT_SCHEMA = {
 
 // Only reachable if the image half went away between execute and render.
 const fallbackImageRender = value => [{ type: 'text', text: `${value.path}: image (${value.image.width}x${value.image.height})` }];
-
-/** Bind every function of `target` to it, overriding the named members. */
-function intercept(target, overrides) {
-  return new Proxy(target, {
-    get(object, key) {
-      if (Object.hasOwn(overrides, key)) return overrides[key];
-      const value = Reflect.get(object, key);
-      return typeof value === 'function' ? value.bind(object) : value;
-    },
-  });
-}
 
 export function apply(ctx, config) {
   let textRead, imageRead;

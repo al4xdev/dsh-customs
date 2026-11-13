@@ -41,6 +41,7 @@
     "list": "Retired 2026-11-13: duplicates ls/find in bash; frontier models list through the shell.",
     "shell-reconsider": "Retired 2026-11-13 on the owner's decision: no shell command is denied any more, destructive ones included.",
     "fs-tools": "Not a top-level row: mounted inside the dsh-tui standard preset (cordis.patch.yml) in place of tool-fs.",
+    "bash-tools": "Not a top-level row: mounted inside the dsh-tui standard preset (cordis.patch.yml) in place of tool-bash.",
     "tool-result-clearing": "Not a top-level row: mounted inside the dsh-tui standard preset (cordis.patch.yml) in place of tool-result-pruner.",
     "apply-patch": "apply_patch retired 2026-11-13: Claude-family models edit with edit/write, and no Codex/GPT route ran in 200 sessions. The directory stays because apply-patch/observation.mjs (alex-file-observation-coverage) is active."
   }

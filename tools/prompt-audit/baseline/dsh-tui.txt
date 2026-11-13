@@ -79,8 +79,10 @@ parameters:
       - description (string): One sentence explaining the tradeoff or impact.
     - multi_select (boolean): Whether the user may select more than one option. Defaults to false.
 
----- tool bash [sha256 5738967ca79d]
+---- tool bash [sha256 1978aafadf50]
 Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell; pass `workdir` instead of using `cd`. Managed `$DSH_*` variables expose current harness environment facts. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked. An unset variable expands to an empty string, so guard variables in such paths with `${VAR:?}`. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]`, a policy denial: do not retry another way.
+
+Bound what you print at the source: `| head -40`, `sed -n 120,180p file`, `grep -m 20`, `2>&1 | tail -30` for builds and tests, `wc -l` first for a file of unknown size. Batch independent probes in one call separated by `;` (one that finds nothing exits 1 and must not stop the rest); use `&&` only when a step needs the previous one. Search with a path or glob filter and leave vendored and build directories out. Give long builds and tests `timeoutMs`; start servers with `run_in_background`.
 parameters:
   - command (string, required): The bash command to execute.
   - description (string, required): Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; "git status" → "Show working tree status"; "npm install" → "Install package dependencies".

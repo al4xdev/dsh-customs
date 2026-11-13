@@ -14,3 +14,18 @@ export const { defineTool } = await import(resolveHost('@deepseek-ai/dsh-tools')
 export const stringOutput = { schema: { type: 'string' }, render: (_args, text) => [{ type: 'text', text }] };
 export function cwdOf(exec) { return exec.agent?.session.header.cwd ?? process.cwd(); }
 export function assertActive(exec) { exec.signal?.throwIfAborted(); }
+
+/**
+ * A view of `target` that binds every function to it and overrides the named members.
+ * The tool adapters (fs-tools, bash-tools) run a stock plugin's `apply` through such
+ * views of its context to reshape only what the model sees.
+ */
+export function intercept(target, overrides) {
+  return new Proxy(target, {
+    get(object, key) {
+      if (Object.hasOwn(overrides, key)) return overrides[key];
+      const value = Reflect.get(object, key);
+      return typeof value === 'function' ? value.bind(object) : value;
+    },
+  });
+}
