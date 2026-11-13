@@ -149,30 +149,57 @@ function abortError(reason, elapsedSeconds) {
   return new Error(`Wait interrupted${elapsed} (${kind}).`, { cause: reason });
 }
 
+const elapsedText = startedMs => {
+  const seconds = (Date.now() - startedMs) / 1000;
+  return formatDuration(seconds >= 10 ? Math.round(seconds) : Math.round(seconds * 10) / 10);
+};
+
 /**
  * Pauses execution for the requested duration.
- * Hooks into AbortSignal for immediate, graceful cancellation.
+ * Hooks into AbortSignal for immediate, graceful cancellation. `onWake(callback)`, when
+ * given, subscribes to "something arrived for this agent" and returns its unsubscribe; the
+ * wait then ends at the first such arrival instead of at the timer.
  */
-export async function waitDuration(seconds, reason, signal) {
+export async function waitDuration(seconds, reason, signal, onWake) {
   if (signal?.aborted) throw abortError(signal.reason, 0);
   const ms = Math.round(seconds * 1000);
   const started = Date.now();
+  const suffix = reason ? ` (${reason})` : '';
 
   return new Promise((resolve, reject) => {
-    let timer;
-    const onAbort = () => {
+    let timer, unsubscribe;
+    const settle = () => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      unsubscribe?.();
+    };
+    const onAbort = () => {
+      settle();
       reject(abortError(signal.reason, (Date.now() - started) / 1000));
     };
 
     timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      const suffix = reason ? ` (${reason})` : '';
+      settle();
       resolve(`Waited ${formatDuration(seconds)}${suffix}.`);
     }, ms);
 
     signal?.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = onWake?.(kind => {
+      settle();
+      resolve(`Wait ended early after ${elapsedText(started)}: a ${kind} message arrived for you and follows${suffix}.`);
+    });
   });
+}
+
+// Inbox sources that do not end a wait: goal rounds are only queued while the agent is
+// idle, and agent-instructions is a refresh of the owner's AGENTS files, not news.
+const QUIET_SOURCES = new Set(['goal', 'agent-instructions']);
+// Who sent an inbox message, in words the model can act on (kinds seen in real sessions).
+const SENDERS = { user: 'user', 'agent-message': 'subagent', 'subagent-settled': 'subagent', 'tool-jobs': 'background job', 'managed-plan': 'plan review', 'user-approval': 'approval' };
+function senderOf(message) {
+  const kind = message?.source?.kind;
+  if (QUIET_SOURCES.has(kind)) return undefined;
+  return SENDERS[kind] ?? (typeof kind === 'string' && kind ? kind : 'new');
 }
 
 export function apply(ctx, config = {}) {
@@ -182,12 +209,28 @@ export function apply(ctx, config = {}) {
 // Explicit test seam: clock targets must be provable without sleeping.
 export function applyWithClock(ctx, config = {}, clock) {
   const settings = normalizeWaitConfig(config);
+  // The wait used to sleep through the very message it was waiting for: in 158 of 639
+  // waits (200 sessions) a subagent report, job notice or owner message arrived during
+  // the wait and the model sat on, 1 475 minutes in total, until the timer or an Esc.
+  // Now any message queued for the waiting agent ends the wait at once.
+  const wakers = new Map();
+  ctx.on?.('agent/inbox/inserted', ({ agent, message }) => {
+    const sender = senderOf(message);
+    if (sender === undefined) return;
+    for (const wake of [...(wakers.get(agent) ?? [])]) wake(sender);
+  });
+  const onWakeFor = agent => (agent === undefined ? undefined : callback => {
+    const set = wakers.get(agent) ?? new Set();
+    set.add(callback);
+    wakers.set(agent, set);
+    return () => { set.delete(callback); if (!set.size) wakers.delete(agent); };
+  });
 
   ctx.tools.register(
     defineTool({
       name: 'wait',
       description:
-        'Wait for a specified duration before continuing. Use this instead of running sleep via bash or busy-polling when waiting for conditions outside this session (e.g. servers starting, build watchers, ports opening, processes you did not start here, or debounce). Do not use it to wait for your own background jobs or subagents: you are notified in-session when they finish, and this wait does not end early when they do, so keep working or end your turn instead. Supports up to 24 hours (86400s). Clock targets are also supported: `until` for the next occurrence of a local HH:MM, and `untilOffPeak` to hold until DeepSeek\'s off-peak price window opens (peak tokens cost double during 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday).',
+        'Pause for up to 24 hours. Ends early as soon as a message arrives for you (a subagent report, a background job notice, the user), so it is how to hold while your subagents or jobs run when a goal is active: ending the turn then starts another goal round at once. Also for things outside this session (a server starting, a port opening). `until` waits for the next local HH:MM; `untilOffPeak` until DeepSeek\'s off-peak window.',
       parameters: {
         seconds: {
           type: 'number',
@@ -224,10 +267,10 @@ export function applyWithClock(ctx, config = {}, clock) {
             throw new Error(`That clock target is ${formatDuration(target.seconds)} away, beyond the ${MAX_WAIT_SECONDS}s (24h) limit.`);
           }
           const reason = args.reason ? `${args.reason}; ${target.note}` : target.note;
-          return waitDuration(target.seconds, reason, exec.signal);
+          return waitDuration(target.seconds, reason, exec.signal, onWakeFor(exec.agent));
         }
         const { seconds, reason } = parseWaitArgs(args);
-        return waitDuration(seconds, reason, exec.signal);
+        return waitDuration(seconds, reason, exec.signal, onWakeFor(exec.agent));
       },
     })
   );

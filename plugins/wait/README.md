@@ -20,6 +20,19 @@ Without a native `wait` tool, LLMs fall into destructive patterns:
 3. **Shell while-loops**:
    Spawning scripts like `while ! nc -z ...; do sleep 1; done` that hang invisibly until killed.
 
+### Ends at the first message for the agent (2026-11-13)
+
+A wait ends as soon as anything is queued in the waiting agent's inbox: a subagent
+report or message, a background job notice, the owner writing, a plan review or an
+approval (`agent/inbox/inserted`). Goal rounds and AGENTS-file refreshes do not end it.
+Before this, the wait slept through the very report it was holding for: in 158 of 639
+waits across 200 sessions such a message arrived during the wait, and the model sat on
+for 1 475 minutes in total, until the timer ran out or the owner pressed Esc.
+
+This is what makes `wait` the right call under an active goal: ending the turn there
+starts the next goal round at once (the round driver does not look at running children),
+so a model holding for subagents would otherwise burn empty rounds.
+
 ---
 
 ## Tool Specification

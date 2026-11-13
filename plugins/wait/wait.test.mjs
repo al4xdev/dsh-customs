@@ -115,7 +115,7 @@ test('apply registers the wait tool in the context', async () => {
   apply(ctx);
   assert.ok(registeredTool, 'Tool should be registered');
   assert.equal(registeredTool.name, 'wait');
-  assert.ok(registeredTool.description.includes('Wait for a specified duration'));
+  assert.ok(registeredTool.description.includes('Ends early as soon as a message arrives'));
   assert.ok(registeredTool.description.includes('untilOffPeak'));
   assert.ok(registeredTool.parameters.properties.seconds);
   assert.ok(registeredTool.parameters.properties.minutes);
@@ -192,3 +192,30 @@ test('an explicit until target near the clock waits and formats the reason', asy
   assert.match(result, /until 04:10 UTC/);
   assert.match(result, /peak window/);
 });
+
+test('a message queued for the waiting agent ends the wait at once; other agents and quiet sources do not', async () => {
+  let tool, onInserted;
+  apply({ tools: { register(t) { tool = t; } }, on(event, listener) { if (event === 'agent/inbox/inserted') onInserted = listener; } });
+  const me = {}, other = {};
+  const exec = { agent: me, signal: new AbortController().signal };
+  const started = Date.now();
+  const pending = tool.execute({ minutes: 30, reason: 'critic running' }, exec);
+  setTimeout(() => {
+    onInserted({ agent: other, message: { source: { kind: 'subagent-settled' } } });
+    onInserted({ agent: me, message: { source: { kind: 'agent-instructions' } } });
+    onInserted({ agent: me, message: { source: { kind: 'goal' } } });
+  }, 20);
+  setTimeout(() => onInserted({ agent: me, message: { source: { kind: 'subagent-settled' } } }), 60);
+  const text = await pending;
+  assert.ok(Date.now() - started < 5000, 'woken, not timed out');
+  assert.match(text, /^Wait ended early after \S+: a subagent message arrived for you and follows \(critic running\)\.$/);
+  // A later message finds no waiter left behind.
+  assert.doesNotThrow(() => onInserted({ agent: me, message: { source: { kind: 'user' } } }));
+});
+
+test('without an agent (a direct call) the wait is a plain timer', async () => {
+  let tool;
+  apply({ tools: { register(t) { tool = t; } }, on() {} });
+  assert.equal(await tool.execute({ seconds: 0.05 }, { signal: new AbortController().signal }), 'Waited 0.05s.');
+});
+

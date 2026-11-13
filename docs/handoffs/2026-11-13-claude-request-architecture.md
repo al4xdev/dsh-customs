@@ -269,5 +269,8 @@ TUI is open, or close the TUIs first.
 
 1. Rewrite `dsh-compaction-basic`'s summary prompt (section 4, item 4) — untouched.
 2. `.plan/tasks/134-*` is superseded by these decisions; close it through the plan tools.
-3. `~/.dsh/AGENTS.md` still says "`wait` for the notification" about subagents, while the
-   `wait` tool says not to wait on them: 806 `wait` calls in 200 sessions, mostly that.
+
+`wait` (resolved the same day): it slept through the report it was holding for (158 of
+639 waits saw a message arrive; 1 475 idle minutes in total). It now ends at the first
+message queued for the agent. It stays rather than being removed because, under an
+active goal, ending the turn starts the next round at once even with children running.
