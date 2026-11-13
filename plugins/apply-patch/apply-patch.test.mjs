@@ -153,6 +153,35 @@ test('an edit keeps what this session knows of the file, and no more', async () 
   assert.throws(() => requireCoverage(read, target, [0]), /observation is absent or insufficient/);
 });
 
+test('edit needs no prior read and guards on the current version; write still needs the whole file', async () => {
+  const listeners = new Map();
+  let text = 'a\nb\n', version = 'v1', exists = true;
+  observe({ on(event, listener) { listeners.set(event, listener); }, fs: { stat: async () => (exists ? { version } : null), readText: async () => text } });
+  const session = {}, target = { targetKey: '/fixture.txt', displayPath: '/fixture.txt' };
+  const official = async () => { throw new Error('official policy reached'); };
+  const edit = { name: 'edit', token: {}, agent: { session }, arguments: { old_string: 'b', new_string: 'B' } };
+  // Unseen file: our own CAS basis, the official read-first listener is never consulted.
+  assert.deepEqual(await listeners.get('fs/edit-intent')(target, edit, official), { version: 'v1' });
+  // Seen at an older version (e.g. changed through bash): still allowed, at the current version,
+  // and the stale full read does not survive the edit.
+  const read = { name: 'read', agent: { session } };
+  listeners.get('fs/observed')(target, { kind: 'present', version: 'v0' }, read);
+  listeners.get('tools/result')(read, { isError: false, value: { lines: [{ number: 1, text: 'a' }, { number: 2, text: 'b' }], totalLines: 2 } });
+  const stale = { ...edit, token: {} };
+  assert.deepEqual(await listeners.get('fs/edit-intent')(target, stale, official), { version: 'v1' });
+  listeners.get('fs/observed')(target, { kind: 'present', version: 'v2' }, stale);
+  listeners.get('tools/result')(stale, { isError: false });
+  version = 'v2';
+  assert.equal(observed(read, target).full, false);
+  // An overwrite is the one mutation that still demands the whole file at its version.
+  const write = { name: 'write', token: {}, agent: { session } };
+  await assert.rejects(listeners.get('fs/write-intent')(target, write, async () => 'next'), /entire file/);
+  // A missing file is reported as missing, not as "read it first".
+  exists = false;
+  await assert.rejects(listeners.get('fs/edit-intent')(target, { ...edit, token: {} }, official), /not found/);
+  assert.equal(await listeners.get('fs/write-intent')(target, write, async () => 'next'), 'next');
+});
+
 const args = { patch: patch('*** Update File: a.txt', '@@', '-old', '+new') };
 const resultOf = (receipt) => ({ content: [{ type: 'text', text: JSON.stringify(receipt) }] });
 

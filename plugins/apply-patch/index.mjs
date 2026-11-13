@@ -3,7 +3,7 @@ import { mkdtemp, chmod, writeFile, readFile } from 'node:fs/promises';
 import { join, relative, isAbsolute, sep } from 'node:path';
 import { defineTool, cwdOf, assertActive, resolveHost } from '../common.mjs';
 import { parsePatch, applyChunks } from './parser.mjs';
-import { carryLines, requireCoverage, rememberMutation, snapshot } from './observation.mjs';
+import { carryLines, rememberMutation, snapshot } from './observation.mjs';
 import { checkedSource, trashOne } from '../trash/index.mjs';
 import { patchCallView, patchMeta, patchResultView, undoCallView, undoMeta, undoResultView } from './presentation.mjs';
 const { writableRoots, sandboxDenialMarker } = await import(resolveHost('@deepseek-ai/dsh-sandbox'));
@@ -55,17 +55,22 @@ async function prepare(ctx, { operation, target, destination }, view, exec) {
     if (await versionOf(ctx, target) !== null) throw new Error(`Conflict: Add target already exists: ${target.displayPath}`);
     return { operation, target, after: operation.content };
   }
-  const full = operation.kind === 'delete' || !!destination;
-  const entry = requireCoverage(exec, target, [], full, view.get(target.targetKey));
-  await assertVersion(ctx, target, entry.version, exec);
+  const removes = operation.kind === 'delete' || !!destination;
+  const version = await versionOf(ctx, target);
+  if (version === null) throw new Error(`Conflict: ${target.displayPath} does not exist; use *** Add File to create it.`);
+  if (version === undefined) throw new Error(`Cannot stat ${target.displayPath}.`);
+  // No prior read is required: an update must find its exact, unique context, and a delete
+  // or move goes through trash, so both stay recoverable. What this session did read only
+  // carries over when it was read at the version being patched.
+  const seen = view.get(target.targetKey);
+  const entry = seen?.version === version ? seen : { version, full: false, lines: new Set() };
   const before = await ctx.fs.readText(target, exec.signal);
   await assertVersion(ctx, target, entry.version, exec);
   let change = { after: '' };
   if (operation.kind === 'update') {
     try { change = applyChunks(before, operation.chunks); } catch (e) { throw new Error(`Context not found in ${target.displayPath}: ${e.message}`); }
-    if (!full) requireCoverage(exec, target, change.covered, false, entry);
   }
-  if (full) await checkedSource(target.displayPath, cwdOf(exec), { ctx, exec });
+  if (removes) await checkedSource(target.displayPath, cwdOf(exec), { ctx, exec });
   if (destination && await versionOf(ctx, destination) !== null) throw new Error(`Conflict: Move destination exists: ${destination.displayPath}`);
   const lines = change.changes && !entry.full ? carryLines(entry.lines, change.changes) : undefined;
   return { operation, target, destination, before, after: change.after, version: entry.version, full: entry.full, lines };
@@ -221,12 +226,15 @@ const receiptOutput = meta => ({
   render: (_args, text) => [{ type: 'text', text }],
   presentationMeta: (args, text) => meta(args, text),
 });
-export function apply(ctx) {
-  ctx.tools.register(defineTool({ name: 'apply_patch', description: 'Apply Codex-format contextual patches to observed text files. Exact context only. Preflighted but NOT multi-file atomic. Returns a recovery receipt with per-file state (changed/unchanged/partial/uncertain).',
-    parameters: { patch: { type: 'string', required: true, description: 'Read changed lines first; read entire files before moving/deleting. Example: *** Begin Patch\n*** Update File: path\n@@\n-old text\n+new text\n*** End Patch\n\nEach line starts with one marker (space, -, +); everything AFTER it is literal. -text matches text; - text matches a line beginning with a space. Preserve original indentation; do not add a space after - or + unless the file has it.' } },
+// `apply_patch_undo` is off by default: no call in 200 recent sessions, and its schema sat
+// in every request prefix. The receipt keeps a backup of each original either way.
+// Re-enable with `config: { undo: true }` on the alex-apply-patch row.
+export function apply(ctx, config = {}) {
+  ctx.tools.register(defineTool({ name: 'apply_patch', description: 'Apply Codex-format contextual patches to text files. Exact, unique context only; no prior read is required. Preflighted but NOT multi-file atomic. Returns a recovery receipt with per-file state (changed/unchanged/partial/uncertain) and a backup path for each original.',
+    parameters: { patch: { type: 'string', required: true, description: 'Example: *** Begin Patch\n*** Update File: path\n@@\n-old text\n+new text\n*** End Patch\n\nEach line starts with one marker (space, -, +); everything AFTER it is literal. -text matches text; - text matches a line beginning with a space. Preserve original indentation; do not add a space after - or + unless the file has it.' } },
     output: receiptOutput(patchMeta), presentCall: patchCallView, presentResult: patchResultView,
     execute: ({ patch }, exec) => executePatch(ctx, patch, exec) }));
-  ctx.tools.register(defineTool({ name: 'apply_patch_undo', description: 'Undo a patch receipt from this session/runtime without overwriting post-patch edits. May partially succeed; returns per-file undo state (restored/not_restored/partial/uncertain).',
+  if (config.undo === true) ctx.tools.register(defineTool({ name: 'apply_patch_undo', description: 'Undo a patch receipt from this session/runtime without overwriting post-patch edits. May partially succeed; returns per-file undo state (restored/not_restored/partial/uncertain).',
     parameters: { manifest: { type: 'string', required: true, description: 'Recovery manifest path returned by apply_patch.' } },
     output: receiptOutput(undoMeta), presentCall: undoCallView, presentResult: undoResultView,
     execute: ({ manifest }, exec) => undoPatch(ctx, manifest, exec) }));

@@ -25,28 +25,50 @@ export function carryLines(lines, changes) {
 export function rememberMutation(exec, target, version, full, lines = new Set()) {
   if (exec.agent?.session) state(exec.agent.session).set(target.targetKey, { version, full, lines });
 }
+// Only an overwrite needs a prior read. `write` replaces a file with no context check at
+// all, so it still requires the whole file read at its current version. An `edit` (and
+// apply_patch, see index.mjs) must match its literal context exactly, which is the proof
+// that the model knows what it replaces; demanding a `read` on top of that only forced a
+// round trip after the model had looked through bash (372 refusals in 200 sessions) or
+// pushed it to edit through python, past every guard.
 async function guard(ctx, target, exec) {
   const info = await ctx.fs.stat(target, exec.signal);
-  if (!info) return;
-  const entry = requireCoverage(exec, target, [], exec.name === 'write');
-  if (entry.version !== info.version) throw new Error(`File changed since reading ${target.displayPath}; read it again.`);
-  if (exec.name !== 'edit' || entry.full) return;
-  const text = await ctx.fs.readText(target, exec.signal), old = String(exec.arguments?.old_string ?? '');
-  if (!old) throw new Error('Edit context is empty.');
+  if (!info) {
+    // The official listener would answer "edit requires reading ... first" for a file that
+    // does not exist; say what is actually wrong. A write creates it (createIfAbsent).
+    if (exec.name === 'edit') throw new Error(`cannot edit "${target.displayPath}": not found`);
+    return undefined;
+  }
+  if (exec.name === 'write') {
+    const entry = requireCoverage(exec, target, [], true);
+    if (entry.version !== info.version) throw new Error(`File changed since reading ${target.displayPath}; read it again.`);
+    return undefined;
+  }
+  const entry = observed(exec, target);
+  const fresh = entry !== undefined && entry.version === info.version;
+  edits.set(exec.token ?? exec, { fresh, changes: undefined });
+  if (fresh && !entry.full) trackEdit(exec, await ctx.fs.readText(target, exec.signal));
+  // The current version is the compare-and-swap basis: the provider still refuses the
+  // edit if the file changes between this stat and its write.
+  return { version: info.version };
+}
+// Line bookkeeping only (no refusal): carry what this session read across the edit, so a
+// later partial read can still complete the full-file coverage that `write` needs.
+function trackEdit(exec, text) {
+  const old = String(exec.arguments?.old_string ?? '');
+  if (!old) return;
   const count = old.split('\n').length, length = String(exec.arguments?.new_string ?? '').split('\n').length;
   const changes = [];
-  let start = 0, scanned = 0, line = 0, found = false;
+  let start = 0, scanned = 0, line = 0;
   while ((start = text.indexOf(old, start)) !== -1) {
     for (; scanned < start; scanned++) if (text[scanned] === '\n') line++;
-    found = true;
-    requireCoverage(exec, target, Array.from({ length: count }, (_, i) => line + i));
     changes.push({ index: line, count, length });
     start += Math.max(1, old.length);
   }
-  if (!found) throw new Error('Edit context not found; read the relevant file content again.');
+  if (!changes.length) return;
   // Two matches sharing a line (replace_all) don't map line by line: carry nothing, as before.
   const disjoint = changes.every((c, i) => i === 0 || c.index >= changes[i - 1].index + changes[i - 1].count);
-  edits.set(exec.token ?? exec, disjoint ? changes : undefined);
+  edits.set(exec.token ?? exec, { fresh: true, changes: disjoint ? changes : undefined });
 }
 export const name = 'alex-file-observation-coverage';
 export const inject = ['tools', 'fs'];
@@ -58,7 +80,7 @@ export function apply(ctx) {
   });
   ctx.on('tools/result', (exec, result) => {
     const item = pending.get(exec.token ?? exec);
-    const changes = edits.get(exec.token ?? exec);
+    const edit = edits.get(exec.token ?? exec);
     pending.delete(exec.token ?? exec);
     edits.delete(exec.token ?? exec);
     if (!item || result.isError || !exec.agent?.session) return;
@@ -71,16 +93,25 @@ export function apply(ctx) {
       for (const line of value.lines) if (!line.text.includes('... (line truncated to ')) entry.lines.add(line.number);
       entry.full = entry.lines.size === value.totalLines;
       map.set(item.target.targetKey, entry);
-    } else if (exec.name === 'write' || exec.name === 'edit') {
-      const before = map.get(item.target.targetKey);
-      const full = exec.name === 'write' || before?.full === true;
-      rememberMutation(exec, item.target, item.version, full, !full && before && changes ? carryLines(before.lines, changes) : undefined);
+    } else if (exec.name === 'write') {
+      rememberMutation(exec, item.target, item.version, true);
+    } else if (exec.name === 'edit') {
+      // What was read survives the edit only if it was read at the version edited; an
+      // edit made without (or after a stale) read leaves the rest of the file unseen.
+      const before = edit?.fresh ? map.get(item.target.targetKey) : undefined;
+      const full = before?.full === true;
+      rememberMutation(exec, item.target, item.version, full, !full && before && edit.changes ? carryLines(before.lines, edit.changes) : undefined);
     }
   });
   // Prepended so this coverage layer wraps the official fs-observation-policy listener, which
-  // never calls next() and supplies the provider's atomic version guard.
+  // never calls next() and supplies the provider's atomic version guard. An edit stops here
+  // with its own guard: the official listener refuses any edit of a file not read first.
   for (const event of ['fs/write-intent', 'fs/edit-intent']) ctx.on(event, async (target, exec, next) => {
-    if (exec?.name === 'write' || exec?.name === 'edit') await guard(ctx, target, exec);
+    if (exec?.name === 'edit') {
+      const intent = await guard(ctx, target, exec);
+      return intent ?? next();
+    }
+    if (exec?.name === 'write') await guard(ctx, target, exec);
     return next();
   }, true);
 }
