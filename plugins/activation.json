@@ -10,62 +10,38 @@
     "survives every sync.",
     "A plugin may declare \"profiles\": [\"dsh-tui\"] to be enabled in only those",
     "profiles; without it the plugin goes to non-isolated profiles in the list above.",
-    "Companion is isolated: existing general-purpose plugins explicitly retain their old four profiles.",
-    "Its session tool is a preset child declared by tools/session-companion/profile.mjs; only the host bridge is managed here."
+    "Companion is isolated: general-purpose plugins list it explicitly when they belong there.",
+    "Its session tool is a preset child declared by tools/session-companion/profile.mjs; only the host bridge is managed here.",
+    "The lab profiles web, headless and tui were retired on 2026-11-13: the owner runs only dsh-tui and companion."
   ],
   "managedIdPrefix": "alex-",
-  "profiles": ["web", "headless", "tui", "dsh-tui", "companion"],
+  "profiles": ["dsh-tui", "companion"],
   "isolatedProfiles": ["companion"],
   "plugins": [
-    { "id": "alex-research", "module": "research/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
-    { "id": "alex-llm-resilience", "module": "llm-resilience/lib/index-v6-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
-    { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
-    { "id": "alex-agent-self-heal", "module": "agent-self-heal/lib/index-v7-unified.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false, "config": {} },
+    { "id": "alex-research", "module": "research/index.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false },
+    { "id": "alex-llm-resilience", "module": "llm-resilience/lib/index-v6-unified.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false, "config": {} },
+    { "id": "alex-codex-transient-close", "module": "codex-transient-close/index.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false },
+    { "id": "alex-agent-self-heal", "module": "agent-self-heal/lib/index-v7-unified.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false, "config": {} },
     { "id": "alex-session-bridge", "module": "session/bridge.mjs", "profiles": ["dsh-tui"], "overlay": false },
-    { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-apply-patch", "module": "apply-patch/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-workspace-context", "module": "workspace-context/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-project-mcp", "module": "project-mcp/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-browser", "module": "browser/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
+    { "id": "alex-file-observation-coverage", "module": "apply-patch/observation.mjs", "profiles": ["dsh-tui"] },
+    { "id": "alex-workspace-context", "module": "workspace-context/index.mjs", "profiles": ["dsh-tui"] },
+    { "id": "alex-project-mcp", "module": "project-mcp/index.mjs", "profiles": ["dsh-tui"] },
+    { "id": "alex-browser", "module": "browser/index.mjs", "profiles": ["dsh-tui"] },
     { "id": "alex-music", "module": "music/index.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false },
     { "id": "alex-claude-bare-dsh", "module": "claude-bare-dsh/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
-    { "id": "alex-clipboard", "module": "clipboard/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-trash", "module": "trash/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    { "id": "alex-wait", "module": "wait/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui", "companion"], "overlay": false },
-    {
-      "id": "alex-peak-gate",
-      "module": "peak-gate/index.mjs",
-      "profiles": ["web", "headless", "tui", "dsh-tui"],
-      "overlay": false
-    },
-    { "id": "alex-list", "module": "list/index.mjs", "profiles": ["web", "headless", "tui", "dsh-tui"] },
-    {
-      "id": "alex-shell-reconsider",
-      "module": "shell-reconsider/index.mjs",
-      "profiles": ["web", "headless", "tui", "dsh-tui"],
-      "config": { "interval": 50, "unit": "steps" }
-    },
-    {
-      "id": "alex-grammar-fix",
-      "module": "grammar-fix/index.mjs",
-      "profiles": ["dsh-tui"],
-      "config": {
-        "model": "deepseek-official/deepseek-flash",
-        "language": "en",
-        "naturalTips": false
-      }
-    },
-    {
-      "id": "alex-managed-plans",
-      "module": "managed-plans/index.mjs",
-      "profiles": ["dsh-tui"],
-      "config": { "wakeAgent": true, "autonomousByDefault": false }
-    },
-    {
-      "id": "alex-managed-plans-tui",
-      "module": "managed-plans/tui.mjs",
-      "profiles": ["dsh-tui"]
-    }
+    { "id": "alex-clipboard", "module": "clipboard/index.mjs", "profiles": ["dsh-tui"] },
+    { "id": "alex-trash", "module": "trash/index.mjs", "profiles": ["dsh-tui"] },
+    { "id": "alex-wait", "module": "wait/index.mjs", "profiles": ["dsh-tui", "companion"], "overlay": false },
+    { "id": "alex-peak-gate", "module": "peak-gate/index.mjs", "profiles": ["dsh-tui"], "overlay": false },
+    { "id": "alex-grammar-fix", "module": "grammar-fix/index.mjs", "profiles": ["dsh-tui"], "config": {"model": "deepseek-official/deepseek-flash", "language": "en", "naturalTips": false} },
+    { "id": "alex-managed-plans", "module": "managed-plans/index.mjs", "profiles": ["dsh-tui"], "config": {"wakeAgent": true, "autonomousByDefault": false} },
+    { "id": "alex-managed-plans-tui", "module": "managed-plans/tui.mjs", "profiles": ["dsh-tui"] }
   ],
-  "knownInactive": {}
+  "knownInactive": {
+    "list": "Retired 2026-11-13: duplicates ls/find in bash; frontier models list through the shell.",
+    "shell-reconsider": "Retired 2026-11-13 on the owner's decision: no shell command is denied any more, destructive ones included.",
+    "fs-tools": "Not a top-level row: mounted inside the dsh-tui standard preset (cordis.patch.yml) in place of tool-fs.",
+    "tool-result-clearing": "Not a top-level row: mounted inside the dsh-tui standard preset (cordis.patch.yml) in place of tool-result-pruner.",
+    "apply-patch": "apply_patch retired 2026-11-13: Claude-family models edit with edit/write, and no Codex/GPT route ran in 200 sessions. The directory stays because apply-patch/observation.mjs (alex-file-observation-coverage) is active."
+  }
 }

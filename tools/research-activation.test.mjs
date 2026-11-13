@@ -66,7 +66,7 @@ function expandedPlugins(plugins, base) {
   });
 }
 
-test('five-profile plan is read-only, selective, expression-safe, and preserves scopes', t => {
+test('the profile plan is read-only, selective, expression-safe, and preserves scopes', t => {
   const f = fixture(t), plan = f.plan();
   assert.deepEqual(plan.reports.map(r => r.profile), PROFILES);
   assert.equal(existsSync(join(f.root, '.dumps')), false);
@@ -94,7 +94,7 @@ test('apply fixtures, validate transformed trees, idempotence and exact rollback
   assert.ok(result.receipt.includes('/.dumps/research-activation/'));
   const receipt = JSON.parse(readFileSync(result.receipt, 'utf8'));
   for (const c of receipt.changes) assert.equal(hash(readFileSync(c.path)), c.afterHash);
-  for (const profile of ['web', 'dsh-tui']) {
+  for (const profile of ['dsh-tui']) {
     const patches = parse(readFileSync(join(f.profilesDir, profile, 'cordis.patch.yml'), 'utf8'));
     for (const patch of patches.filter(p => p.id?.startsWith('preset-') && p.config?.plugins)) {
       for (const row of expandedPlugins(patch.config.plugins, join(f.profilesDir, profile)).filter(p => p.name === WEB)) {
@@ -116,7 +116,7 @@ test('apply fixtures, validate transformed trees, idempotence and exact rollback
 
 test('rollback preserves concurrent patch edits and all dependent artifacts', t => {
   const f = fixture(t), plan = f.plan(), { receipt } = applyPlan(plan);
-  const path = join(f.profilesDir, 'web/cordis.patch.yml');
+  const path = join(f.profilesDir, 'dsh-tui/cordis.patch.yml');
   const edit = readFileSync(path, 'utf8') + '# concurrently edited\n'; f.put(path, edit);
   const results = rollback(receipt, { ...f.options, write: true });
   assert.equal(readFileSync(path, 'utf8'), edit);
@@ -144,11 +144,12 @@ test('apply refuses source and target changes before making any target write', t
 });
 
 test('ambiguous plugin ids, dynamic target configs and aliases refuse', t => {
-  const f = fixture(t), path = join(f.profilesDir, 'headless/cordis.patch.yml'), original = readFileSync(path, 'utf8');
+  const f = fixture(t), path = join(f.profilesDir, 'dsh-tui/cordis.patch.yml'), original = readFileSync(path, 'utf8');
   for (const [suffix, error] of [
     ['- insert:\n    - id: alex-research\n      name: /someone/else.mjs\n', /conflicting research/],
     ['- insert:\n    - id: tool-web\n      name: other\n', /duplicate entry/],
-    ['- id: tool-web\n  config: !!js process.env.CONFIG\n', /static mapping/],
+    // The surface bundle disables the root tool-web in dsh-tui; enabled, its config is read.
+    ['- id: tool-web\n  disabled: false\n  config: !!js process.env.CONFIG\n', /static mapping/],
     ['- id: tool-web\n  config: &cfg {search: true}\n- id: unrelated\n  config: *cfg\n', /aliases/],
   ]) { f.put(path, original + suffix); assert.throws(() => f.plan(), error); }
 });
@@ -160,7 +161,7 @@ test('managed artifacts fail closed on non-search drift; symlink targets refuse'
   rollback(receipt, { ...f.options, write: true });
   assert.throws(() => f.plan(), /collision\/drift/);
   const fresh = fixture(t), next = fresh.plan(), target = next.changes.find(c => c.before === null);
-  symlinkSync(join(fresh.profilesDir, 'web/cordis.patch.yml'), target.path);
+  symlinkSync(join(fresh.profilesDir, 'dsh-tui/cordis.patch.yml'), target.path);
   assert.throws(() => applyPlan(next), /non-regular target/);
 });
 
@@ -193,8 +194,10 @@ test('compose matches shallow replacement and preserves group isolation and !!js
 });
 
 test('explicit fetch:false stays false and search-only change retains extra keys', t => {
-  const f = fixture(t), path = join(f.profilesDir, 'tui/cordis.patch.yml');
-  f.put(path, readFileSync(path, 'utf8') + '- id: tool-web\n  config: {fetch: false, search: true, searchMaxQueries: 2}\n');
+  // No live profile keeps a root tool-web enabled (the surface bundle disables it), so
+  // the case enables one explicitly.
+  const f = fixture(t), path = join(f.profilesDir, 'dsh-tui/cordis.patch.yml');
+  f.put(path, readFileSync(path, 'utf8') + '- id: tool-web\n  disabled: false\n  config: {fetch: false, search: true, searchMaxQueries: 2}\n');
   const c = f.plan().changes.find(c => c.path === path), patches = parse(c.after);
   assert.deepEqual(patches.filter(p => p.id === 'tool-web').at(-1).config, { fetch: false, search: false, searchMaxQueries: 2 });
 });

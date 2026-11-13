@@ -4,7 +4,8 @@
  *
  * CLI: --check (default), --write, --rollback RECEIPT [--write], --profiles-dir DIR,
  *      --root DIR. Exit: 0 current/success, 1 pending/conflicts, 2 invalid/ambiguous.
- * All five profiles are mandatory. Future writes append a private patch block and
+ * Both live profiles (dsh-tui, companion) are mandatory; the lab web/headless/tui
+ * profiles were retired on 2026-11-13. Future writes append a private patch block and
  * create local immutable preset artifacts; never rewrite the original patch body.
  * Config patches replace (not merge) objects in the real include implementation.
  * YAML ASTs retain !!js as tagged data, NEVER execute it. Dynamic target configs,
@@ -21,7 +22,7 @@ import { dirname, resolve, join, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isProfileRelative, profileRelative, resolveProfilePath } from './profile-paths.mjs';
 
-export const PROFILES = ['web', 'headless', 'tui', 'dsh-tui', 'companion'];
+export const PROFILES = ['dsh-tui', 'companion'];
 export const RESEARCH_ID = 'alex-research';
 const WEB = '@deepseek-ai/dsh-tool-web';
 const PRESET = '@deepseek-ai/dsh-agent-preset';

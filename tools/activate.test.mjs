@@ -17,7 +17,7 @@ const inserted = source => parse(source).flatMap(row => row.insert ?? []);
 const controller = source => inserted(source).find(row => row.id === 'alex-llm-resilience');
 const native = source => parse(source).find(row => row.id === 'llm-retry');
 
-function fixture({ profiles = ['web'], global = true, extras = [], source = () => '[]\n', overlay, missing = [], globalConfig = {} } = {}) {
+function fixture({ profiles = ['dsh-tui'], global = true, extras = [], source = () => '[]\n', overlay, missing = [], globalConfig = {} } = {}) {
   // Synthetic profiles only; do not read/copy/write any owner's profile data.
   const dir = mkdtempSync(join(tmpdir(), 'resilience-activate-'));
   const root = join(dir, 'repo'), home = join(dir, '.dsh');
@@ -77,12 +77,12 @@ for (const profile of RESILIENCE_PROFILES) test(`${profile}: fresh controller ac
 
 test('an empty flow-list patch becomes one valid root and remains in sync', () => {
   const f = fixture({ source: () => '# retain empty-profile comment\n[]\n' });
-  assert.equal(f.run(['--write', '--profile', 'web']).status, 0);
-  const final = f.text('web');
+  assert.equal(f.run(['--write', '--profile', 'dsh-tui']).status, 0);
+  const final = f.text('dsh-tui');
   assert(final.startsWith('# retain empty-profile comment\n'));
   assert.equal(native(final).disabled, true); assert(controller(final));
-  assert.equal(f.run(['--check', '--profile', 'web']).status, 0);
-  assert.equal(f.text('web'), final);
+  assert.equal(f.run(['--check', '--profile', 'dsh-tui']).status, 0);
+  assert.equal(f.text('dsh-tui'), final);
 });
 
 test('post-sync migration preserves an existing explicit zero and its native source on every check', () => {
@@ -110,11 +110,11 @@ test('explicit finite native policy fields are migrated without native resolved 
         backoff: { initialDelayMs: 17, maxDelayMs: 99, jitterRatio: 0 }
 `;
   const f = fixture({ source: () => protection + source });
-  assert.equal(f.run(['--write', '--profile', 'web']).status, 0);
-  const final = f.text('web');
+  assert.equal(f.run(['--write', '--profile', 'dsh-tui']).status, 0);
+  const final = f.text('dsh-tui');
   assert(final.includes(source));
   assert.deepEqual(controller(final).config.providers['custom-provider'], { maxRetries: 4, retryableCodes: ['SERVER'], initialDelayMs: 17, maxDelayMs: 99, jitterRatio: 0 });
-  assert.equal(f.run(['--check', '--profile', 'web']).status, 0);
+  assert.equal(f.run(['--check', '--profile', 'dsh-tui']).status, 0);
 });
 
 test('a controller-free manifest leaves native engines/custom policies untouched and needs no helper deployment', () => {
@@ -124,13 +124,13 @@ test('a controller-free manifest leaves native engines/custom policies untouched
   write(copied, readFileSync(script, 'utf8'));
   write(join(f.root, 'tools/activation-selection.mjs'), readFileSync(new URL('./activation-selection.mjs', import.meta.url), 'utf8'));
   write(join(f.root, 'tools/profile-paths.mjs'), readFileSync(new URL('./profile-paths.mjs', import.meta.url), 'utf8'));
-  const original = f.text('web');
-  assert.equal(f.run(['--write', '--profile', 'web'], copied).status, 0);
-  const final = f.text('web');
+  const original = f.text('dsh-tui');
+  assert.equal(f.run(['--write', '--profile', 'dsh-tui'], copied).status, 0);
+  const final = f.text('dsh-tui');
   assert.equal(native(final).disabled, false); assert(!controller(final));
   assert(final.includes('mode: always')); assert(final.includes('maxQuotaWaitMs: 123'));
   assert(original.includes(protection) && final.includes(protection));
-  assert.equal(f.run(['--check', '--profile', 'web'], copied).status, 0);
+  assert.equal(f.run(['--check', '--profile', 'dsh-tui'], copied).status, 0);
 });
 
 test('generic overlay synchronization never applies root resilience migration or adds global parents', () => {
@@ -147,12 +147,12 @@ for (const [name, invalid] of [
   ['custom always policy', () => '- id: dsh-tui-auth\n  config: { retryPolicies: { custom: { mode: always } } }\n'],
   ['custom fork cap', root => fork(root, 123)],
 ]) test(`${name} refuses every selected write before any file changes`, () => {
-  const f = fixture({ profiles: ['web', 'tui'], source: (root, profile) => profile === 'web' ? '[]\n' : protection + invalid(root) });
-  const before = Object.fromEntries(['web', 'tui'].map(profile => [profile, f.text(profile)]));
+  const f = fixture({ profiles: ['dsh-tui', 'companion'], source: (root, profile) => profile === 'dsh-tui' ? '[]\n' : protection + invalid(root) });
+  const before = Object.fromEntries(['dsh-tui', 'companion'].map(profile => [profile, f.text(profile)]));
   const result = f.run(['--write']);
   assert.equal(result.status, 3);
-  assert(result.report.reports.find(row => row.label === 'tui').error);
-  for (const profile of ['web', 'tui']) assert.equal(f.text(profile), before[profile]);
+  assert(result.report.reports.find(row => row.label === 'companion').error);
+  for (const profile of ['dsh-tui', 'companion']) assert.equal(f.text(profile), before[profile]);
   assert(result.report.reports.every(row => !row.written));
 });
 
@@ -165,13 +165,13 @@ test('existing central opt-outs and explicit self-heal cap survive default manif
       name: ${root}/plugins/agent-self-heal/lib/index-v3-resilience.mjs
       config: { maxCycles: 3 }
 ` });
-  assert.equal(f.run(['--write', '--profile', 'web']).status, 0);
-  const final = f.text('web');
+  assert.equal(f.run(['--write', '--profile', 'dsh-tui']).status, 0);
+  const final = f.text('dsh-tui');
   assert(final.includes(protection));
   assert.equal(controller(final).config.policy.maxRetries, 2);
   assert.equal(controller(final).config.providers['private-route'].maxRetries, 0);
   assert.equal(inserted(final).find(row => row.id === 'alex-agent-self-heal').config.maxCycles, 3);
-  assert.equal(f.run(['--check', '--profile', 'web']).status, 0);
+  assert.equal(f.run(['--check', '--profile', 'dsh-tui']).status, 0);
 });
 
 test('contradicting native and central opt-downs are refused before normal sync can hide the conflict', () => {
@@ -180,22 +180,22 @@ test('contradicting native and central opt-downs are refused before normal sync 
       name: ${root}/plugins/llm-resilience/index.mjs
       config: { providers: { openai-codex: { maxRetries: 7 } } }
 ` });
-  const before = f.text('web'), result = f.run(['--write', '--profile', 'web']);
-  assert.equal(result.status, 3); assert.equal(f.text('web'), before);
+  const before = f.text('dsh-tui'), result = f.run(['--write', '--profile', 'dsh-tui']);
+  assert.equal(result.status, 3); assert.equal(f.text('dsh-tui'), before);
   assert.match(result.report.reports[0].note, /conflicting-central-provider-policy/);
 });
 
 test('missing immutable compiled recovery artifacts prevent every activation write', () => {
-  const f = fixture({ profiles: ['web', 'tui'], missing: [RESILIENCE_MODULES['alex-agent-self-heal']] });
-  const before = f.text('web');
+  const f = fixture({ profiles: ['dsh-tui', 'companion'], missing: [RESILIENCE_MODULES['alex-agent-self-heal']] });
+  const before = f.text('dsh-tui');
   assert.equal(f.run(['--write']).status, 3);
-  assert.equal(f.text('web'), before); assert.equal(f.text('tui'), before);
+  assert.equal(f.text('dsh-tui'), before); assert.equal(f.text('companion'), before);
 });
 
 for (const globalConfig of [false, 0, '']) test(`invalid falsy recovery manifest config ${JSON.stringify(globalConfig)} cannot silently enable defaults`, () => {
-  const f = fixture({ globalConfig }), before = f.text('web');
-  const result = f.run(['--write', '--profile', 'web']);
-  assert.equal(result.status, 3); assert.equal(f.text('web'), before);
+  const f = fixture({ globalConfig }), before = f.text('dsh-tui');
+  const result = f.run(['--write', '--profile', 'dsh-tui']);
+  assert.equal(result.status, 3); assert.equal(f.text('dsh-tui'), before);
   assert.match(result.report.reports[0].note, /Invalid recovery activation config/);
 });
 
@@ -205,13 +205,13 @@ test('manifest disagreement with an existing explicit central cap is refused rat
       name: ${root}/plugins/llm-resilience/index.mjs
       config: { policy: { maxRetries: 2 } }
 ` });
-  const before = f.text('web'), result = f.run(['--write', '--profile', 'web']);
-  assert.equal(result.status, 3); assert.equal(f.text('web'), before);
+  const before = f.text('dsh-tui'), result = f.run(['--write', '--profile', 'dsh-tui']);
+  assert.equal(result.status, 3); assert.equal(f.text('dsh-tui'), before);
   assert.match(result.report.reports[0].note, /conflicting-activation-recovery-config/);
 });
 
 test('profile rows are written relative to the profile, so another HOME with the same layout stays current', () => {
-  const { root, home, text, run } = fixture({ profiles: ['web'], source: root => `- insert:
+  const { root, home, text, run } = fixture({ profiles: ['dsh-tui'], source: root => `- insert:
     - id: alex-llm-resilience
       name: ${root}/plugins/llm-resilience/lib/index-v5-unified.mjs
       config: {}
@@ -222,8 +222,8 @@ test('profile rows are written relative to the profile, so another HOME with the
       config: {}
 ` });
   assert.equal(run(['--write']).status, 0);
-  const profileDir = join(home, 'profiles/web');
-  const rows = inserted(text('web')).filter(row => row.id.startsWith('alex-'));
+  const profileDir = join(home, 'profiles/dsh-tui');
+  const rows = inserted(text('dsh-tui')).filter(row => row.id.startsWith('alex-'));
   assert.equal(rows.length, 3);
   for (const row of rows) {
     assert(row.name.startsWith('../'), row.name);
@@ -269,14 +269,14 @@ test('a standalone managed insert is folded and research-activation rows stay it
 });
 
 test('a loader-reformatted managed block is current and is not rewritten', () => {
-  const { text, run, root } = fixture({ profiles: ['web'] });
-  assert.equal(run(['--write', '--profile', 'web']).status, 0);
+  const { text, run, root } = fixture({ profiles: ['dsh-tui'] });
+  assert.equal(run(['--write', '--profile', 'dsh-tui']).status, 0);
   // Same rows in the Cordis Loader's write-back style (`config: {}` inline).
-  const restyled = text('web').replace(/config:\n\s+\{\}/g, 'config: {}');
-  assert.notEqual(restyled, text('web'));
-  write(join(dirname(join(root, '..', '.dsh/profiles/web/cordis.patch.yml')), 'cordis.patch.yml'), restyled);
-  const check = run(['--check', '--profile', 'web']);
+  const restyled = text('dsh-tui').replace(/config:\n\s+\{\}/g, 'config: {}');
+  assert.notEqual(restyled, text('dsh-tui'));
+  write(join(root, '..', '.dsh/profiles/dsh-tui/cordis.patch.yml'), restyled);
+  const check = run(['--check', '--profile', 'dsh-tui']);
   assert.equal(check.status, 0, JSON.stringify(check.report.reports));
-  assert.equal(run(['--write', '--profile', 'web']).status, 0);
-  assert.equal(text('web'), restyled, 'equivalent YAML keeps the existing bytes');
+  assert.equal(run(['--write', '--profile', 'dsh-tui']).status, 0);
+  assert.equal(text('dsh-tui'), restyled, 'equivalent YAML keeps the existing bytes');
 });

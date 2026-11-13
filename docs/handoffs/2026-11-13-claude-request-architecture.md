@@ -201,3 +201,73 @@ request of any session and the only one that reuses nothing.
 | `.dumps/anthropic/*.json` | captures (local only, gitignored) |
 | `claude-session-7ecc11bb-dw2003recomp.jsonl` | the Claude Code session the policy was measured against |
 | `.plan/tasks/134-*.md` | the decision record for the policy change |
+
+---
+
+## 6. Follow-up, same day: `standard` becomes bash-first
+
+Sections 1 and 4 above describe the state before this follow-up. What changed after it:
+
+### Decisions (owner)
+
+- **`shell-reconsider` is retired**, destructive commands included: a strong harness only
+  compensates for weak models, and the owner trims it as models earn trust. `list` is
+  retired too. Both stay in the tree, marked inactive in `plugins/activation.json`.
+- **dsh-tui's `standard` preset is now bash-first** (open item 2). No `glob`/`grep`/`list`,
+  one `read` for text and images (`plugins/fs-tools`, open item 3), old tool output cleared
+  before summaries (`plugins/tool-result-clearing`), no `subagent_fork`/`workflow`/
+  `apply_patch_undo`. 40 → 32 tools; harness text 38 079 → 30 049 chars.
+  Why a patch on `standard` and not a new preset: all 539 sessions ran `standard` and the
+  owner uses only dsh-tui and Companion, so a second preset was one more choice nobody
+  makes. The stock list lives in a frozen research derivative, so the override is a
+  `preset-standard` config patch placed after the research block (the last config patch
+  wins). `ptc`, `cordis` and `liangshen` (never used) are disabled.
+
+- **Only `dsh-tui` and `companion` remain.** The lab profiles `web`, `headless` and `tui`
+  were retired (moved out of `~/.dsh/profiles`, removed from dotfiles, from
+  `activation.json`, `research-activation`'s `PROFILES` and `RESILIENCE_PROFILES`).
+- **`apply_patch` is inactive** in dsh-tui: Claude-family models edit with `edit`/`write`,
+  and no Codex/GPT route ran in 200 sessions. `apply-patch/observation.mjs` stays active.
+- **`~/.dsh/AGENTS.md` "Execution conventions" rewritten** (owner-approved): the shell is
+  the normal way to look at things, bound what you print, `read` for images, `edit`/`write`
+  to change. Gone: "prefer the native tool over the shell", "read entire files by default"
+  (the main reason `read` was 65% of tool-result bytes) and "one operation per call".
+
+### Corrections to "Letting a Claude-model run naturally"
+
+- **`;` is the normal separator, not a smell.** Fable used `;` in 117 of its 132 calls,
+  `&&` in 26: a batch of independent probes must not stop because one `grep` matched
+  nothing (exit 1). `&&`/`set -e` is for steps that depend on the previous one.
+- **`edit`/`apply_patch` no longer need a prior read.** The exact, unique context is the
+  proof; the version guard uses the file's current version. Only `write` (an overwrite)
+  still needs the whole file read at its current version. The old line-coverage rule
+  refused 372 edits in 200 sessions after the model had looked through bash.
+- Nothing is denied in the shell any more; `trash` remains for recoverable removal.
+
+### Measurements behind it (538 DSH sessions, read-only)
+
+- Prompt cache is healthy: Opus via `claude-bare-dsh` 97.6% hit, the tool catalog is
+  byte-stable (97% of header records identical). The catalog size is not what breaks it.
+- Summary compaction is: 403 of 615 Opus misses, ~118k tokens of cache write each (28% of
+  all writes). Idle over 60 min misses ~92% of the time (1 h TTL).
+- Tool results are 72% of context bytes; `read` alone is 65% of that (5.4k chars per call
+  on average), bash 583 per call.
+- Claude Code 2.1.323 (binary): keeps the 12 newest results of its read/shell/search tools
+  and clears older ones only when that saves ≥20k tokens, after an idle of 3900 s or under
+  context pressure. `tool-result-clearing` does the same in DSH.
+
+### Hazard found while doing it
+
+Editing `~/.dsh/profiles/dsh-tui/cordis.patch.yml` while a dsh-tui was running made that
+process reload and **write the whole composed tree (141 rows) into `cordis.yml`**, which
+must stay `[]`. The next composition then sees every bundle row twice:
+`research-activation --check` fails with `duplicate entry id: tool-plugin-manager`.
+Restore the `[]` file (the comment header plus `[]`) after any profile edit made while a
+TUI is open, or close the TUIs first.
+
+### Still open
+
+1. Rewrite `dsh-compaction-basic`'s summary prompt (section 4, item 4) — untouched.
+2. `.plan/tasks/134-*` is superseded by these decisions; close it through the plan tools.
+3. `~/.dsh/AGENTS.md` still says "`wait` for the notification" about subagents, while the
+   `wait` tool says not to wait on them: 806 `wait` calls in 200 sessions, mostly that.

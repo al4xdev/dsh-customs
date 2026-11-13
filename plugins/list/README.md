@@ -1,5 +1,8 @@
 # List — Contract for Personal LTS
 
+> **Retired 2026-11-13**: no profile activates it. The shell lists (`ls`, `find`, `rg --files`),
+> which is what frontier models trained on Claude Code do anyway. Kept for reference.
+
 Lists names and types without reading file contents. Relative paths use the session
 cwd. `file_path` and `path` are aliases; when both are supplied, `file_path` takes precedence.
 A non-empty path is required.

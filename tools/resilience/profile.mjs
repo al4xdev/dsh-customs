@@ -15,7 +15,8 @@ function loadYaml() {
   throw new Error('Cannot resolve yaml; install repository dependencies');
 }
 const YAML = loadYaml();
-export const RESILIENCE_PROFILES = Object.freeze(['web', 'headless', 'tui', 'dsh-tui', 'companion']);
+// web/headless/tui were lab profiles, retired on 2026-11-13.
+export const RESILIENCE_PROFILES = Object.freeze(['dsh-tui', 'companion']);
 export const RESILIENCE_MODULES = Object.freeze({
   'alex-llm-resilience': 'llm-resilience/lib/index-v6-unified.mjs',
   'alex-codex-transient-close': 'codex-transient-close/index.mjs',

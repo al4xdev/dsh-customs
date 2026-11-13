@@ -117,7 +117,8 @@ of a single known include id.
 in any HOME with identical layout. `node tools/profile-portable.mjs --profile NAME
 [--from-home DIR] [--write]` converts a profile with absolute paths, providing structural
 proof of equivalence and cascading renames of `alex-research-<hash>.yml`.
-The lab `web`, `headless`, `tui`, and `companion` profiles still contain `/home/alex`.
+Only two profiles are live: `dsh-tui` and `companion` (the lab `web`, `headless` and `tui`
+profiles were retired on 2026-11-13). `companion` still contains `/home/alex` paths.
 
 **Machine-only configuration** (corporate providers, default model) goes into
 `~/.dsh/cordis.patch.yml`: a DSH layer applied after the profile and ignored by

@@ -1,5 +1,11 @@
 # Shell reconsideration
 
+> **Retired 2026-11-13** (owner's decision): no profile activates it. Frontier models are
+> trained to do whole jobs in one shell call, and the owner chose to trust them rather
+> than guard the shell, destructive commands included; a strong harness only compensates
+> for weak models. The code and tests stay so it can come back with one row in
+> `plugins/activation.json`.
+
 Small optional plugin intercepting the existing native `bash` through `tools/pre-execute`. No DSH core changes, shell wrapper, automatic command execution, or model calls from the plugin.
 
 ## How classification works
