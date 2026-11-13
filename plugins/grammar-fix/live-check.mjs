@@ -44,7 +44,7 @@ try {
       },
     },
     {
-      name: 'gemini', model: process.env.GRAMMAR_GEMINI_MODEL ?? 'google-antigravity/gemini-3.8-flash-low',
+      name: 'gemini', model: process.env.GRAMMAR_GEMINI_MODEL ?? 'google-antigravity/gemini-4-hydrogen-low',
       mount: async () => ctx.plugin(await load('@deepseek-ai/dsh-llm-pi-ai-antigravity'), {}),
     },
     {

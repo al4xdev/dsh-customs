@@ -419,7 +419,7 @@ A template file [`.env.example`](.env.example) is available with all configurabl
 | `SIMP_MCP_UV` | `uv` | Path to uv executable for music environment | Plugin: `music` |
 | `LLAMACPP_BASE_URL` | `http://127.0.0.1:8080` | llama.cpp backend endpoint for grammar correction | Plugin: `grammar-fix` |
 | `GRAMMAR_GPT_MODEL` | `openai-codex/gpt-6-sol` | GPT model used for grammar fixes | Plugin: `grammar-fix` |
-| `GRAMMAR_GEMINI_MODEL` | `google-antigravity/gemini-3.8-flash-low` | Gemini model used for grammar fixes | Plugin: `grammar-fix` |
+| `GRAMMAR_GEMINI_MODEL` | `google-antigravity/gemini-4-hydrogen-low` | Gemini model used for grammar fixes | Plugin: `grammar-fix` |
 | `DSH_PEAK_GATE` | *(unset)* | `off` bypasses the DeepSeek peak-hour hold for that process | Plugin: `peak-gate` |
 
 ## Validation

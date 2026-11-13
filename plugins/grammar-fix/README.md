@@ -64,7 +64,7 @@ It does not submit a draft or add anything to the agent conversation.
 Default routes:
 - GPT: `openai-codex/gpt-6-sol` (available in the installed Codex catalog).
   The session's `gpt-6.1-sol` alias is not assumed to be accepted by that provider.
-- Gemini Flash: `google-antigravity/gemini-3.8-flash-low`.
+- Gemini Flash: `google-antigravity/gemini-4-hydrogen-low`.
 - Local: the single model currently advertised by `http://127.0.0.1:8080/v1/models`,
   via `llamacpp-local`. Start your existing server before testing; the runner
   never starts or reconfigures it.
@@ -72,7 +72,7 @@ Default routes:
 Override with fish-compatible environment assignments:
 
 ```fish
-env GRAMMAR_GPT_MODEL=openai-codex/gpt-6-sol GRAMMAR_GEMINI_MODEL=google-antigravity/gemini-3.8-flash-low GRAMMAR_LOCAL_MODEL=llamacpp-local/Ternary-Bonsai-2-27B-PQ2_0 npm run test:grammar:live
+env GRAMMAR_GPT_MODEL=openai-codex/gpt-6-sol GRAMMAR_GEMINI_MODEL=google-antigravity/gemini-4-hydrogen-low GRAMMAR_LOCAL_MODEL=llamacpp-local/Ternary-Bonsai-2-27B-PQ2_0 npm run test:grammar:live
 ```
 
 `DSH_HOME`, `GRAMMAR_PROFILE` (default `dsh-tui`), and `LLAMACPP_BASE_URL` can
@@ -96,7 +96,7 @@ unchanged. Restart DSH to reload changes to the plugin module.
 
 - 22 deterministic tests plus the existing configuration check: passed.
 - GPT `gpt-6-sol`: 3/3 live fixtures passed.
-- Gemini Flash `gemini-3.8-flash-low`: 3/3 live fixtures passed.
+- Gemini Flash `gemini-4-hydrogen-low`: 3/3 live fixtures passed.
 - Local `Ternary-Bonsai-2-27B-PQ2_0`: 3/3 live fixtures passed.
 - Evidence: `.dumps/grammar/1791822669083.json` (local only).
 
