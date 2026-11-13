@@ -210,23 +210,16 @@ export function planActivation({ profilesDir = DEFAULT_PROFILES, root = DEFAULT_
     // Declare fallback presets before the adapter registers them. Minimal is not
     // copied: it has no web tools, and preserving that narrow scope is intentional.
     if (profileName === 'dsh-tui') {
-      for (const preset of ['standard', 'ptc', 'cordis']) {
+      // Only `standard`: all 539 sessions of 2026-11-13 ran it, and the others are
+      // declared off, so generating ptc/cordis/liangshen here just refilled the
+      // profile with rows nobody runs (and fed the duplicate-id failure).
+      for (const preset of ['standard']) {
         if (ids.has(`preset-${preset}`)) continue;
         const pkg = packagePath(profile, '@deepseek-ai/dsh-web-app');
         const fallback = compose(new YAML.YAMLSeq(), document(join(dirname(pkg), `presets/${preset}.patch.yml`)), codec);
         const rows = seq(fallback, 'fallback');
         if (rows.length !== 1 || val(rows[0], 'name') !== PRESET) fail('unexpected fallback preset format');
         entries.add(rows[0]); newRows.add(rows[0].clone()); ids.add(`preset-${preset}`);
-      }
-      if (!ids.has('preset-liangshen')) {
-        const pkg = packagePath(profile, '@deepseek-harness-tui/dsh-tui');
-        const dir = join(dirname(pkg), 'presets/liangshen');
-        const metadata = parse(read(join(dir, 'preset.yml'))).toJS();
-        const row = new YAML.Document({ id: 'preset-liangshen', name: PRESET, config: {
-          id: 'liangshen', name: metadata.name, description: metadata.description, order: metadata.order,
-          plugins: [{ id: 'liangshen-plugins', name: INCLUDE, config: { path: profileRelative(profile, join(dir, 'agent.cordis.yml')) } }],
-        } }).contents;
-        entries.add(row); newRows.add(row.clone());
       }
     }
     for (const row of seq(entries, 'host')) {
