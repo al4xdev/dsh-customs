@@ -233,6 +233,14 @@ Sections 1 and 4 above describe the state before this follow-up. What changed af
   to change. Gone: "prefer the native tool over the shell", "read entire files by default"
   (the main reason `read` was 65% of tool-result bytes) and "one operation per call".
 
+- **AGENTS.md distils Fable's shell habits** for every model in the harness (later the
+  same day, after a per-model study over 3 224 sessions on both machines): bound every
+  output at the source (Fable 83% of its bash, Codex and Gemini 0–5%), batch independent
+  probes in one call with `;` and keep `&&` for dependent steps, search with path/glob
+  filters, issue independent tool calls together (Fable 40% of tool messages, Gemini
+  Flash 0.6%), script data analysis, time out long builds. The study PDF lives outside
+  the repo; the numbers came from read-only aggregate scans.
+
 ### Corrections to "Letting a Claude-model run naturally"
 
 - **`;` is the normal separator, not a smell.** Fable used `;` in 117 of its 132 calls,
