@@ -38,6 +38,27 @@ class ConversationMessageHeadsTest {
             .getValue("s1").lastVisibleAssistant)
     }
 
+    @Test fun previewIsOptionalDisplayTextBoundToTheHeadAndNeverPartOfItsIdentity() {
+        val withPreview = current.replace("\"interrupted\":false", "\"interrupted\":false,\"preview\":\"Resposta curta 🙂\"")
+        val row = decode(withPreview).getValue("s1")
+        assertEquals("Resposta curta 🙂", row.preview)
+        // Identity comparisons (unread/read state) must be identical with or without text.
+        assertEquals(decode(current).getValue("s1").lastVisibleAssistant, row.lastVisibleAssistant)
+        assertNull(decode(current).getValue("s1").preview)
+        assertNull(decode(unknown).getValue("s1").preview)
+    }
+
+    @Test fun malformedOrUnboundedPreviewFailsClosed() {
+        fun withPreview(value: String) = current.replace("\"interrupted\":false", "\"interrupted\":false,\"preview\":$value")
+        for (raw in listOf(
+            withPreview("\"\""), withPreview("\" padded \""), withPreview("\"two\\nlines\""), withPreview("\"bell\\u0007\""),
+            withPreview("\"zero\\u200bwidth\""), withPreview("\"sep\\u2028x\""), withPreview("\"${"x".repeat(283)}\""),
+            withPreview("7"), withPreview("null"),
+            current.replace("\"interrupted\":false", "\"interrupted\":false,\"text\":\"body\""),
+        )) fails { decode(raw) }
+        assertEquals("x".repeat(282), decode(withPreview("\"${"x".repeat(282)}\"")).getValue("s1").preview)
+    }
+
     @Test fun exactScopeVersionKeysAndMembershipAreMandatory() {
         for (raw in listOf(
             current.replace("\"version\":1", "\"version\":2"),

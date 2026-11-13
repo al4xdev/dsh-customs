@@ -24,24 +24,47 @@ class ActivityTranscriptProjectionTest {
             RenderBlock.Reasoning("second thought"), RenderBlock.Text("last prose"))
         val message = assistant(0, blocks)
         val projected = ActivityTranscriptProjection.project(listOf(message))
-        assertEquals(listOf("Activity", "Message", "Activity", "Message"), projected.map { it.javaClass.simpleName })
+        // Both reasoning runs of the turn gather into the one group opened by the first.
+        assertEquals(listOf("Activity", "Message", "Message"), projected.map { it.javaClass.simpleName })
         val visible = projected.filterIsInstance<TranscriptItem.Message>().map { it.message }
         assertEquals(message.stableId, visible.first().stableId)
         assertEquals("${message.stableId}:prose:4", visible.last().stableId)
         assertEquals(listOf("first prose\n[Imagem: image/png]", "last prose"), visible.map { it.literalText })
-        assertEquals(blocks, flatten(projected))
+        // Every source block survives; only the reasoning runs were gathered into the group.
+        assertEquals(blocks.size, flatten(projected).size)
+        assertEquals(blocks.toSet(), flatten(projected).toSet())
         val reasoning = projected.filterIsInstance<TranscriptItem.Activity>().flatMap { it.group.entries }
         assertEquals(listOf("${message.stableId}:reasoning:0", "${message.stableId}:reasoning:3"), reasoning.map { it.stableId })
         assertEquals(listOf(0, 3), reasoning.map { it.blockOffset })
         assertTrue(reasoning.all { it.sourceStableId == message.stableId })
     }
 
-    @Test fun normalProseInterveningInSameTurnDoesNotGetFoldedOrReordered() {
+    @Test fun proseInTheMiddleOfATurnStaysUntouchedWhileItsToolsShareOneGroup() {
         val prose = assistant(1, listOf(RenderBlock.Text("investigation finding")))
         val projected = ActivityTranscriptProjection.project(listOf(tool(0, "a"), prose, tool(2, "b")))
-        assertEquals(listOf("Activity", "Message", "Activity"), projected.map { it.javaClass.simpleName })
+        assertEquals(listOf("Activity", "Message"), projected.map { it.javaClass.simpleName })
         assertEquals(prose, (projected[1] as TranscriptItem.Message).message)
-        assertFalse(projected.first().stableId == projected.last().stableId)
+        val group = (projected.first() as TranscriptItem.Activity).group
+        assertEquals(listOf("tool:a", "tool:b"), group.entries.map { it.stableId })
+        assertEquals(2, group.toolCount)
+    }
+
+    @Test fun groupKeepsItsIdentityWhileLaterToolsJoinAfterProse() {
+        val prose = assistant(1, listOf(RenderBlock.Text("first finding")))
+        val early = ActivityTranscriptProjection.project(listOf(tool(0, "a"), prose))
+        val late = ActivityTranscriptProjection.project(listOf(tool(0, "a"), prose, tool(2, "b"), tool(3, "c")))
+        assertEquals(early.first().stableId, late.first().stableId)
+        assertEquals(3, (late.first() as TranscriptItem.Activity).group.toolCount)
+    }
+
+    @Test fun eachTurnAndEachHumanBoundaryKeepsItsOwnGroup() {
+        val human = RichMessage(2, MessageRole.USER, "again", listOf(RenderBlock.Text("again")), stableId = "user:again")
+        val projected = ActivityTranscriptProjection.project(listOf(
+            tool(0, "a", turn = 1), assistant(1, listOf(RenderBlock.Text("done"))), human,
+            tool(3, "b", turn = 2), assistant(4, listOf(RenderBlock.Text("done again")), turn = 2), tool(5, "c", turn = 2)))
+        val groups = projected.filterIsInstance<TranscriptItem.Activity>().map { it.group }
+        assertEquals(listOf(1, 2), groups.map { it.toolCount })
+        assertEquals(listOf(1L, 2L), groups.map { it.turn })
     }
 
     @Test fun contiguousDifferentTurnsNeverMergeAndLegacyUsesActualHumanBoundaries() {

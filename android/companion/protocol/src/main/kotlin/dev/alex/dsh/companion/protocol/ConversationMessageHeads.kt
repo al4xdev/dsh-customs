@@ -15,6 +15,9 @@ data class ConversationMessageHead(
     val knowledge: NativeKnowledge,
     val asOfSeq: Long?,
     val lastVisibleAssistant: VisibleAssistantHead?,
+    // Display-only excerpt of that reply. Kept outside VisibleAssistantHead so read/unread identity
+    // comparisons never depend on text.
+    val preview: String? = null,
 )
 
 object ConversationMessageHeadsRequests {
@@ -57,10 +60,13 @@ object ConversationMessageHeadsCodec {
             if (id !in expectedIds || id in result) reject("message-heads-source")
             val createdAt = row.required("createdAt").let { if (it === JsonNull) null else it.safeInteger() }
             val asOfSeq = row.required("asOfSeq").let { if (it === JsonNull) null else it.safeInteger(-1) }
+            var preview: String? = null
             val head = row.required("lastVisibleAssistant").let { marker ->
                 if (marker === JsonNull) null else {
                     val item = marker.objectValue()
-                    item.keysExactly(setOf("seq", "messageId", "time", "interrupted"))
+                    // An older backend omits the preview; a newer one never sends any other extra field.
+                    item.keysExactly(setOf("seq", "messageId", "time", "interrupted"), setOf("preview"))
+                    preview = item["preview"]?.let { messagePreview(it.stringValue(MAX_PREVIEW_UNITS)) }
                     VisibleAssistantHead(item.required("seq").safeInteger(),
                         messageHeadId(item.required("messageId").stringValue(256)),
                         item.required("time").safeInteger(), item.required("interrupted").booleanValue())
@@ -77,11 +83,22 @@ object ConversationMessageHeadsCodec {
                 }
                 else -> reject("message-heads-knowledge")
             }
-            result[id] = ConversationMessageHead(id, createdAt, knowledge, asOfSeq, head)
+            result[id] = ConversationMessageHead(id, createdAt, knowledge, asOfSeq, head, preview)
         }
         if (result.keys != expectedIds) reject("message-heads-incomplete")
         return result
     }
+}
+
+// 140 code points plus the ellipsis, as UTF-16 units in the worst case; mirrors the backend bound.
+private const val MAX_PREVIEW_UNITS = 282
+
+/** One trimmed line without control or invisible format characters, exactly what the backend promises. */
+private fun messagePreview(value: String): String {
+    if (value.isEmpty() || value.trim() != value || value.any {
+            it.isISOControl() || Character.getType(it) == Character.FORMAT.toInt() || it == '\u2028' || it == '\u2029'
+        }) reject("message-heads-preview")
+    return value
 }
 
 private fun messageHeadIds(ids: List<String>) {

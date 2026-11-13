@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { resolveHost } from '../common.mjs';
 import { companionMetadata, refusal } from './contracts.mjs';
-import { parseMessageHeadsRequest, parseMessageHeadsOutput } from './message-heads-contracts.mjs';
+import { parseMessageHeadsRequest, parseMessageHeadsOutput, MESSAGE_PREVIEW_MAX_CODE_POINTS } from './message-heads-contracts.mjs';
 import { activityTime } from './activity-order.mjs';
 const { buildSessionEventRecords } = await import(resolveHost('@deepseek-ai/dsh-session-query'));
 const { symbols: { original } } = await import(resolveHost('@deepseek-ai/cordis'));
@@ -14,6 +14,26 @@ const identity = value => value?.identity ?? value?.[original] ?? value;
 const canonicalIdentity = value => value?.[original] ?? value;
 const unknown = (sessionId, createdAt = null) => ({ sessionId, createdAt, knowledge: 'unknown', asOfSeq: null, lastVisibleAssistant: null });
 class Unavailable extends Error {}
+
+/**
+ * One-line excerpt for the conversation list, taken only from visible model text blocks (never reasoning,
+ * tool calls/results or user input). Markdown marks are dropped, whitespace and invisible characters are
+ * collapsed, and the result is cut at a code-point boundary.
+ */
+export function previewOf(content) {
+  for (const block of content) {
+    if (block?.type !== 'text' || typeof block.text !== 'string') continue;
+    const flat = block.text
+      .replace(/```+[^\n]*/g, ' ')
+      .replace(/^[\s>#*+-]+(?=\S)/gm, '')
+      .replace(/[`*]+/g, '')
+      .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, ' ').trim();
+    if (flat.length === 0) continue;
+    const points = Array.from(flat);
+    return points.length > MESSAGE_PREVIEW_MAX_CODE_POINTS ? `${points.slice(0, MESSAGE_PREVIEW_MAX_CODE_POINTS).join('').trimEnd()}…` : flat;
+  }
+  return undefined;
+}
 // Ephemeral host-only provenance: JSON lookalikes cannot import historical activity. Never contains bodies/paths.
 const activityPublications = new WeakMap();
 export function verifiedMessageActivityHeader(metadata, root, profile, persistence, profileDir) {
@@ -237,7 +257,8 @@ export function createMessageHeads(ctx, options = {}, trusted = {}) {
             if (!message.content.some(block => block?.type === 'text' && typeof block.text === 'string' && block.text.trim().length > 0)) continue;
             // The existing fold already proved visible model text; do not walk its content a second time.
             if (onActivity && event.time >= header.createdAt) activityAt = Math.max(activityAt ?? event.time, event.time);
-            head = { seq: record.seq, messageId: message.id, time: record.time, interrupted: data.interrupted === true };
+            const excerpt = previewOf(message.content);
+            head = { seq: record.seq, messageId: message.id, time: record.time, interrupted: data.interrupted === true, ...(excerpt === undefined ? {} : { preview: excerpt }) };
           }
           check();
           const row = { sessionId, createdAt: header.createdAt, knowledge: 'current', asOfSeq: observation.cursor, lastVisibleAssistant: head };

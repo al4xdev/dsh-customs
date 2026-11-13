@@ -62,7 +62,8 @@ class ToolResultImagesTest {
         val first = root("a", listOf(RenderBlock.Text("envelope"), RenderBlock.Image(reference())))
         val second = root("b", listOf(RenderBlock.Image(reference()))).copy(seq = 2)
         val projected = ActivityTranscriptProjection.project(listOf(first, second))
-        assertEquals(listOf("Activity", "Media", "Activity", "Media"), projected.map { it.javaClass.simpleName })
+        // One turn, one activity group; the images stay visible in call order beneath it.
+        assertEquals(listOf("Activity", "Media", "Media"), projected.map { it.javaClass.simpleName })
         assertEquals(listOf("tool:a:media:1", "tool:b:media:0"), projected.filterIsInstance<TranscriptItem.Media>().map { it.stableId })
         val durable = first.copy(tool = first.tool!!.copy(resultSeq = 5, phase = ToolPhase.OK), sourceSeqs = listOf(0, 5))
         assertEquals(ToolResultImages.project(first).single().stableId, ToolResultImages.project(durable).single().stableId)

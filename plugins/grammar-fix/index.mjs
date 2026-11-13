@@ -108,6 +108,9 @@ export function apply(ctx, config = {}) {
   if (config.naturalTips !== undefined && typeof config.naturalTips !== 'boolean') {
     throw new Error('naturalTips must be a boolean.');
   }
+  if (config.effort !== undefined && (typeof config.effort !== 'string' || !config.effort.trim())) {
+    throw new Error('effort must be a nonempty string.');
+  }
   let busy = false;
   let disposed = false;
   let activeAbort;
@@ -175,7 +178,9 @@ export function apply(ctx, config = {}) {
         const combinedSignal = signal ? AbortSignal.any([abort.signal, signal]) : abort.signal;
         onProgress?.('Correcting grammar…', bridge.describe(current));
         return await withAbort(async () => {
-          const candidates = await resolveCandidateEfforts(ctx, selected, combinedSignal);
+          const candidates = config.effort !== undefined
+            ? [config.effort, undefined]
+            : await resolveCandidateEfforts(ctx, selected, combinedSignal);
           combinedSignal.throwIfAborted();
           let lastError;
           for (const effort of candidates) {

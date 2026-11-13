@@ -81,6 +81,8 @@ data class CompanionUiState(
     val appStarted: Boolean = false,
     val appResumed: Boolean = false,
     val chatUnread: Set<String> = emptySet(),
+    // Last visible model reply excerpt per chat, for the list row only.
+    val chatPreview: Map<String, String> = emptyMap(),
     // A rendered receipt must refer to this accepted durable transcript revision.
     val transcriptRevision: Long = -1,
     val selectedFiles: List<SelectedFileChip> = emptyList(),

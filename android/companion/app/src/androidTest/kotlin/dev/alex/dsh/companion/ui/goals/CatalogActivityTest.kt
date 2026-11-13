@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -298,6 +299,17 @@ class CatalogActivityTest {
         File(directory, fileName).outputStream().use { output ->
             assertTrue(pixels.compress(Bitmap.CompressFormat.PNG, 100, output))
         }
+    }
+
+    @Test fun catalogRowShowsTheLastReplyExcerptAndRespondingOverridesTheTimestamp() {
+        val state = mutableStateOf(catalog().copy(chatActivity = emptyMap(), chatPreview = mapOf(ID to "Resumo da última resposta")))
+        compose.setContent { CompanionTheme { CompanionScreen(state.value, GoalPanelTest.InertActions()) } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Resumo da última resposta").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("chat-preview:$ID", useUnmergedTree = true).assertIsDisplayed()
+        compose.onAllNodesWithText("Respondendo…").assertCountEquals(0)
+        compose.runOnIdle { state.value = state.value.copy(chatActivity = activity()) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Respondendo…").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Resumo da última resposta").assertIsDisplayed()
     }
 
     private fun response() = compose.onNodeWithTag("chat-response-indicator:$ID", useUnmergedTree = true)

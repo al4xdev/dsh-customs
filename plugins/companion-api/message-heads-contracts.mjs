@@ -2,6 +2,11 @@ import { refusal, SESSION_ID } from './contracts.mjs';
 
 export const MESSAGE_HEADS_MAX_IDS = 20;
 export const MESSAGE_HEADS_MAX_BYTES = 32 * 1024;
+// Display-only excerpt of the last visible model reply. One line, no control/format characters, bounded;
+// it never carries reasoning, tool results, user input or provider data.
+export const MESSAGE_PREVIEW_MAX_CODE_POINTS = 140;
+const PREVIEW_MAX_UNITS = 2 * (MESSAGE_PREVIEW_MAX_CODE_POINTS + 1);
+const preview = value => typeof value === 'string' && value.length > 0 && value.length <= PREVIEW_MAX_UNITS && value.trim() === value && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
 const integer = (value, minimum = 0) => Number.isSafeInteger(value) && value >= minimum;
 const messageId = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && value.trim() === value && !/[\p{Cc}\p{Cf}]/u.test(value);
 const sessionId = value => typeof value === 'string' && SESSION_ID.test(value);
@@ -41,8 +46,10 @@ export function parseMessageHeadsOutput(value) {
       if (!integer(row.createdAt) || !integer(row.asOfSeq, -1)) throw refusal('invalid-output');
       if (row.lastVisibleAssistant !== null) {
         const head = row.lastVisibleAssistant;
-        exact(head, ['seq', 'messageId', 'time', 'interrupted'], 'invalid-output');
+        const withPreview = head !== null && typeof head === 'object' && Object.hasOwn(head, 'preview');
+        exact(head, withPreview ? ['seq', 'messageId', 'time', 'interrupted', 'preview'] : ['seq', 'messageId', 'time', 'interrupted'], 'invalid-output');
         if (!integer(head.seq) || head.seq > row.asOfSeq || !messageId(head.messageId) || !integer(head.time) || typeof head.interrupted !== 'boolean') throw refusal('invalid-output');
+        if (withPreview && !preview(head.preview)) throw refusal('invalid-output');
       }
     } else throw refusal('invalid-output');
     return { sessionId: row.sessionId, createdAt: row.createdAt, knowledge: row.knowledge, asOfSeq: row.asOfSeq,

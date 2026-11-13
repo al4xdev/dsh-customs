@@ -61,6 +61,12 @@ test('message-head codecs accept only exact bounded metadata and preserve unknow
   const current = { version: 1, profile: 'companion', heads: [{ sessionId: 'chat', createdAt: 7, knowledge: 'current', asOfSeq: 3,
     lastVisibleAssistant: { seq: 2, messageId: 'opaque:synthetic/id', time: 10, interrupted: true } }] };
   assert.deepEqual(parseMessageHeadsOutput(current), current);
+  const previewed = structuredClone(current); previewed.heads[0].lastVisibleAssistant.preview = 'Uma resposta curta';
+  assert.deepEqual(parseMessageHeadsOutput(previewed), previewed);
+  for (const bad of ['', ' padded ', 'two\nlines', 'bell\u0007', 'zero\u200bwidth', 'x'.repeat(400), 7, null]) {
+    const invalid = structuredClone(previewed); invalid.heads[0].lastVisibleAssistant.preview = bad;
+    assert.throws(() => parseMessageHeadsOutput(invalid), code('invalid-output'));
+  }
   for (const mutate of [v => { v.heads[0].lastVisibleAssistant.seq = 4; }, v => { v.heads[0].lastVisibleAssistant.messageId = 'x'.repeat(257); },
     v => { v.heads[0].lastVisibleAssistant.text = 'private synthetic'; }, v => { v.heads[0].lastVisibleAssistant.interrupted = null; },
     v => { v.heads[0].createdAt = null; }, v => { v.heads[0].asOfSeq = -2; }, v => { v.heads[0].lastVisibleAssistant.time = -1; }]) {
@@ -71,15 +77,32 @@ test('message-head codecs accept only exact bounded metadata and preserve unknow
   assert.equal(getter, false);
 });
 
-test('current visible model text produces only its settled identity, not content or raw provider data', async () => {
+test('current visible model text produces its settled identity and a short preview, never user input or raw provider data', async () => {
   const events = [user(0), assistant(1)];
   const f = fixture(events);
   const output = await f.read();
   assert.deepEqual(row(output), { sessionId: 'chat', createdAt: 7, knowledge: 'current', asOfSeq: 1,
-    lastVisibleAssistant: { seq: 1, messageId: events[1].data.message.id, time: 11, interrupted: false } });
-  assert.equal(JSON.stringify(output).includes('private synthetic'), false);
+    lastVisibleAssistant: { seq: 1, messageId: events[1].data.message.id, time: 11, interrupted: false, preview: 'private synthetic reply' } });
+  assert.equal(JSON.stringify(output).includes('private synthetic input'), false);
   assert.equal(JSON.stringify(output).includes('provider'), false);
   assert.equal(f.counts.dispose, 1);
+});
+
+test('preview comes only from visible text blocks, is one bounded line, and is absent when there is none', async () => {
+  const long = 'palavra '.repeat(60);
+  const events = [user(0), assistant(1, [{ type: 'reasoning', text: 'secret reasoning' }, text('## Título\n\n- **negrito** e `código`\n```js\nconst x = 1\n```\n\u200bfim'), text('segundo bloco')])];
+  const f = fixture(events);
+  const head = row(await f.read()).lastVisibleAssistant;
+  assert.equal(head.preview, 'Título negrito e código const x = 1 fim');
+  assert.equal(JSON.stringify(head).includes('secret reasoning'), false);
+  f.setEvents([user(0), assistant(1, [text(long)])]); f.setSnapshots([{ header: header(), revision: 'v2' }]);
+  const cut = row(await f.read()).lastVisibleAssistant.preview;
+  assert.equal(Array.from(cut).length, 141); assert.ok(cut.endsWith('…')); assert.equal(cut.includes('\n'), false);
+  f.setEvents([user(0), assistant(1, [text('🙂'.repeat(200))])]); f.setSnapshots([{ header: header(), revision: 'v3' }]);
+  assert.ok(Array.from(row(await f.read()).lastVisibleAssistant.preview).every(point => point === '🙂' || point === '…'));
+  const bare = assistant(1, [text(' \n ')]);
+  f.setEvents([user(0), bare]); f.setSnapshots([{ header: header(), revision: 'v4' }]);
+  assert.equal(row(await f.read()).lastVisibleAssistant, null);
 });
 
 test('tool-only, reasoning-only, blank, attempt, internal goal input and context never invent a visible reply', async () => {
@@ -96,7 +119,7 @@ test('tool-only, reasoning-only, blank, attempt, internal goal input and context
 test('real model text during an automatic goal round counts and interrupted visible prefixes count', async () => {
   const events = [user(0, { kind: 'goal', goalId: 'synthetic-goal', revision: 1, round: 2 }), assistant(1, [text('synthetic partial')], { interrupted: true })];
   const f = fixture(events);
-  assert.deepEqual(row(await f.read()).lastVisibleAssistant, { seq: 1, messageId: events[1].data.message.id, time: 11, interrupted: true });
+  assert.deepEqual(row(await f.read()).lastVisibleAssistant, { seq: 1, messageId: events[1].data.message.id, time: 11, interrupted: true, preview: 'synthetic partial' });
 });
 
 test('first-party current surface excludes replaced replies and recognizes a later model text', async () => {

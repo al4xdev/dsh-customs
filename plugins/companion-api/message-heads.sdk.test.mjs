@@ -89,8 +89,10 @@ test('installed SDK fixture surface replacement, tool-only, attempt and interrup
   const f = apiFor(ctx); const output = await f.read([header.id]);
   assert.equal(output.heads[0].knowledge, 'current');
   const partial = events.find(event => event.data.interrupted === true);
-  assert.deepEqual(output.heads[0].lastVisibleAssistant, { seq: partial.seq, messageId: partial.data.message.id, time: partial.time, interrupted: true });
-  assert.equal(JSON.stringify(output).includes('synthetic private'), false);
+  assert.deepEqual(output.heads[0].lastVisibleAssistant, { seq: partial.seq, messageId: partial.data.message.id, time: partial.time, interrupted: true, preview: 'synthetic private partial' });
+  // Only the visible reply is excerpted: reasoning and tool results never reach the preview.
+  assert.equal(JSON.stringify(output).includes('synthetic private tool result'), false);
+  assert.equal(JSON.stringify(output).includes('synthetic private reasoning'), false);
   assert.equal(ctx.sessions.get(header.id), undefined);
 });
 

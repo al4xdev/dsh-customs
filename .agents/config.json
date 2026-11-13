@@ -1,7 +1,7 @@
 {
   "dshCustoms": {
     "managedPlans": {
-      "autoApprove": true
+      "autoApprove": false
     }
   }
 }

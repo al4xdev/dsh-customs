@@ -534,6 +534,10 @@ private fun ChatsScreen(state: CompanionUiState, actions: UiActions, modifier: M
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(chat.title?.takeIf { it.isNotBlank() } ?: "Conversa ${chat.id.takeLast(8)}", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val responding = state.chatActivity[chat.id]?.let { it.knowledge == NativeKnowledge.CURRENT && it.responding == true } == true
+                            state.chatPreview[chat.id]?.let { excerpt ->
+                                Text(excerpt, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("chat-preview:${chat.id}"))
+                            }
                             // A titled chat does not need its raw id; an untitled one already shows it in the fallback title.
                             if (state.deletingId == chat.id) Text("Apagando conversa…", style = MaterialTheme.typography.bodySmall)
                             else if (responding) Text("Respondendo…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)

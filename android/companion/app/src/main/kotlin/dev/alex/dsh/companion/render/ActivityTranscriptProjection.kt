@@ -56,42 +56,33 @@ object ActivityTranscriptProjection {
     fun project(messages: List<RichMessage>, showReasoning: Boolean = true): List<TranscriptItem> =
         project(withoutStaleReasoning(messages, showReasoning))
 
+    /**
+     * One Activity group per turn (or per human boundary for legacy rows without a turn). The group sits
+     * where that turn's first activity happened and keeps growing as more tools arrive, even after prose
+     * or media appeared in between; the prose itself stays in chronological order below the group, so
+     * no message text is reordered, only the tool rows are gathered into a single summary line.
+     */
     fun project(messages: List<RichMessage>): List<TranscriptItem> {
-        val output = mutableListOf<TranscriptItem>()
-        val pending = mutableListOf<ActivityEntry>()
+        val output = mutableListOf<TranscriptItem?>()
         val emittedMedia = mutableSetOf<String>()
-        var pendingScope: String? = null
-        var pendingTurn: Long? = null
+        class Slot(val scope: String, val turn: Long?, val index: Int, val entries: MutableList<ActivityEntry> = mutableListOf())
+        val slots = linkedMapOf<String, Slot>()
         var humanBoundary = "history"
-        fun flush() {
-            if (pending.isEmpty()) return
-            output += TranscriptItem.Activity(ActivityGroup("activity:$pendingScope:${pending.first().anchor}", pending.toList(), pendingTurn))
-            pending.clear()
-            pendingScope = null
-            pendingTurn = null
-        }
         fun activity(entry: ActivityEntry) {
             val turn = entry.message.turn ?: entry.message.tool?.turn
             val scope = turn?.let { "turn:$it" } ?: "after:$humanBoundary"
-            if (pendingScope != null && pendingScope != scope) flush()
-            pendingScope = scope
-            pendingTurn = turn
-            pending += entry
+            val slot = slots.getOrPut(scope) { Slot(scope, turn, output.size).also { output += null } }
+            slot.entries += entry
         }
         fun visible(message: RichMessage, sourceStableId: String = message.stableId, blockOffset: Int = 0) {
-            flush()
             output += TranscriptItem.Message(message, sourceStableId, blockOffset)
         }
         messages.forEach { message ->
             if (message.role == MessageRole.USER && (message.sourceKind == null || message.sourceKind == "user")) humanBoundary = message.stableId
             if (message.tool != null || message.role == MessageRole.TOOL) {
                 activity(ActivityEntry(message))
-                val images = ToolResultImages.project(message).filter { emittedMedia.add(it.stableId) }
-                if (images.isNotEmpty()) {
-                    // A visible result is a chronological boundary, like normal prose.
-                    flush()
-                    images.forEach { output += TranscriptItem.Media(it) }
-                }
+                ToolResultImages.project(message).filter { emittedMedia.add(it.stableId) }
+                    .forEach { output += TranscriptItem.Media(it) }
             } else if (message.role != MessageRole.ASSISTANT || message.blocks.none { it is RenderBlock.Reasoning }) {
                 visible(message)
             } else if (message.blocks.all(::reasoningBlock)) {
@@ -117,7 +108,9 @@ object ActivityTranscriptProjection {
                 }
             }
         }
-        flush()
-        return output
+        slots.values.forEach { slot ->
+            output[slot.index] = TranscriptItem.Activity(ActivityGroup("activity:${slot.scope}:${slot.entries.first().anchor}", slot.entries.toList(), slot.turn))
+        }
+        return output.filterNotNull()
     }
 }

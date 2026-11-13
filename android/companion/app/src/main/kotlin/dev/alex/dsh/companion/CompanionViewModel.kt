@@ -208,7 +208,8 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
         readPersistSerial++
         readNamespace = null
         conversationReads = null
-        mutable.update { it.copy(chatUnread = emptySet()) }
+        // Excerpts belong to the account that read them.
+        mutable.update { it.copy(chatUnread = emptySet(), chatPreview = emptyMap()) }
         return readScopeAuthEpoch to previous
     }
 
@@ -266,6 +267,24 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
             }.map { it.id }.toSet()
         } else emptySet()
         mutable.update { it.copy(chatUnread = unread) }
+    }
+
+    /**
+     * List excerpts are presentation only. A row is updated solely from a head that is current for the
+     * exact lifecycle the catalog shows; an unknown or mismatched head keeps the last known excerpt
+     * instead of blanking it on every transient miss.
+     */
+    private fun publishPreviews(rows: List<Pair<String, Long>>, heads: Map<String, ConversationMessageHead>) {
+        mutable.update { snapshot ->
+            val next = snapshot.chatPreview.toMutableMap()
+            for ((id, createdAt) in rows) {
+                val head = heads[id] ?: continue
+                if (head.knowledge != NativeKnowledge.CURRENT || head.createdAt != createdAt || id !in ownedSessionIds) continue
+                val excerpt = head.preview
+                if (excerpt != null) next[id] = excerpt else if (head.lastVisibleAssistant == null) next.remove(id)
+            }
+            if (next == snapshot.chatPreview) snapshot else snapshot.copy(chatPreview = next)
+        }
     }
 
     private fun invalidateMessageHeads() {
@@ -1786,6 +1805,7 @@ class CompanionViewModel(application: Application) : AndroidViewModel(applicatio
                     if (owned && head.createdAt == chat.createdAt) reads.observe(scope, head)
                     else reads.unavailable(scope, listOf(chat.sessionId))
                 }
+                publishPreviews(batch.map { it.sessionId to it.createdAt }, heads)
                 publishUnread()
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
