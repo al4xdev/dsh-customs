@@ -90,6 +90,18 @@ test('waitDuration aborts cleanly in-flight when signal fires', async () => {
   await assert.rejects(promise, error => error === abortReason);
 });
 
+test('a plain-object abort reason (dsh turn abort) becomes a readable Error', async () => {
+  const controller = new AbortController();
+  const promise = waitDuration(2, 'Long wait', controller.signal);
+  setTimeout(() => controller.abort({ kind: 'user' }), 50);
+  await assert.rejects(promise, error => error instanceof Error && /^Wait interrupted after \S+ \(user\)\.$/.test(error.message)
+    && error.cause?.kind === 'user' && !error.message.includes('[object Object]'));
+
+  const pre = new AbortController();
+  pre.abort({ kind: 'user' });
+  await assert.rejects(waitDuration(1, undefined, pre.signal), error => error.message === 'Wait interrupted (user).');
+});
+
 test('apply registers the wait tool in the context', async () => {
   let registeredTool = null;
   const ctx = {

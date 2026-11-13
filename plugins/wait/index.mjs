@@ -138,19 +138,31 @@ export function resolveWaitTarget(args = {}, context) {
   return undefined;
 }
 
+// dsh aborts a turn with a plain reason object (`{ kind: 'user' }` when the owner
+// interrupts), not an Error, and the tool result then read "Error: [object Object]".
+// Error reasons pass through untouched; anything else becomes a readable Error.
+function abortError(reason, elapsedSeconds) {
+  if (reason instanceof Error) return reason;
+  const kind = typeof reason?.kind === 'string' ? reason.kind : typeof reason === 'string' ? reason : 'aborted';
+  const rounded = elapsedSeconds >= 10 ? Math.round(elapsedSeconds) : Math.round(elapsedSeconds * 10) / 10;
+  const elapsed = rounded > 0 ? ` after ${formatDuration(rounded)}` : '';
+  return new Error(`Wait interrupted${elapsed} (${kind}).`, { cause: reason });
+}
+
 /**
  * Pauses execution for the requested duration.
  * Hooks into AbortSignal for immediate, graceful cancellation.
  */
 export async function waitDuration(seconds, reason, signal) {
-  signal?.throwIfAborted();
+  if (signal?.aborted) throw abortError(signal.reason, 0);
   const ms = Math.round(seconds * 1000);
+  const started = Date.now();
 
   return new Promise((resolve, reject) => {
     let timer;
     const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason ?? new Error('Wait operation aborted'));
+      reject(abortError(signal.reason, (Date.now() - started) / 1000));
     };
 
     timer = setTimeout(() => {
