@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { apply } from './index.mjs';
+import { apply, classifyCommand } from './index.mjs';
 
 /**
  * Mounts the plugin against a fixture bash tool that advertises the same
@@ -91,11 +91,11 @@ test('the reconsider permit still guards destructive commands end to end', async
   // The single-use grant lets the identical arguments through exactly once.
   assert.equal(await f.emit('tools/pre-execute', { ...blocked, arguments: { ...blocked.arguments } }), 'next-result');
 
+  // Plan 134: reading through the shell is not a denial any more, with or without
+  // native tools in the catalog.
   const nativeRead = f.exec();
   nativeRead.arguments = { command: 'cat README.md', description: 'Read it' };
-  const denial = await f.emit('tools/pre-execute', nativeRead);
-  assert.equal(denial.kind, 'deny');
-  assert.match(denial.reason, /native `read` tool/);
+  assert.equal(await f.emit('tools/pre-execute', nativeRead), 'next-result');
 });
 
 test('a denial is never rewritten: no hook may mutate an existing message', async () => {
@@ -105,8 +105,57 @@ test('a denial is never rewritten: no hook may mutate an existing message', asyn
   assert.equal(f.handlers.get('agent/pre-step'), undefined, 'no per-step history editing');
   assert.equal(f.handlers.get('session/event'), undefined, 'no message tracking for later edits');
   const denied = f.exec();
-  denied.arguments = { command: 'cat README.md', description: 'Read it' };
+  denied.arguments = { command: 'rm -rf /tmp/fixture', description: 'Remove it' };
   await f.emit('tools/pre-execute', denied);
   // Nothing is queued for a later step: the denial text stays as the model saw it.
   await f.emit('agent/request', { agent: denied.agent, turn: 2, step: 1 });
+});
+
+const verdict = (command, options = {}) => classifyCommand(command, options)?.type ?? 'allowed';
+
+test('inspection and chaining pass: the guard no longer defends style', () => {
+  // Each of these was denied before Plan 134.
+  assert.equal(verdict('cat src/main.c'), 'allowed');
+  assert.equal(verdict('ls -la build'), 'allowed');
+  assert.equal(verdict('grep -rn foo src | head -20'), 'allowed');
+  assert.equal(verdict('rg -n foo src'), 'allowed');
+  assert.equal(verdict('find . -name "*.c"'), 'allowed');
+  // Writing a script through a here-doc is a write, not a read.
+  assert.equal(verdict("cat > /tmp/dump.py <<'EOF'\nprint(1)\nEOF"), 'allowed');
+  // A forty-step call is how the current models work; no ceiling by default.
+  assert.equal(verdict(Array.from({ length: 40 }, (_, i) => `echo ${i}`).join('; ')), 'allowed');
+  // The route-arounds that made the old read denial cosmetic still pass, which is
+  // the point: they were never the thing being defended.
+  assert.equal(verdict("sed -n 1,80p src/main.c"), 'allowed');
+  assert.equal(verdict('awk "{print \\$1}" src/main.c'), 'allowed');
+});
+
+test('a ceiling a profile chooses to keep still denies', () => {
+  assert.equal(verdict('echo a; echo b; echo c; echo d', { compoundLimit: 3 }), 'compound');
+  assert.equal(verdict('echo a; echo b; echo c', { compoundLimit: 3 }), 'allowed');
+  // A here-doc holding data is not a script: a commit message must not count.
+  assert.equal(verdict("git commit -F - <<'MSG'\none\ntwo\nthree\nfour\nMSG", { compoundLimit: 3 }), 'allowed');
+});
+
+test('destructive commands stay denied wherever they hide', () => {
+  const forms = [
+    'rm -rf /tmp/x',
+    'echo ok && rm -rf /tmp/x',
+    'rm -rf /tmp/x > /dev/null 2>&1',
+    'sh -c "rm -rf /tmp/x"',
+    'echo "$(rm -rf /tmp/x)"',
+    'find /tmp/x -delete',
+    'git clean -fdx',
+    'git reset --hard',
+    'dd if=/dev/zero of=/dev/sda',
+    'shred -u /tmp/x',
+    'truncate -s 0 /tmp/x',
+  ];
+  for (const command of forms) assert.equal(verdict(command), 'destructive', command);
+  // The body of a shell here-doc is scanned like a `sh -c` payload. Before Plan 134
+  // this passed entirely: the body was stripped and never inspected.
+  assert.equal(verdict("bash <<'EOF'\nset -e\ncd /tmp\necho starting\nrm -rf /tmp/importante\nEOF"), 'destructive');
+  assert.equal(verdict("bash -s <<'EOF'\nrm -rf /tmp/x\nEOF"), 'destructive');
+  // A here-doc whose reader is not a shell is still data, not commands.
+  assert.equal(verdict("python3 - <<'EOF'\nimport os\nos.remove('/tmp/x')\nEOF"), 'allowed');
 });

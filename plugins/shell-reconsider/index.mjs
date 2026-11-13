@@ -6,6 +6,25 @@ export const inject = ['tools'];
 // ---------------------------------------------------------------------------
 // Shell-aware classification
 //
+// The guard defends exactly one thing now: a command that destroys filesystem
+// state. It used to also defend style — denying `cat`, `ls` and `grep` in favour
+// of the native tools, and refusing a call carrying more than `compoundLimit`
+// operations. Both were removed on the owner's decision (Plan 134), because a
+// guard that does not defend anything real is a guard the model learns to route
+// around:
+//
+//   The style denials were cosmetic. `cat x.c` was refused while `sed -n 1,80p
+//   x.c`, `awk`, and `python3 -c "print(open('x.c').read())"` all passed, so the
+//   rule removed the honest spelling and kept the obfuscated one. It also had a
+//   false positive: `cat > /tmp/script.py <<EOF` — a write used to author a
+//   script — was classified as a read and denied.
+//
+//   The compound limit counted what it could not see. Two bash operations were
+//   denied at the default of 6, while a forty-line `python3 - <<EOF` script
+//   counted as one, so the rule did not reduce opacity; it moved the work into
+//   Python, where the guard is blind. Destructive detection runs per command, not
+//   per count, so the limit never protected anything.
+//
 // The first version of this file ran regexes against the whole raw command
 // string. That failed in both directions at once, and the combination is what
 // made it routable:
@@ -45,12 +64,11 @@ const WRAPPERS = new Set(['sudo', 'doas', 'command', 'builtin', 'exec', 'nohup',
 /** Shells whose `-c` payload is itself a command string. */
 const SHELLS = new Set(['sh', 'bash', 'dash', 'zsh', 'ksh']);
 
-const READ_OPS = new Set(['cat', 'head', 'tail', 'less', 'more']);
-const LIST_OPS = new Set(['ls', 'tree', 'find']);
-const GREP_OPS = new Set(['grep', 'egrep', 'fgrep', 'rg']);
-
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const SUBSTITUTION = /^\u0000SUB(\d+)\u0000$/;
+// Matched anywhere in a word, not anchored: inside double quotes the placeholder
+// keeps the spaces that surrounded it, so `echo "$(rm -rf x)"` used to tokenize as
+// ` SUB0 ` and the removal was never recursed into.
+const SUBSTITUTION = /\u0000SUB(\d+)\u0000/g;
 // Silent-failure idioms. Only used to colour a destructive reason, never to
 // decide on its own: `cmd > /dev/null` is ordinary, `rm -rf x > /dev/null` is not.
 const MASKING = /(?:2>|&>|>)\s*\/dev\/null|\|\|\s*(?:true|:)(?=\s|$|[;&|\n])/;
@@ -58,33 +76,39 @@ const MASKING = /(?:2>|&>|>)\s*\/dev\/null|\|\|\s*(?:true|:)(?=\s|$|[;&|\n])/;
 const PIPE_SEPARATORS = new Set(['|', '|&']);
 
 /**
- * How many separate operations one bash call may carry. A dozen-step script is
- * not faster, it is opaque: the transcript shows one wall of text instead of a
- * sequence of decisions, and there is no discrete point to revert to.
+ * How many separate operations one bash call may carry, or 0 for no ceiling.
+ * Off by default: one call carrying the whole job is how the current models are
+ * trained to work, and the alternative costs a round trip per refusal. A profile
+ * that wants the ceiling back sets a positive number.
  */
-export const DEFAULT_COMPOUND_LIMIT = 6;
+export const DEFAULT_COMPOUND_LIMIT = 0;
 
 /**
- * Drops here-doc bodies so their payload is not parsed as commands, while still
- * reporting how many lines they held: a script fed through `bash <<EOF` is a
- * single shell statement and forty operations.
+ * Drops here-doc bodies so their payload is not parsed as part of the reading
+ * command, and returns each body separately: a script fed through
+ * `bash <<EOF` is one shell statement whose body must still be scanned.
  */
 function stripHereDocs(script) {
   const kept = [];
+  const bodies = [];
   let terminator = null;
-  let heredocLines = 0;
+  let body = null;
+  const flush = () => {
+    if (body !== null) bodies.push(body.join('\n'));
+    body = null;
+  };
   for (const line of script.split('\n')) {
     if (terminator !== null) {
-      if (line.trim() === terminator) terminator = null;
-      else if (line.trim() !== '') heredocLines += 1;
+      if (line.trim() === terminator) { terminator = null; flush(); }
+      else if (line.trim() !== '') body.push(line);
       continue;
     }
     kept.push(line);
     if (line.includes('<<<')) continue;
     const match = /<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/.exec(line);
-    if (match) terminator = match[1];
+    if (match) { terminator = match[1]; body = []; }
   }
-  return { script: kept.join('\n'), heredocLines };
+  return { script: kept.join('\n'), bodies };
 }
 
 /**
@@ -212,9 +236,9 @@ function detectDestructive(argv) {
 }
 
 /**
- * Classifies a shell command as reading, directory exploration, content
- * search, or a destructive operation. Returns null for anything else, so
- * ordinary development commands pass through untouched.
+ * Returns a verdict only for a command that destroys filesystem state, or for a
+ * call that exceeds a compound ceiling a profile chose to keep. Everything else
+ * — reads, listings, searches, builds, forty-step scripts — passes untouched.
  */
 export function classifyCommand(rawCommand, options = {}) {
   if (typeof rawCommand !== 'string') return null;
@@ -228,15 +252,13 @@ export function classifyCommand(rawCommand, options = {}) {
   let destructive = null;
   let destructiveNested = false;
   let commands = 0;
-  const heads = [];
 
   const scan = (script, depth) => {
     if (depth > 8 || !script.trim()) return;
     const stripped = stripHereDocs(script);
-    const { script: replaced, bodies } = extractSubstitutions(stripped.script);
+    const { script: replaced, bodies: substitutions } = extractSubstitutions(stripped.script);
     const tokens = tokenize(replaced);
     let words = [];
-    let piped = false;
     let firstProgram = null;
 
     const flushCommand = () => {
@@ -246,7 +268,6 @@ export function classifyCommand(rawCommand, options = {}) {
       if (!argv.length) return;
       commands += 1;
       if (firstProgram === null) firstProgram = argv[0];
-      if (!piped) heads.push(argv[0]);
       if (destructive === null) {
         destructive = detectDestructive(argv);
         if (destructive !== null && depth > 0) destructiveNested = true;
@@ -259,24 +280,25 @@ export function classifyCommand(rawCommand, options = {}) {
 
     for (const token of tokens) {
       if (token.type === 'word') { words.push(token.value); continue; }
-      if (PIPE_SEPARATORS.has(token.value)) { flushCommand(); piped = true; continue; }
+      if (PIPE_SEPARATORS.has(token.value)) { flushCommand(); continue; }
       flushCommand();
-      piped = false;
     }
     flushCommand();
 
-    // A here-doc is a script only when a shell is the one reading it. Counting
-    // every body would flag `git commit -F - <<MSG`, where the body is a commit
-    // message and not a single operation.
-    if (stripped.heredocLines > 0 && firstProgram !== null && SHELLS.has(firstProgram)) {
-      commands += stripped.heredocLines;
+    // A here-doc is a script only when a shell is the one reading it. Its body is
+    // scanned like a `sh -c` payload, so a removal inside `bash <<EOF` is caught
+    // by detection rather than by a line count. Counting every body would flag
+    // `git commit -F - <<MSG`, where the body is a commit message.
+    if (firstProgram !== null && SHELLS.has(firstProgram)) {
+      for (const body of stripped.bodies) scan(body, depth + 1);
     }
 
     // Substitution payloads run as their own commands, one level deeper.
     for (const token of tokens) {
       if (token.type !== 'word') continue;
-      const match = SUBSTITUTION.exec(token.value);
-      if (match) scan(bodies[Number(match[1])] ?? '', depth + 1);
+      for (const match of token.value.matchAll(SUBSTITUTION)) {
+        scan(substitutions[Number(match[1])] ?? '', depth + 1);
+      }
     }
   };
 
@@ -292,31 +314,10 @@ export function classifyCommand(rawCommand, options = {}) {
     };
   }
 
-  if (commands > compoundLimit) {
+  if (compoundLimit > 0 && commands > compoundLimit) {
     return {
       type: 'compound',
       reason: `Compound command blocked: ${commands} separate operations in one bash call (limit ${compoundLimit}). Run them as separate calls so each step is visible and revertable in the transcript, one operation at a time. If the script genuinely must run as a unit, confirm via shell_reconsider(necessary=true).`,
-    };
-  }
-
-  if (heads.some(head => READ_OPS.has(head))) {
-    return {
-      type: 'read',
-      reason: 'Shell command blocked: for viewing file contents, use the native `read` tool instead of shell.',
-    };
-  }
-
-  if (heads.some(head => LIST_OPS.has(head))) {
-    return {
-      type: 'list',
-      reason: 'Shell command blocked: for exploring directories and listing files, use the native `list` (or `glob`) tool instead of shell.',
-    };
-  }
-
-  if (heads.some(head => GREP_OPS.has(head))) {
-    return {
-      type: 'grep',
-      reason: 'Shell command blocked: for searching file content, use the native `grep` tool instead of shell.',
     };
   }
 
@@ -378,7 +379,7 @@ export function apply(ctx, config = {}) {
   const compoundLimit = config.compoundLimit ?? DEFAULT_COMPOUND_LIMIT;
   if (!Number.isSafeInteger(interval) || interval < 1) throw new Error('shell-reconsider: interval must be a positive integer.');
   if (!['steps', 'turns'].includes(unit)) throw new Error('shell-reconsider: unit must be steps or turns.');
-  if (!Number.isSafeInteger(compoundLimit) || compoundLimit < 1) throw new Error('shell-reconsider: compoundLimit must be a positive integer.');
+  if (!Number.isSafeInteger(compoundLimit) || compoundLimit < 0) throw new Error('shell-reconsider: compoundLimit must be 0 (no ceiling) or a positive integer.');
   const states = new WeakMap();
   const stateOf = session => {
     let state = states.get(session);
@@ -411,20 +412,15 @@ export function apply(ctx, config = {}) {
     // Legitimate development commands (git, npm, build, test, python, etc.) pass straight through.
     if (!check) return next();
 
-    // Destructive and oversized compound commands get the single-use permit
-    // path; read/list/grep denials point at the native tool and need no permit.
-    if (check.type === 'destructive' || check.type === 'compound') {
-      state.pending = key;
-      return { kind: 'deny', reason: check.reason };
-    }
-
-    // Read/list/grep operations: direct deny pointing to native tools (read, list, glob, grep).
+    // Every remaining denial is reversible only through the single-use permit:
+    // proof that the owner accepted this exact command.
+    state.pending = key;
     return { kind: 'deny', reason: check.reason };
   }, true);
 
   ctx.tools.register(defineTool({
     name: 'shell_reconsider',
-    description: 'Answer a pending shell necessity check for a blocked destructive or oversized compound command. true allows one identical bash retry; false cancels it. No shell command is run by this tool.',
+    description: 'Answer a pending shell necessity check for a blocked destructive command. true allows one identical bash retry; false cancels it. No shell command is run by this tool.',
     parameters: { necessary: { type: 'boolean', required: true, description: 'Is shell necessary rather than a dedicated tool?' } },
     output: stringOutput,
     async execute({ necessary }, exec) {

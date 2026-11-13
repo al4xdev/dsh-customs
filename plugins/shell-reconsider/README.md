@@ -10,16 +10,16 @@ That matters in both directions. An earlier version matched regexes against the 
 
 ## Interception rules
 
-- **Read / inspection (`cat`, `head`, `tail`, `less`, `more`):** denied, pointing at the native `read` tool. Checked on each pipeline head, so `npm test | grep FAIL` is untouched.
-- **Directory exploration (`ls`, `tree`, `find`):** denied, pointing at the native `list` (or `glob`) tool.
-- **Content search (`grep`, `egrep`, `fgrep`, `rg`):** denied, pointing at the native `grep` tool.
-- **Destructive operations:** denied, recommending the native `trash` tool. Detected anywhere in the command — on later lines, behind `&&`, inside `$(...)`/backticks, inside `sh -c`, and behind `sudo`/`xargs`/variable assignments. Covered: `rm`, `unlink`, `rmdir`, `shred`, `truncate`, `dd of=`, `find -delete`, `find -exec <removal>`, `git clean` with `-f`/`-d`/`-x`, and `git reset --hard`. When the command also silences failures (`>/dev/null`, `|| true`), the reason says so, because that masks a partial removal.
-- **Oversized compound commands:** denied when a single call carries more than `compoundLimit` separate operations (default 6). A twelve-step script is not faster, it is opaque: the transcript shows one wall of text instead of a sequence of decisions, and there is no discrete point to revert to. A here-doc read by a shell adds a heuristic count of its nonempty lines; this is not a guarantee of recognizing every operation or destructive command inside its body. A here-doc holding data — `git commit -F - <<MSG` — does not contribute that shell-body count.
-- **Everything else (`npm`, `git`, `python`, compilers, test runners, `docker`, …):** passes without friction.
+Only one rule remains, because it is the only one that protects something that cannot be undone:
+
+- **Destructive operations:** denied, recommending the native `trash` tool. Detected anywhere in the command — on later lines, behind `&&`, inside `$(...)`/backticks, inside `sh -c`, inside a here-doc whose reader is a shell, and behind `sudo`/`xargs`/variable assignments. Covered: `rm`, `unlink`, `rmdir`, `shred`, `truncate`, `dd of=`, `find -delete`, `find -exec <removal>`, `git clean` with `-f`/`-d`/`-x`, and `git reset --hard`. When the command also silences failures (`>/dev/null`, `|| true`), the reason says so, because that masks a partial removal.
+- **Everything else (`cat`, `ls`, `grep`, `sed`, `awk`, `python3`, `npm`, `git`, compilers, test runners, `docker`, forty-step scripts, …):** passes without friction.
+
+Reading, listing and searching through the shell are no longer denied (Plan 134). They were denied before and the rule was cosmetic: `cat f` was refused while `sed -n 1,80p f`, `awk` and `python3 -c "print(open('f').read())"` all passed, so it removed the honest spelling and kept the obfuscated one; it also denied `cat > script.py <<EOF`, which is a write. The compound ceiling is off by default for the same reason: two bash operations were denied at the default of 6 while a forty-line `python3 - <<EOF` counted as one, so the limit moved the work into Python instead of reducing it. A profile that still wants a ceiling sets a positive `compoundLimit`.
 
 `mv` is deliberately not blocked: the global guidance is to move the target or rename it `.bak` instead of deleting it, so `mv` is the recommended non-destructive path.
 
-Destructive and compound denials share the single-use permit: `shell_reconsider({ necessary: true })` grants exactly one retry with the identical **full bash arguments** (including description, workdir and other supplied fields), not just matching command text. The next bash attempt consumes the grant even if its arguments do not match. Read/list/grep denials take no permit — the native tool is simply the right answer.
+Every denial takes the single-use permit: `shell_reconsider({ necessary: true })` grants exactly one retry with the identical **full bash arguments** (including description, workdir and other supplied fields), not just matching command text. The next bash attempt consumes the grant even if its arguments do not match.
 
 ## Limits
 
@@ -27,7 +27,7 @@ This reads command text; it is not a security boundary. It does not sandbox anyt
 
 ## Configuration
 
-- `compoundLimit`: positive integer, default `6`. Maximum separate operations allowed in one bash call.
+- `compoundLimit`: `0` (the default) for no ceiling, or a positive integer to bound how many separate operations one bash call may carry.
 - `interval`: positive integer, default `50` (retained for backward compatibility).
 - `unit`: `steps` or `turns` (retained for backward compatibility).
 
@@ -41,4 +41,4 @@ Activation is intentionally separate: the adjacent `cordis.patch.yml` inserts on
 
 ## Verification
 
-`classifyCommand` is exported so it can be exercised without a running DSH. The rewrite was checked against 40 cases covering the false positives above, the previously-invisible removals, read/list/grep on later lines, here-doc counting, and the `compoundLimit` override. That harness lives in `/tmp` and is deliberately not committed; the owner removed the `tests/` directory earlier and it was not reconstructed.
+`classifyCommand` is exported so it can be exercised without a running DSH. `shell-reconsider.test.mjs` (run by `npm run test:shell-reconsider`) covers the false positives above, the previously-invisible removals, a removal inside a shell here-doc, the `compoundLimit` override, and the Plan 134 cases: inspection and chaining pass, a here-doc holding data is not counted, and `cat > f <<EOF` is a write.
